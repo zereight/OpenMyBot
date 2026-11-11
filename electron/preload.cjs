@@ -589,34 +589,24 @@ const bridge = {
       return () => ipcRenderer.removeListener("accounts:open-sheet", handler);
     },
   } : undefined,
+  // Removed with plan billing: old pages still call these bridge keys, as a rejecting stub until they retire.
+  cloudPlan: process.argv.includes("--omb-company-desktop=1") ? {
+    state: () => Promise.reject(new Error("Plan billing is not available in this app.")),
+    manage: () => Promise.reject(new Error("Plan billing is not available in this app.")),
+    signIn: () => Promise.reject(new Error("Plan billing is not available in this app.")),
+    noticeSeen: () => Promise.reject(new Error("Plan billing is not available in this app.")),
+    upgradePreview: () => Promise.reject(new Error("Plan billing is not available in this app.")),
+    upgrade: () => Promise.reject(new Error("Plan billing is not available in this app.")),
+    cancel: () => Promise.reject(new Error("Plan billing is not available in this app.")),
+    keep: () => Promise.reject(new Error("Plan billing is not available in this app.")),
+    roomNotNow: () => Promise.reject(new Error("Plan billing is not available in this app.")),
+    restartNow: () => Promise.reject(new Error("Plan billing is not available in this app.")),
+  } : undefined,
   // Any place's page: opens the accounts sheet on the rail's page, from the person's click. The page learns nothing of them.
   accountSheet: process.argv.includes("--omb-company-desktop=1") ? {
     offered: () => ipcRenderer.invoke("accounts:offered"),
     open: () => isLocalPage || navigator.userActivation?.isActive === true
       ? ipcRenderer.invoke("accounts:open") : Promise.reject(new Error("Choose your account to open it.")),
-  } : undefined,
-  cloudPlan: process.argv.includes("--omb-company-desktop=1") ? {
-    state: () => ipcRenderer.invoke("cloud-plan:state"),
-    manage: () => isLocalPage || navigator.userActivation?.isActive === true
-      ? ipcRenderer.invoke("cloud-plan:manage") : Promise.reject(new Error("Choose Manage to open your Plan page.")),
-    signIn: () => isLocalPage || navigator.userActivation?.isActive === true
-      ? ipcRenderer.invoke("home:sign-in") : Promise.reject(new Error("Choose Sign in to sign in again.")),
-    noticeSeen: () => ipcRenderer.invoke("cloud-plan:notice-seen"),
-    // The usage meter's Upgrade: both only from the person's click (Upgrade, then the confirm's Upgrade), never by themselves.
-    upgradePreview: (plan, source) => navigator.userActivation?.isActive === true
-      ? ipcRenderer.invoke("cloud-plan:upgrade-preview", String(plan), String(source)) : Promise.reject(new Error("Choose Upgrade to see the price.")),
-    upgrade: (plan, source) => navigator.userActivation?.isActive === true
-      ? ipcRenderer.invoke("cloud-plan:upgrade", String(plan), String(source)) : Promise.reject(new Error("Choose Upgrade to change your plan.")),
-    // Cancel trial / Cancel plan and Keep my plan: only from the person's click; the survey's words only, main names the Cloud.
-    cancel: survey => isLocalPage || navigator.userActivation?.isActive === true
-      ? ipcRenderer.invoke("cloud-plan:cancel", survey ?? null) : Promise.reject(new Error("Choose Cancel to cancel your plan.")),
-    keep: () => isLocalPage || navigator.userActivation?.isActive === true
-      ? ipcRenderer.invoke("cloud-plan:keep") : Promise.reject(new Error("Choose Keep my plan to keep it.")),
-    // The room card's Not now, and Restart now after its upgrade: only from the person's click.
-    roomNotNow: id => navigator.userActivation?.isActive === true
-      ? ipcRenderer.invoke("cloud-plan:room-not-now", String(id)) : Promise.reject(new Error("Choose Not now.")),
-    restartNow: () => navigator.userActivation?.isActive === true
-      ? ipcRenderer.invoke("cloud-plan:restart-now") : Promise.reject(new Error("Choose Restart now to restart the Cloud.")),
   } : undefined,
   organization: process.argv.includes("--omb-company-desktop=1") ? {
     settingsOpened: () => ipcRenderer.invoke("organization:settings-opened"),

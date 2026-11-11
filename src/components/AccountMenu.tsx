@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Check, LogOut, Plus, UserRound, X } from "lucide-react";
 import type { AccountsView, AccountSwitchResult, RailOpenResult } from "../../electron/cloud-account.mjs";
 import { cn } from "@/lib/cn";
-import type { CloudSignInPhase } from "@/lib/cloud-plan";
+type CloudSignInProblem = "invalid-email" | "rate-limited" | "failed" | "wrong-code" | "expired" | "signup-closed" | "device-limit" | "sso" | "two-factor" | "browser";
+type CloudSignInPhase =
+  | { step: "email"; intent: boolean; problem: CloudSignInProblem | null }
+  | { step: "code"; intent: boolean; email: string; resendAt: number; problem: CloudSignInProblem | null; triesLeft: number | null; signupOpen?: boolean }
+  | { step: "done"; intent: boolean };
 import { t } from "@/lib/i18n";
 import { usePlaces } from "@/lib/places";
 import { CLOSE, Heading, PRIMARY, QUIET, SCREEN, SHEET } from "./cloud-buy/parts";

@@ -1,6 +1,6 @@
 import { Cloud } from "lucide-react";
 import type { CloudAccountBridge, CloudAccountState } from "../../electron/cloud-account.mjs";
-import type { CloudNoticeKind } from "@/lib/cloud-plan";
+type CloudNoticeKind = "sign-in-again" | "removed";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { NoticeCard, NotNowButton, PRIMARY_BUTTON } from "./NoticeCard";

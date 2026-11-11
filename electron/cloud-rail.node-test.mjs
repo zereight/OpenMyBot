@@ -5,7 +5,6 @@ import vm from "node:vm";
 
 import { parseCloudList } from "./cloud-list.mjs";
 import { addCloudView, createAddedCloudNotice, installCloudRail, railPlaces } from "./cloud-rail.mjs";
-import { otherCloudSnapshot } from "./cloud-plan-ipc.mjs";
 
 const HOME = "https://omb-u-1a2b3c4d5e6f.fly.dev", CLIENT_A = "https://omb-c-a.fly.dev", TEAM = "https://omb-t-acme.fly.dev", VPS = "https://bots.example.test";
 const LOCAL = "http://127.0.0.1:8799";
@@ -248,11 +247,6 @@ test("what the add sheet says: an older Admin is one Cloud for now, the Admin's 
   assert.deepEqual(adding("setting_up", { setup: { progress: 0.5 } }), { name: "Client B", color: "rose", tier: "pro", startedAt: 5, status: "setting_up", progress: 0.5 });
   assert.equal(adding("ready").status, "ready");
   assert.equal(adding("payment_problem").status, "problem");
-});
-
-test("another Cloud's page reads its own plan: its tier, and whether it runs", () => {
-  assert.deepEqual(otherCloudSnapshot(entry()), { status: "paid", tier: "pro" });
-  assert.deepEqual(otherCloudSnapshot(entry({ status: "payment_problem", tier: null })), { status: "attention" });
 });
 
 test("“{name}” is ready, once per Cloud this app bought, unless its sheet shows it in the focused window; a click opens it", () => {

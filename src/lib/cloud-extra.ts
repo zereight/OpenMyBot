@@ -4,7 +4,7 @@ import type { AddCloudView } from "../../electron/cloud-rail.mjs";
 import type { CloudColor } from "../../electron/cloud-buy.mjs";
 import type { LocaleKey } from "@/locales";
 import { cloudColorFill } from "@/lib/cloud-look";
-import { CHECKOUT_WAIT_MS } from "@/lib/cloud-plan";
+const CHECKOUT_WAIT_MS = 30 * 60_000;
 
 /** A Cloud's name as the Admin keeps it: up to 40 characters. */
 export const CLOUD_LIST_NAME_LIMIT = 40;

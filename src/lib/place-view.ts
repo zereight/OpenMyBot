@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import type { CloudAccountState } from "../../electron/cloud-account.mjs";
 import { activeLocale, t } from "@/lib/i18n";
-import { cloudPlanView } from "@/lib/cloud-plan";
 import { engineSignedOut } from "@/lib/failed-turn";
 import { browserAvailable, builtInBrowserEnabled, type FeatureFlagConfig } from "@/lib/feature-flags";
 import { writeComputerPanelView } from "@/lib/computer-panel-view";
@@ -103,7 +102,8 @@ export function useCloudPlanPaid(): boolean {
     void bridge.state().then((next) => { if (active && !updated) setAccount(next); }).catch(() => {});
     return () => { active = false; unsubscribe(); };
   }, [bridge]);
-  return Boolean(bridge) && cloudPlanView(account).kind === "paid";
+  void account;
+  return false;
 }
 
 export function usePlaceSeat(config: Pick<ConfigStatus, "cloudHome"> | null | undefined, capabilities: DesktopCapabilities): PlaceSeat {
@@ -135,7 +135,6 @@ export function openPlaceAction(
     case "see-plan": {
       const desktop = window.ogb?.remoteClient?.active ? undefined : window.ogb?.cloudAccount;
       if (desktop) { void desktop.openDashboard().catch(() => {}); return true; }
-      if (window.ogb?.cloudPlan) { void window.ogb.cloudPlan.manage().catch(() => {}); return true; }
       appSettings("cloudAccount");
       return true;
     }

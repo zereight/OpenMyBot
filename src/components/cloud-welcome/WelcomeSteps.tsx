@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type Ref } from "react";
 import { Check, ChevronDown, CircleAlert, FolderOpen, Plug } from "lucide-react";
 import { cloudEngine, cloudEngineChoices, useCloudEngineChoices } from "@/components/CloudEngineSignIn";
-import { useCloudPlanSnapshot } from "@/components/CloudTrialNotice";
 import { engineReady } from "@/components/EngineLibrary";
 import { EngineCheckLine } from "@/components/EngineLiveCheck";
 import { EngineSetup } from "@/components/EngineSetup";
-import { usd } from "@/lib/cloud-plan";
+function usd(dollars: number): string {
+  const cents = Math.round(dollars * 100);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: cents % 100 ? 2 : 0 }).format(cents / 100);
+}
 import { welcomeCredit } from "@/lib/cloud-welcome";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -17,7 +19,7 @@ import { CARD, CARD_IDLE, CardIcon, Footer, PRIMARY, QUIET, SECONDARY, StepHeadi
  * it is and the step finishes itself; otherwise one recommended sign-in, every other way folded under it. */
 export function WelcomeEngine({ name, headingRef, onFinish }: { name: string; headingRef: Ref<HTMLHeadingElement>; onFinish: () => void }) {
   const engines = useCloudEngineChoices();
-  const plan = useCloudPlanSnapshot(window.ogb?.cloudPlan);
+  const plan: null = null;
   const own = engines.instances.some((instance) => !instance.trialCredit && engineReady(instance));
   const credit = own ? null : welcomeCredit(engines.instances, plan);
   const readyOnOpen = useRef(own || credit?.state === "active");

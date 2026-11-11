@@ -3,7 +3,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  cloudUsageSummary,
   phoneMenuItems,
   placeMenuItems,
   planUsageSummary,
@@ -624,10 +623,4 @@ describe("the usage meta", () => {
     expect(resetsIn(null, now)).toBeUndefined();
   });
 
-  it("reads a paid Cloud's tightest meter, and nothing without one", () => {
-    const usage = { tier: "pro", resetsAt: Date.parse("2026-11-01T00:00:00Z"), meters: [{ kind: "voice", used: 30, max: 100 }, { kind: "decisions", used: 85, max: 100 }] };
-    expect(cloudUsageSummary({ status: "paid", tier: "pro", usage } as never)).toMatchObject({ value: "85% used" });
-    expect(cloudUsageSummary({ status: "paid", tier: "pro" } as never)).toBeNull();
-    expect(cloudUsageSummary({ status: "none" } as never)).toBeNull();
-  });
 });
