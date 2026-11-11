@@ -2563,11 +2563,6 @@ const cloudPageAsking = (event) => {
   if (cloudPageSenderAllowed(event, { contents, homeOrigin: myCloud(), activeOrigin: activeEnvironment(environmentsState)?.origin })) return "cloud";
   return null;
 };
-const cloudPageSender = (channel, handler) => (event) => {
-  const asking = cloudPageAsking(event);
-  if (!asking) throw new Error(`${channel} is only available in this app's window`);
-  return handler(asking === "cloud");
-};
 /** The page of another Cloud of the person's own, open as this window's active server: that Cloud, as the session lists it. */
 const ownCloudPage = event => {
   const origin = activeEnvironment(environmentsState)?.origin, contents = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
