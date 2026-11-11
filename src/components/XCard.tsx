@@ -3,11 +3,11 @@ import { Check, ExternalLink, Loader2 } from "lucide-react";
 
 import { api, useStore, type ConfigStatus } from "@/state/store";
 import { activeLocale, t } from "@/lib/i18n";
-import { xResearchAction } from "@/lib/cloud-plan";
+
 import { keyRemoved, keySaved, keySaveFailure, keyTestResult } from "@/lib/product-events";
 import { isXConnectorStatus, type XConnectorStatus, type XIncludedUsage } from "../../shared/x-connector";
 import { looksLikeKey, saveCredential, tregVerdict } from "./keys/key-save";
-import { useCloudPlan } from "./ProIntroduction";
+
 
 const TREG_URL = "https://treg.to";
 const pill = "inline-flex h-7 min-w-[64px] shrink-0 items-center justify-center gap-2 rounded-full bg-control/80 px-3 text-[13px] font-medium leading-5 text-ink transition-colors hover:bg-raised-hover disabled:opacity-40";
@@ -57,7 +57,7 @@ export function XCard({ refreshKey = 0, onConnection }: {
   const [addingOwn, setAddingOwn] = useState(false);
   const mounted = useRef(true);
   const saveAfterPaste = useRef(false);
-  const connecting = xResearchAction(useCloudPlan()?.view ?? null) === "connecting";
+  const connecting = false;
   const ownConfigured = state.config?.treg?.configured === true, includedHeld = state.config?.xResearch?.included === true;
 
   const load = useCallback(async (refresh = false): Promise<void> => {

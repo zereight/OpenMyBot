@@ -3,15 +3,25 @@ import { createPortal } from "react-dom";
 import { ArrowUpRight, X } from "lucide-react";
 import { CLOUD_PLAN_URL } from "@/lib/app-links";
 import { botRoom, closeBotLimit, planRefusal, showBotLimit, useBotLimitReason, useCreatedPausedBot, type BotLimitReason } from "@/lib/bot-limit";
-import { cloudPlanLabel } from "@/lib/cloud-plan";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useStore } from "@/state/store";
 import { MausAvatar } from "./Avatar";
 import { AwakeBotsPicker } from "./AwakeBotsPicker";
-import { useCloudPlanSnapshot } from "./CloudTrialNotice";
-import { NoteLine, UpgradeButton, usageBridge, useUpgrade } from "./CloudUsageMeter";
 import { LinkButton, NotNowButton, PRIMARY_BUTTON } from "./NoticeCard";
+
+function cloudPlanLabel(tier?: string): string {
+  const PLAN_LABEL: Record<string, string> = { starter: "Starter", personal: "Personal", pro: "Pro", max: "Max" };
+  return tier === undefined ? "Pro" : PLAN_LABEL[tier] ?? "Cloud";
+}
+type UpgradeNote = { tone: "good" | "info" | "bad"; text: string };
+function NoteLine(_props: { note: UpgradeNote | null }) { return null; }
+function UpgradeButton(_props: { usage?: unknown; upgrade?: unknown; className?: string }) { return null; }
+function usageBridge(_cloudHome: boolean): { manage?: () => Promise<void> } | undefined { return undefined; }
+type PlanSnap = { tier?: string; status?: string; usage?: null };
+function useCloudPlanSnapshot(_bridge: unknown): PlanSnap | null { return null; }
+function useUpgrade(_bridge: unknown, _usage: unknown, _source: string, _onUpgraded?: (tier: string) => void, _layer?: string): { busy: null; note: null; dialog: null; confirming: false; start: () => void } { return { busy: null, note: null, dialog: null, confirming: false, start: () => {} }; }
+
 
 const POPUP = "[data-bot-limit-popup]";
 const TITLE = "bot-limit-title";
@@ -102,7 +112,7 @@ function BotLimitDialog({ reason, created, onClose }: { reason: BotLimitReason; 
           ) : !bridge ? (
             <div className="mt-5 w-full [&>div]:w-full"><LinkButton url={CLOUD_PLAN_URL} label={t("botLimit.openPlan")} className={cn(PRIMARY_BUTTON, "w-full justify-center")} /></div>
           ) : plan !== null ? (
-            <button type="button" className={cn(PRIMARY_BUTTON, "mt-5 w-full justify-center")} onClick={() => { setPlanFailed(false); void bridge.manage().then(onClose, () => setPlanFailed(true)); }}>
+            <button type="button" className={cn(PRIMARY_BUTTON, "mt-5 w-full justify-center")} onClick={() => { setPlanFailed(false); void bridge.manage!().then(onClose, () => setPlanFailed(true)); }}>
               {t("botLimit.openPlan")}<ArrowUpRight size={14} aria-hidden="true" />
             </button>
           ) : null}

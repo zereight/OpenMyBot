@@ -1,9 +1,21 @@
 // Display only: the room card never changes a plan or a limit. The Admin decides when a Cloud is short on room and which
 // plan fixes it (the session's `cloud.room`); its Upgrade goes through the usual preview and confirmation.
 import type { CloudRoom, CloudUsage } from "../../electron/cloud-home.mjs";
-import { cloudPlanLabel, usd } from "@/lib/cloud-plan";
 import { activeLocale, t } from "@/lib/i18n";
-import { TEAM_TIERS, trialChargeIsNear } from "@/lib/usage-meter";
+
+const PLAN_LABEL: Record<string, string> = { starter: "Starter", personal: "Personal", pro: "Pro", max: "Max" };
+function cloudPlanLabel(tier?: string): string {
+  return tier === undefined ? "Pro" : Object.hasOwn(PLAN_LABEL, tier) ? PLAN_LABEL[tier] : "Cloud";
+}
+function usd(dollars: number): string {
+  const cents = Math.round(dollars * 100);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: cents % 100 ? 2 : 0 }).format(cents / 100);
+}
+const DAY_MS = 86_400_000;
+function trialChargeIsNear(endsAt: number | undefined, now: number = Date.now()): boolean {
+  return endsAt === undefined || endsAt - now <= DAY_MS;
+}
+const TEAM_TIERS: readonly string[] = ["team", "business"];
 
 export interface RoomCardView {
   id: string;

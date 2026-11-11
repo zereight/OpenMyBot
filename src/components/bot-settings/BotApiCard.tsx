@@ -7,7 +7,6 @@ import { t } from "@/lib/i18n";
 import { relativeTime } from "@/lib/memory";
 import { api, useStore, type Bot } from "@/state/store";
 import { BOT_API_KEY_PLACEHOLDER, BOT_API_UPGRADE, botApiCurl } from "../../../shared/bot-api";
-import { NoteLine, useCloudUsage, useUpgrade } from "../CloudUsageMeter";
 import { Switch } from "../SettingsPrimitives";
 
 export interface BotApiCall {
@@ -62,20 +61,11 @@ export function webhooksLine(count: number): string {
   return count === 0 ? t("botApi.webhooksNone") : count === 1 ? t("botApi.webhooksOne") : t("botApi.webhooks", { count });
 }
 
-/** Starter: one line and the usual Upgrade (its preview, then the person's confirmation). Where this page has no way to change the
- * plan, a browser tab on the Cloud's own address, the line stands alone. */
 function BotApiStarter({ className }: { className?: string }) {
-  const { usage, bridge } = useCloudUsage();
-  const upgrade = useUpgrade(bridge, usage, "app_settings");
   return (
     <div className={cn("rounded-xl bg-card p-4", className)} data-testid="bot-api">
       <div className="text-[15px] font-medium text-ink">{t("botApi.title")}</div>
       <div className="mt-0.5 text-[13px] text-ink-secondary" data-testid="bot-api-starter">{t("botApi.starter")}</div>
-      {bridge && usage && (
-        <button type="button" onClick={() => upgrade.start()} disabled={upgrade.busy !== null} className={cn(buttonCls, "mt-3")} data-testid="bot-api-upgrade">{t("roomCard.upgrade")}</button>
-      )}
-      {upgrade.note && <div className="mt-2"><NoteLine note={upgrade.note} /></div>}
-      {upgrade.dialog}
     </div>
   );
 }
