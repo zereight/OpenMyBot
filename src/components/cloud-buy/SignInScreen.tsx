@@ -2,7 +2,11 @@
 import type { ClipboardEvent, FormEvent, KeyboardEvent } from "react";
 import { Check, ExternalLink, Loader2 } from "lucide-react";
 import { cn } from "@/lib/cn";
-import type { CloudSignInPhase, CloudSignInProblem } from "@/lib/cloud-plan";
+type CloudSignInProblem = "invalid-email" | "rate-limited" | "failed" | "wrong-code" | "expired" | "signup-closed" | "device-limit" | "sso" | "two-factor" | "browser";
+type CloudSignInPhase =
+  | { step: "email"; intent: boolean; problem: CloudSignInProblem | null }
+  | { step: "code"; intent: boolean; email: string; resendAt: number; problem: CloudSignInProblem | null; triesLeft: number | null; signupOpen?: boolean }
+  | { step: "done"; intent: boolean };
 import { t } from "@/lib/i18n";
 import { ACTIONS, BackLink, FIELD, Heading, LINK, PRIMARY, PRIMARY_WIDE, QUIET, SCREEN } from "./parts";
 
@@ -22,6 +26,7 @@ export function problemLine(problem: CloudSignInProblem, triesLeft: number | nul
     case "browser": return t("cloudBuy.signIn.browser");
     case "failed": return t("cloudBuy.signIn.failed");
   }
+  return t("cloudBuy.signIn.failed");
 }
 
 /** Digits only, at most eight: what a box, a paste or an autofill leaves. */

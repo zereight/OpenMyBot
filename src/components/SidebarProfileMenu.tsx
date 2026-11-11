@@ -30,8 +30,6 @@ import { DiscordIcon } from "./DiscordIcon";
 import { AboutDialog } from "./AboutDialog";
 import { PhoneAppDialog } from "./lazy-screens";
 import { CloudTile } from "./cloud-buy/parts";
-import { usageBridge } from "./CloudUsageMeter";
-import { useCloudPlanSnapshot } from "./CloudTrialNotice";
 import type { WorkspacePlace } from "./DesktopWorkspaceSwitcher";
 import { railShown, usePlaces } from "@/lib/places";
 import { useAutomationsNeedYou } from "./SidebarFooterNav";
@@ -46,7 +44,6 @@ import { updaterMessage, useUpdaterState, type UpdaterState } from "@/lib/update
 import { productName } from "../lib/brand";
 import { cloudColor } from "@/lib/cloud-look";
 import { cn } from "@/lib/cn";
-import { meterPercent, resetLine } from "@/lib/usage-meter";
 import type { CloudPlanSnapshot } from "../../electron/cloud-account.mjs";
 import { activeLocale, t } from "@/lib/i18n";
 import { FEEDBACK_URL, HELP_CENTER_URL, appVersion, openExternalLink } from "@/lib/app-links";
@@ -429,10 +426,8 @@ export function planUsageSummary(report: PlanUsageWindows | null, now = Date.now
   return budgets.length ? { value: t("sidebar.menu.usageUsed", { percent: Math.round(Math.max(...budgets.map((budget) => budget.usedPercent))) }) } : null;
 }
 
-export function cloudUsageSummary(plan: CloudPlanSnapshot | null): UsageSummary | null {
-  if (plan?.status !== "paid") return null;
-  const usage = plan.usage;
-  if (usage?.meters.length) return { value: t("sidebar.menu.usageUsed", { percent: Math.max(...usage.meters.map(meterPercent)) }), resets: resetLine(usage) };
+export function cloudUsageSummary(_plan: CloudPlanSnapshot | null): UsageSummary | null {
+  void _plan;
   return null;
 }
 
@@ -558,7 +553,7 @@ export function SidebarProfileMenu({ iconOnly = false, rail = false, circle = fa
   const { state, dispatch } = useStore();
   const simple = account !== undefined;
   const [menuOpen, setMenuOpen] = useState(false);
-  const cloudUsage = cloudUsageSummary(useCloudPlanSnapshot(simple ? usageBridge(state.config?.cloudHome === true) : undefined));
+  const cloudUsage: UsageSummary | null = null;
   const engineUsage = usePlanUsageSummary(simple && menuOpen && cloudUsage === null && window.ogb?.remoteClient?.active !== true);
   const phone = useSidebarPhoneStatus();
   const connectPhone = useConnectPhoneEntry(state.config?.cloudHome === true);

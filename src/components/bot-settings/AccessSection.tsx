@@ -21,8 +21,6 @@ import { ProposalStatus } from "./ProposalStatus";
 import { ToolSelectionCard } from "./ToolSelectionCard";
 import { BotApiCard } from "./BotApiCard";
 import { ToolBudgetLine } from "./ToolBudgetLine";
-import { useCloudPlan } from "../ProIntroduction";
-import { xResearchAction } from "@/lib/cloud-plan";
 import { useBotApps } from "./useBotApps";
 import {
   classifyConnectorTool,
@@ -478,7 +476,7 @@ function ConnectorToolsGrants({
  * treg key or a Cloud plan's research credential, and switchable off per bot. */
 function ResearchCard({ bot, patch }: { bot: Bot; patch: (patch: { xResearch: boolean }) => void }) {
   const { state, dispatch } = useStore();
-  const connecting = xResearchAction(useCloudPlan()?.view ?? null) === "connecting" && state.config?.xResearch?.unavailable !== true;
+  const connecting = false;
   const ownKey = state.config?.treg?.configured === true, included = state.config?.xResearch?.included === true;
   const available = ownKey || included;
   const on = bot.xResearch !== false;

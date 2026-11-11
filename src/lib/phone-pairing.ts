@@ -1,7 +1,5 @@
 import type { CloudAccountState } from "../../electron/cloud-account.mjs";
-import { teamPlan } from "../../electron/cloud-team-plan.mjs";
 import type { LocaleKey } from "@/locales";
-import { cloudPlanView } from "./cloud-plan";
 import type { Action } from "@/state/store";
 import { readMembership } from "./membership";
 import { isOwnerOrAdmin, readSessionState, type SessionState } from "./session";
@@ -52,8 +50,13 @@ export function connectPhoneEntry(target: PhonePairingTarget, access: PhonePairi
 
 export type CloudPhoneDestination = "ready" | "not-ready" | null;
 
+const CLOUD_TEAM_TIERS = ["team", "business"] as const;
+function teamPlan(state: CloudAccountState | null | undefined): boolean {
+  return state?.status === "connected" && !state.machine && state.entitlement?.plan === "pro" && CLOUD_TEAM_TIERS.includes(state.entitlement.tier as "team" | "business");
+}
 export function cloudPhoneDestination(account: CloudAccountState | null | undefined): CloudPhoneDestination {
-  if (cloudPlanView(account).kind !== "paid" || teamPlan(account)) return null;
+  const paid = account?.status === "connected" && account.entitlement?.plan === "pro" && account.entitlement.status === "active";
+  if (!paid || teamPlan(account)) return null;
   return account?.status === "connected" && account.machine?.status === "ready" ? "ready" : "not-ready";
 }
 

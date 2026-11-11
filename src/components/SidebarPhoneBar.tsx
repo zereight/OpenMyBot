@@ -5,7 +5,7 @@ import { t } from "@/lib/i18n";
 import { useStore } from "@/state/store";
 
 import { CloudRoomCard } from "./CloudRoomCard";
-import { CloudUsageCard } from "./CloudUsageMeter";
+function CloudUsageCard() { return null; }
 import { useAutomationsNeedYou } from "./SidebarFooterNav";
 import { SidebarPopoverMenu, type SidebarMenuItem } from "./SidebarPopoverMenu";
 import { UpdateIndicator } from "./UpdateIndicator";

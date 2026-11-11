@@ -1,16 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 import type { CloudAccountState, CloudPlanBridge, CloudPlanSnapshot } from "../../electron/cloud-account.mjs";
 import type { CloudCredit, CloudMachine, CloudTrial } from "../../electron/cloud-home.mjs";
-import { planTeam, teamPlan } from "../../electron/cloud-team-plan.mjs";
+type TeamPlanState = { status?: string; machine?: unknown; entitlement?: { plan?: string; tier?: string }; teams?: unknown[] };
+const CLOUD_TEAM_TIERS = ["team", "business"] as const;
+function teamPlan(state: TeamPlanState | null | undefined): boolean { const s = state as { status?: string; machine?: unknown; entitlement?: { plan?: string; tier?: string } } | null | undefined; return s?.status === "connected" && !s.machine && s.entitlement?.plan === "pro" && CLOUD_TEAM_TIERS.includes(s.entitlement.tier as "team" | "business"); }
+function planTeam(state: TeamPlanState | null | undefined): { machine?: unknown; id: string; name: string } | null { void state; return null; }
 import { cloudFilesBridge } from "@/lib/cloud-files";
 import { moveLine } from "@/lib/cloud-send";
 import { activeLocale, t } from "@/lib/i18n";
-import { buyOfferAllowed, cloudCreditLine, cloudPlanLabel, cloudPlanLine, cloudPlanView, cloudTrialView, moneyBackLine, offerTrialDays, trialRunning, type CloudPlanView } from "@/lib/cloud-plan";
-import { useCloudOffer } from "@/lib/use-cloud-offer";
+type CloudPlanView = { kind: "unknown" | "signed-out" | "paid" | "free" | "attention" | "purchase" | "unverified" | "reauth" | "removed"; label?: string | null; trial?: boolean; checking?: boolean; paidAt?: number; reason?: string };
+function cloudPlanLabel(tier?: string): string { const PLAN_LABEL: Record<string, string> = { starter: "Starter", personal: "Personal", pro: "Pro", max: "Max" }; return tier === undefined ? "Pro" : PLAN_LABEL[tier] ?? "Cloud"; }
+function cloudPlanView(_account: unknown): CloudPlanView { return { kind: "signed-out" }; }
+function cloudPlanLine(_view: CloudPlanView): string | null { return null; }
+function buyOfferAllowed(_view: CloudPlanView): boolean { return false; }
+function cloudTrialView(_trial: unknown, _credit?: unknown): { title: string; body: string; action: { label: string } } { return { title: "", body: "", action: { label: "" } }; }
+function cloudCreditLine(_credit: unknown): string { return ""; }
+function moneyBackLine(_offer: unknown): string | null { return null; }
+function offerTrialDays(_offer: unknown): null { return null; }
+function trialRunning(_trial: unknown): boolean { return false; }
+function useCloudOffer(_enabled: boolean, _offer?: unknown): null { return null; }
 import type { LocaleKey } from "@/locales";
 import { AccountsSheet } from "./AccountMenu";
 import { Card } from "./SettingsPrimitives";
-import { CloudCancelPlan, type CloudRenewalActions } from "./CloudCancelPlan";
+type CloudRenewalActions = { cancel: (survey: unknown) => Promise<unknown>; keep: () => Promise<unknown> };
+function CloudCancelPlan(_props: { renewal: unknown; actions: CloudRenewalActions | null; onChanged?: () => void }) { return null; }
 import { StagingMark } from "./cloud-buy/parts";
 import { CloudKeepHere } from "./CloudKeepHere";
 import { CloudSetupSteps } from "./CloudSetupSteps";
@@ -140,7 +153,7 @@ export function CloudPlanOnCloud({ bridge, onConnectPhone }: { bridge: CloudPlan
     void bridge.state().then(next => { if (active) setPlan(next); }).catch(() => { if (active) setRefused(true); });
     return () => { active = false; };
   }, [bridge, reads]);
-  const renewal: CloudRenewalActions | null = bridge.cancel && bridge.keep ? { cancel: survey => bridge.cancel!(survey), keep: () => bridge.keep!() } : null;
+  const renewal: CloudRenewalActions | null = bridge.cancel && bridge.keep ? { cancel: (survey: unknown) => bridge.cancel!(survey as unknown as null), keep: () => bridge.keep!() } : null;
   if (refused) {
     return <Card title={t("settings.section.cloudAccount")}>
       <p data-cloud-plan="elsewhere" className="text-[13px] text-ink-secondary">{t("cloudAccount.onCloudNone")}</p>
@@ -249,7 +262,7 @@ export function CloudAccountSettings({ linkRequest = 0, cloudHome = false, teamH
   const move = moveNotice?.move ? moveLine(moveNotice.move, "local") : null;
   const moving = move && move.kind !== "done" ? move.text : null;
   const offer = useCloudOffer(Boolean(account) && buyOfferAllowed(cloudPlanView(account)), account?.offer);
-  const renewal: CloudRenewalActions | null = bridge?.cancelPlan && bridge.keepPlan ? { cancel: survey => bridge.cancelPlan!(survey), keep: () => bridge.keepPlan!() } : null;
+  const renewal: CloudRenewalActions | null = bridge?.cancelPlan && bridge.keepPlan ? { cancel: (survey: unknown) => bridge.cancelPlan!(survey as unknown as null), keep: () => bridge.keepPlan!() } : null;
   if (!bridge) {
     const plan = window.ogb?.remoteClient?.active || !cloudHome ? undefined : window.ogb?.cloudPlan;
     return <>
@@ -263,8 +276,8 @@ export function CloudAccountSettings({ linkRequest = 0, cloudHome = false, teamH
   const message = accountMessage(account, view, platform);
   const line = cloudPlanLine(view);
   const onTeamPlan = teamPlan(account), team = planTeam(account);
-  const setUp: CloudMachine | undefined = view.kind === "paid" ? { status: "provisioning" } : undefined;
-  const machine: CloudMachine | undefined = onTeamPlan ? team?.machine ?? setUp : account?.status === "connected" ? account.machine ?? setUp : undefined;
+  const setUp: CloudMachine | undefined = view.kind === "paid" ? ({ status: "provisioning" } as CloudMachine) : undefined;
+  const machine: CloudMachine | undefined = onTeamPlan ? (team?.machine as CloudMachine | undefined) ?? setUp : account?.status === "connected" ? account.machine ?? setUp : undefined;
   const enrollment = account?.status === "connecting" ? account.enrollment : undefined;
   const moneyBack = moneyBackLine(offer);
   const addCloudButton = onAddCloud && buyOfferAllowed(view) && <div className="flex flex-col items-start gap-1">

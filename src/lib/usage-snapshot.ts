@@ -7,7 +7,10 @@ import {
   allow, APP, CLOUD_TIER, CONNECTORS_MODE, DECIDER, EDITION, engineForDriver, LOCAL_VM_MODE, TRIAL_CREDIT, VOICE,
   type EventProps, type KeyProvider, type PropValue,
 } from "@/lib/analytics-allowlist";
-import { trialRunning } from "@/lib/cloud-plan";
+type CloudTrial = { state?: string };
+function trialRunning(trial: CloudTrial | undefined): boolean {
+  return trial?.state === "active" || trial?.state === "ending" || trial?.state === "processing";
+}
 import { hasActiveConnection, type ConnectorStatus } from "@/lib/connector-status";
 import { addedServers } from "@/lib/openai-compat-endpoints";
 import type { Routine } from "@/lib/routines";

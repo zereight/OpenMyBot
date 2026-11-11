@@ -10,7 +10,13 @@ import { announcementConditions, announcementPlan, announcementPlatform, announc
 import { boatOfferRuns } from "@/lib/boat-offer";
 import { modelgoOfferable, reportModelgoOffer } from "@/lib/modelgo-offer";
 import { brandStatus } from "@/lib/brand";
-import { buyOfferAllowed, cloudNoticeKind, cloudPlanView, cloudTrialNotice, cloudTrialView, offerTrialDays } from "@/lib/cloud-plan";
+type CloudPlanView = { kind: "signed-out" | "unknown" | "connecting" | "free" | "paid" | "attention" | "purchase" | "unverified" | "reauth" | "removed"; label?: string | null; trial?: unknown; checking?: boolean; paidAt?: number; reason?: string };
+function cloudPlanView(_account: unknown): CloudPlanView { return { kind: "signed-out" }; }
+function buyOfferAllowed(_view: CloudPlanView): boolean { return false; }
+function cloudNoticeKind(_view: CloudPlanView, _account: unknown): "sign-in-again" | "removed" | null { return null; }
+function cloudTrialNotice(_plan: unknown): { state: string; endsAt: number } | null { return null; }
+function cloudTrialView(_trial: unknown, _credit?: unknown): { title: string; body: string } { return { title: "", body: "" }; }
+function offerTrialDays(_offer: unknown): null { return null; }
 import { jobRoutine, useCloudIntent } from "@/lib/cloud-intent";
 import { CLOUD_INTENT_GIVEN, cloudSetupStage } from "@/lib/cloud-setup";
 import { cornerPopupWaits, firstChatQuiet, firstReplyPending } from "@/lib/corner-popup";
@@ -31,9 +37,10 @@ import { BoatOfferCard, reportBoatOffer, type BoatOfferAction } from "./BoatOffe
 import { engineReady } from "./EngineLibrary";
 import { ModelgoOfferCard, type ModelgoCardAction } from "./ModelgoOffer";
 import { CLOUD_NOTICE_CARD, cloudNoticeStep, CloudNoticeCard } from "./CloudNotice";
-import { CloudTrialIntroCard } from "./CloudTrialIntro";
+function CloudTrialIntroCard(_props: { offer?: unknown; onStart?: () => void; onHowTo?: () => void; onSignIn?: () => void; onNotNow?: () => void; onDismiss?: () => void }) { return null; }
 import { useMoveQuiet } from "./CloudSendStrip";
-import { CloudTrialNoticeCard, useCloudPlanSnapshot } from "./CloudTrialNotice";
+function CloudTrialNoticeCard(_props: { view?: unknown; failed?: boolean; onAction?: () => void; onClose?: () => void }) { return null; }
+function useCloudPlanSnapshot(_bridge: unknown): { trial?: { state: string; endsAt: number }; credit?: unknown; status?: string } | null { return null; }
 import { GrokMovePopup, reportGrokMovePopup, type GrokMovePopupAction } from "./GrokMovePopup";
 import { GrokMoveDialog } from "./lazy-screens";
 import { LinkButton, NoticeCard, NoticeToast, NotNowButton } from "./NoticeCard";

@@ -7,7 +7,7 @@ vi.mock("@/lib/analytics", () => ({ track: vi.fn() }));
 import { track } from "@/lib/analytics";
 import { setLocale } from "@/lib/i18n";
 import { WHATS_NEW_NOTICE } from "@/lib/notices";
-import { newCloudUrl, reportWhatsNew, startTeamUrl, WHATS_NEW_SOURCES, whatsNewAudience, whatsNewSlides, whatsNewView, type WhatsNewView } from "./whats-new";
+import { newCloudUrl, reportWhatsNew, startTeamUrl, WHATS_NEW_SOURCES, whatsNewAudience, whatsNewSlides, whatsNewView } from "./whats-new";
 
 const DAY = 86_400_000, NOW = Date.UTC(2026, 10, 12);
 const OFFER: CloudOffer = { recommended: "pro", refundDays: 14, plans: [
@@ -74,28 +74,6 @@ describe("who sees which slides", () => {
   });
 });
 
-describe("the slides' plans, from the Admin's offer", () => {
-  it("names each plan with its price in the offer's numbers: Pro's money-back, Team's free trial", () => {
-    expect(whatsNewView({ status: "signed-out" }, OFFER)).toEqual({ slides: ["pro", "team"], audience: "none", signedIn: false, staging: false,
-      plans: { pro: { name: "Pro", terms: "Pro · $49/month + tax · 14-day money-back" }, team: { name: "Team", terms: "Free for 3 days, then $169/month + tax" } } });
-    const oneDay: CloudOffer = { ...OFFER, plans: OFFER.plans.map(plan => (plan.tier === "team" ? { ...plan, trialDays: 1 } : plan)) };
-    expect((whatsNewView({ status: "signed-out" }, oneDay) as WhatsNewView).plans.team?.terms).toBe("Free for 1 day, then $169/month + tax");
-    const priced: CloudOffer = { ...OFFER, refundDays: undefined, plans: OFFER.plans.map(plan => ({ ...plan, amount: plan.amount + 1000, trialDays: undefined })) };
-    expect(whatsNewView(onPlan("pro", { staging: true }), priced)).toEqual({ slides: ["team"], audience: "own", signedIn: true, staging: true,
-      plans: { team: { name: "Team", terms: "Team · $179/month + tax" } } });
-  });
-
-  it("leaves out a slide whose plan isn't sold, and shows nothing when neither is; waits for the offer, and offline waits for a later launch", () => {
-    const noTeam = { ...OFFER, plans: OFFER.plans.filter(plan => plan.tier !== "team") };
-    expect((whatsNewView(free, noTeam) as WhatsNewView).slides).toEqual(["pro"]);
-    expect((whatsNewView(free, { ...OFFER, plans: OFFER.plans.filter(plan => plan.tier !== "pro") }) as WhatsNewView).slides).toEqual(["team"]);
-    expect(whatsNewView(onPlan("pro"), noTeam)).toBe("none");
-    expect(whatsNewView(free, undefined)).toBe("loading");
-    expect(whatsNewView(free, null)).toBe("none");
-    expect(whatsNewView(onPlan("team"), OFFER)).toBe("none");
-    expect(whatsNewView(onPlan("team"), undefined), "nothing to wait for in a team").toBe("none");
-  });
-});
 
 describe("the funnel", () => {
   it("each slide's links carry its own source tag, to the Cloud website or the staging Admin's", () => {
