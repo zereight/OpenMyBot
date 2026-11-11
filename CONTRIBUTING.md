@@ -29,6 +29,7 @@ pnpm install
 pnpm dev:server    # harness server → 127.0.0.1:8799
 pnpm dev           # app → http://127.0.0.1:5199
 pnpm dev:desktop   # Electron shell (macOS/Ubuntu; keep server + Vite running)
+pnpm dev:all       # all three at once via concurrently
 
 pnpm typecheck     # app + server
 pnpm test          # vitest suite (server unit + driver contract + API smoke)
