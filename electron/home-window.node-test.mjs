@@ -3,11 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 
-import { cloudPlanSnapshot } from "./cloud-account.mjs";
-import { cloudPageSenderAllowed, myCloudOrigin } from "./cloud-home.mjs";
-import { otherOwnClouds } from "./cloud-list.mjs";
+import { cloudPageSenderAllowed } from "./cloud-home.mjs";
 import environments from "./environments.cjs";
-import localOrigin from "./local-origin.cjs";
 import { HOME_SCREEN_PATH, homeOf, installHomeWindowIpc, LOOK_MS, OPEN_MS, placeOf, QUIET_MS, routeOf, SPLASH_TEXT, splashText, TEAM_RENEW_EARLY_MS, TEAM_RENEW_MS, TEAM_RENEW_RETRY_MS, UPDATING_MS } from "./home-window.mjs";
 import { ACCOUNT, ACME, CLIENT, CLIENT_A, CLOUD, connected, done, LOCAL, TEAM, world } from "./fixtures/home-window-world.mjs";
 
@@ -496,36 +493,6 @@ test("only the verified Cloud, open as this window's active server, counts as th
 });
 
 const MAIN = readFileSync(new URL("./main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
-const PAGE_IPC = MAIN.slice(MAIN.indexOf("function myCloud() {"), MAIN.indexOf("const savedWorkspace = id =>"));
-
-const plain = (value) => JSON.parse(JSON.stringify(value));
-function pageIpc(overrides = {}) {
-  const handlers = new Map(), calls = [];
-  const localFrame = { url: `${LOCAL}/` }, localContents = { mainFrame: localFrame };
-  const cloudFrame = { url: `${CLOUD}/` }, cloudContents = { mainFrame: cloudFrame };
-  localOrigin.setLocalOrigin(LOCAL);
-  const account = { status: "connected", account: { id: "a1", email: "person@example.test" }, deviceId: "d1",
-    entitlement: { plan: "pro", tier: "max", status: "active", expiresAt: 1, version: 1 }, machine: { status: "ready", origin: CLOUD } };
-  const context = vm.createContext({
-    ipcMain: { handle: (channel, handler) => handlers.set(channel, handler), on: () => {} },
-    senderIsLocal: localOrigin.isLocalSender, workspaceSenderAllowed: environments.workspaceSenderAllowed, cloudPageSenderAllowed, otherOwnClouds,
-    activeEnvironment: environments.activeEnvironment, rendererOrigin: () => LOCAL, desktopRemoteAccess: false,
-    mainWindow: { isDestroyed: () => false, webContents: cloudContents },
-    environmentsState: { environments: [{ id: "cloud", name: "My Cloud", origin: CLOUD }], activeId: "cloud" },
-    cloudAccount: { homeTarget: () => ({ origin: CLOUD }), state: () => account, isOwnCloud: (origin) => origin === CLOUD }, cloudPlanSnapshot, myCloudOrigin, rememberedHome: null,
-    ensureCloudAccount: () => ({ openDashboard: async () => { calls.push(["dashboard"]); return account; }, state: () => account,
-      upgradePreview: async (...args) => { calls.push(["upgrade-preview", ...args]); return { outcome: "failed" }; },
-      upgrade: async (...args) => { calls.push(["upgrade", ...args]); return { outcome: "failed" }; },
-      cancelPlan: async (...args) => { calls.push(["cancel", ...args]); return { outcome: "failed" }; },
-      keepPlan: async (...args) => { calls.push(["keep", ...args]); return { outcome: "failed" }; },
-      roomNotNow: async (...args) => { calls.push(["room-not-now", ...args]); return true; },
-      restartNow: async (...args) => { calls.push(["restart-now", ...args]); return "restarting"; } }),
-    homeWindow: { homePage: () => false },
-    ...overrides,
-  });
-  vm.runInContext(PAGE_IPC, context);
-  return { handlers, calls, context, account, localContents, localFrame, cloudContents, cloudFrame };
-}
 
 test("no page gets a control over lending this computer: not My Cloud's, another Cloud's or this computer's own, and main handles none", async () => {
   for (const origin of [CLOUD, "https://omb-c-a.fly.dev", LOCAL]) {
