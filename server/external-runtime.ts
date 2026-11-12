@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
-type RuntimeBot = { id: string; hidden?: boolean; tasks?: Array<{ threadId: string; archivedAt?: number }> };
+import { archivedByPerson } from "../shared/wire.ts";
+type RuntimeBot = { id: string; hidden?: boolean; tasks?: Array<{ threadId: string; archivedAt?: number; archivedBy?: "auto" }> };
 type BotLookup = (id: string) => RuntimeBot | null | undefined;
 type Registration = { botId: string; tokenHash: string; threadId: string };
 export type ExternalRuntimeGrant = { botId: string; threadId: string; tokenHash: string };
@@ -57,7 +58,7 @@ function resolveRegistration(file: string, tokenHash: string, botForId: BotLooku
   if (!bot || bot.hidden) return null;
   // There is no durable "main thread" (bot.threadId is the UI selection), so every grant needs an explicit binding.
   const task = bot.tasks?.find(candidate => candidate.threadId === registration.threadId);
-  if (!task || task.archivedAt !== undefined) return null;
+  if (!task || archivedByPerson(task)) return null;
   return { botId: bot.id, threadId: task.threadId, tokenHash };
 }
 

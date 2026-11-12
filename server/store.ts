@@ -34,7 +34,7 @@ import type {
   TaskClosedBy, TaskOpenedBy, TaskUsage, WireBot, WireGroup,
   WireMessage, WireTask, BotProject as BotProjectRecord,
 } from "../shared/wire.ts";
-import { movesThreadToTop, nextOpenThread } from "../shared/wire.ts";
+import { archivedByPerson, movesThreadToTop, nextOpenThread } from "../shared/wire.ts";
 import { parseConnectorTools } from "./connector-tools.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
 import { initialGreetingMessage } from "./initial-greeting.ts"; import { createDefaultBot, defaultBotRefusal, type DefaultBotIntro } from "./default-bot.ts";
@@ -104,7 +104,7 @@ const ASK_NOW = { approvalMode: "ask" as const, autoApprove: false, alwaysAllow:
 
 const TASK_PATCH_FIELDS = [
   "title", "projectId", "modelSelection", "approvalMode", "autoApprove", "alwaysAllow",
-  "unread", "lastReadMessageId", "rewound", "archivedAt", "pinned", "pinnedMessageId", "resumeCursors", "lastInstanceId", "cwd",
+  "unread", "lastReadMessageId", "rewound", "archivedAt", "archivedBy", "restoredAt", "pinned", "pinnedMessageId", "resumeCursors", "lastInstanceId", "cwd",
   "routineRunId", "surface", "surfaceSource", "snoozedUntil", "link", "linkAuto", "appliedCompactionId", "contextFloor", "lastContextModel", "usage", "setupRequest", "botApi", "outside",
 ] as const satisfies readonly (keyof TaskRecord)[];
 export type TaskPatch = Partial<Pick<TaskRecord, typeof TASK_PATCH_FIELDS[number]>>;
@@ -590,6 +590,20 @@ export class Store {
       if (!task) continue;
       task.updatedAt = Math.max(task.updatedAt ?? 0, at);
       if (forOrder) task.lastThreadOrderAt = Math.max(task.lastThreadOrderAt ?? 0, orderAt);
+    }
+  }
+
+  private restoreAutoArchivedThread(threadId: string): void {
+    const owner = this.bots.find((bot) => bot.tasks?.some((task) => task.threadId === threadId && task.archivedBy === "auto"));
+    if (owner) this.restoreAutoArchived(owner.id, threadId);
+  }
+
+  private restoreAutoArchived(botId: string, threadId: string): void {
+    if (this.taskByThread(botId, threadId)?.archivedBy !== "auto") return;
+    try {
+      this.patchTask(botId, threadId, { archivedAt: undefined, archivedBy: undefined });
+    } catch (error) {
+      console.warn(`bringing an auto-archived thread back failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -1169,6 +1183,7 @@ export class Store {
       }
     }
     this.noteThreadActivity(threadId, full.at, movesThreadToTop(full), full.turnCompletedAt ?? full.at);
+    this.restoreAutoArchivedThread(threadId);
     this.emit({ type: "message", threadId, message: full });
     if (full.role === "user" && full.kind === "text") this.dismissOnboardingCard(threadId);
     return full;
@@ -1189,6 +1204,7 @@ export class Store {
       }
     }
     this.noteThreadActivity(threadId, full.at, movesThreadToTop(full), full.turnCompletedAt ?? full.at);
+    this.restoreAutoArchivedThread(threadId);
     this.emit({ type: "message", threadId, message: full });
     // After the insert, so no client ever sees two siblings claiming the same parent.
     for (const child of children) this.patchMessage(threadId, child.id, { parentId: full.id });
@@ -1654,6 +1670,7 @@ export class Store {
       task.snoozedUntil = undefined;
       this.saveBots();
     }
+    if (busy && !wasBusy) this.restoreAutoArchived(botId, threadId);
     this.refreshBotActivity(bot);
     this.emit({ type: "bot", botId });
     return bot;
@@ -2015,7 +2032,7 @@ export class Store {
 
   workThread(botId: string, fromBotId: string, fromThreadId: string, roomLane = false, also: (task: TaskRecord) => boolean = () => true): TaskRecord | undefined {
     return this.tasks(botId).find((t) => t.openedBy?.kind === "work" && t.openedBy.botId === fromBotId &&
-      t.openedBy.threadId === fromThreadId && Boolean(t.openedBy.roomLane) === roomLane && t.archivedAt === undefined && also(t));
+      t.openedBy.threadId === fromThreadId && Boolean(t.openedBy.roomLane) === roomLane && !archivedByPerson(t) && also(t));
   }
 
   projectBotForTask(botId: string, threadId: string): BotRecord | null {

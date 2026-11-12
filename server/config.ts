@@ -290,6 +290,10 @@ const threadsConfigSchema = z.object({
   eventLogMaxBytes: z.number().int().min(MIN_THREAD_EVENT_LOG_BYTES).max(MAX_THREAD_EVENT_LOG_BYTES).optional(),
   /** Days a closed or archived thread's event logs survive; absent keeps them forever. */
   eventLogRetentionDays: z.number().int().min(1).max(3650).optional(),
+  /** Archive bot threads left idle for `autoArchiveDays`; on unless false. A new message restores one. */
+  autoArchive: z.boolean().optional(),
+  /** Days a thread must sit without a message before it is archived; absent means 5. */
+  autoArchiveDays: z.number().int().min(1).max(3650).optional(),
 }).strict();
 const newBotsConfigSchema = z.object({
   /** Effort for a new bot whose model selection names none. */
@@ -302,6 +306,8 @@ const threadsPatchSchema = threadsConfigSchema.extend({
   maxConcurrentPerBot: threadsConfigSchema.shape.maxConcurrentPerBot.optional(),
   eventLogMaxBytes: threadsConfigSchema.shape.eventLogMaxBytes.nullable(),
   eventLogRetentionDays: threadsConfigSchema.shape.eventLogRetentionDays.nullable(),
+  autoArchive: threadsConfigSchema.shape.autoArchive.nullable(),
+  autoArchiveDays: threadsConfigSchema.shape.autoArchiveDays.nullable(),
 });
 const appConfigSchema = z.object({
   /** Set only by the verified domain endpoint, never by a config patch. */
@@ -479,7 +485,7 @@ export interface AppConfig extends HelperConfig {
   profile?: { name?: string; email?: string; aboutMe?: string; avatarUrl?: string }; everyBotRules?: string;
   rooms?: { turnTimeoutMinutes: number };
   mcp?: { callTimeoutMinutes?: number };
-  threads?: { maxConcurrentPerBot: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number }; burst?: { maxParallel?: number };
+  threads?: { maxConcurrentPerBot: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number; autoArchive?: boolean; autoArchiveDays?: number }; burst?: { maxParallel?: number };
   context?: { rebuildBytes?: number; compactAt?: number; autoCompact?: boolean; roomCompactAt?: number; roomSessions?: boolean; replayToolHistory?: boolean };
   memory?: { captureQuietMs?: number; tidyHour?: number };
   localVm?: { mode?: "shared" | "per-bot" | "pool"; maxInstances?: number; idleTimeoutMinutes?: number; preserveInstalledApps?: boolean; memoryGb?: number; cpus?: number };
@@ -610,6 +616,12 @@ export function threadEventLogMaxBytes(cfg: AppConfig): number | null {
 
 export function threadEventLogRetentionDays(cfg: AppConfig): number | null {
   return cfg.threads?.eventLogRetentionDays ?? null;
+}
+
+export const DEFAULT_AUTO_ARCHIVE_DAYS = 5;
+
+export function threadAutoArchiveDays(cfg: AppConfig): number | null {
+  return cfg.threads?.autoArchive === false ? null : cfg.threads?.autoArchiveDays ?? DEFAULT_AUTO_ARCHIVE_DAYS;
 }
 
 export function skillAuthoringEnabled(cfg: AppConfig): boolean {

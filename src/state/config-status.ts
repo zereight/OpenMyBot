@@ -69,7 +69,7 @@ export interface ConfigStatus {
   awakeLimit?: number;
   /** Bots paused for the plan's limit: kept, but taking no turns. */
   pausedBots?: string[];
-  threads?: { maxConcurrentPerBot: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
+  threads?: { maxConcurrentPerBot: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number; autoArchive?: boolean; autoArchiveDays?: number };
   automaticRecovery?: { enabled: boolean; backup?: ModelSelection };
   /** Prompt-cache keep-warm for idle Claude threads. Absent from older servers. */
   cacheKeepWarm?: { enabled: boolean; windowMinutes: number };

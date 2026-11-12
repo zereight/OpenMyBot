@@ -319,9 +319,12 @@ export function createTaskRoutes(deps: TaskRouteDeps): RouteHandler & { deleteTa
         patch.title = body.title;
       }
       if (body.archivedAt !== undefined) {
-        if (body.archivedAt === null) patch.archivedAt = undefined;
-        else if (typeof body.archivedAt === "number" && Number.isFinite(body.archivedAt) && body.archivedAt >= 0) patch.archivedAt = body.archivedAt;
+        if (body.archivedAt === null) {
+          patch.archivedAt = undefined;
+          if (store.taskByThread(m[1], m[2])?.archivedAt !== undefined) patch.restoredAt = Date.now();
+        } else if (typeof body.archivedAt === "number" && Number.isFinite(body.archivedAt) && body.archivedAt >= 0) patch.archivedAt = body.archivedAt;
         else return json(res, 400, { error: "archivedAt must be a timestamp, or null to unarchive" });
+        patch.archivedBy = undefined;
       }
       if (body.pinned !== undefined) {
         if (typeof body.pinned !== "boolean") return json(res, 400, { error: "pinned must be a boolean" });

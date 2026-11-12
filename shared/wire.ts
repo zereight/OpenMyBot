@@ -159,6 +159,10 @@ export interface WireTask extends InboxTask {
   /** Set by close_thread; absent while the thread is open. */
   closedBy?: TaskClosedBy;
   archivedAt?: number;
+  /** "auto": the server archived this idle thread itself, and a new message or turn brings it back. Absent when a person archived it. */
+  archivedBy?: "auto";
+  /** Epoch ms a person brought this thread back from the archive; its idle time counts from here. Server-stamped. */
+  restoredAt?: number;
   /** Only true is stored; absent means unpinned. */
   pinned?: boolean;
   link?: string;
@@ -628,6 +632,10 @@ export function orderedThreadList<T extends { pinned?: boolean; lastThreadOrderA
 /** 0 is the "until new activity" sentinel. The event stream never drops an expired snooze, so check the clock too. */
 export const isSnoozed = (task: Pick<WireTask, "snoozedUntil">, now = Date.now()): boolean =>
   task.snoozedUntil !== undefined && (task.snoozedUntil === 0 || task.snoozedUntil > now);
+
+/** A person's archive takes a thread out of routing; the server's own (`archivedBy` "auto") does not, since any message to it restores it. */
+export const archivedByPerson = (task: Pick<WireTask, "archivedAt" | "archivedBy">): boolean =>
+  task.archivedAt !== undefined && task.archivedBy !== "auto";
 
 type OpenThreadCandidate = Pick<WireTask, "routineRunId" | "archivedAt" | "closedBy" | "openedBy" | "snoozedUntil" | "pinned" | "lastThreadOrderAt" | "createdAt">;
 
