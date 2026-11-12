@@ -83,6 +83,17 @@ describe("the OpenRouter request on the wire", () => {
     });
   });
 
+  it("sends Google's Gemini Decision 1 to the Decisions API, also for a bot's own decide tool", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      answers: { answer: { type: "choice", choice: "maya", probabilities: { maya: 0.8, theo: 0.2 } } }, model: "google/gemini-decision-1", usage: { input_tokens: 40, output_tokens: 3 },
+    }), { status: 200 }));
+    const config: AppConfig = { decider: { ...ON.decider, openrouterModel: "google/gemini-decision-1", openrouterApi: "decisions" } };
+    const result = await decider(config, fetchImpl).choose("botDecide", STATE, QUESTION);
+    expect(result).toMatchObject({ ok: true, provider: "openrouter", model: "google/gemini-decision-1" });
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe("https://openrouter.ai/api/alpha/decisions");
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]![1]?.body)).model).toBe("google/gemini-decision-1");
+  });
+
   it("a saved model's own API wins over a stale one, and a malformed Decisions answer → malformed", async () => {
     const chat = vi.fn<typeof fetch>().mockResolvedValue(completion(choiceAnswers("theo", { theo: 0.97, maya: 0.03 })));
     await decider({ decider: { ...ON.decider, openrouterApi: undefined } }, chat).choose("roomRouting", STATE, QUESTION);

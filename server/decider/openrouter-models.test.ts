@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { OPENROUTER_MODEL_ID } from "./config.ts";
 import { OPENROUTER_DECIDER_MODELS, createOpenRouterModelCatalog, decisionsModels, mergeModels } from "./openrouter-models.ts";
 
 const URL_OK = "https://openrouter.ai/api/v1/models?output_modalities=decisions";
@@ -48,6 +49,14 @@ describe("which OpenRouter models the picker offers", () => {
 
   it("falls back to the curated list when none of it is offered any more", () => {
     expect(mergeModels(new Map([["alpha/model", "Alpha"]])).source).toBe("builtin");
+  });
+
+  it("offers Google's Gemini Decision 1 as a recommended model whose id Settings can save", () => {
+    const gemini = OPENROUTER_DECIDER_MODELS.find((m) => m.id === "google/gemini-decision-1");
+    expect(gemini).toBeDefined();
+    expect(OPENROUTER_MODEL_ID.test(gemini!.id)).toBe(true);
+    const list = mergeModels(new Map([[gemini!.id, "Google: Gemini Decision 1"], ["alpha/model", "Alpha"]]));
+    expect(list.models[0]).toEqual({ id: gemini!.id, name: "Google: Gemini Decision 1", group: "recommended", api: "decisions" });
   });
 
   it("is all decisions models, led by the default", () => {
