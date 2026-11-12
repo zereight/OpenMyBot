@@ -107,6 +107,19 @@ export function ownMcpOverHttp(server: TurnStdioMcpServer): { url: string; heade
     headers: { authorization: `Bearer ${token}`, ...(limit === undefined ? {} : { [TOOL_LIMIT_HEADER]: limit }) } } : null;
 }
 
+/** Claude CLI's own servers (agents, browser, data, device) run once inside this server and are reached by URL, instead of
+ * one Node proxy process per server per session (~240 MB each). Gated servers and the person's own stay stdio;
+ * OMB_OWN_MCP_STDIO=1 opts out. Edits `mcpServers` in place. */
+export function reachOwnMcpByUrl(mcpServers: Record<string, unknown>): void {
+  if (process.env.OMB_OWN_MCP_STDIO === "1") return;
+  for (const [name, spec] of Object.entries(mcpServers)) {
+    const stdio = spec as { command?: unknown; args?: unknown; env?: unknown; alwaysLoad?: unknown };
+    if (typeof stdio.command !== "string" || !Array.isArray(stdio.args)) continue;
+    const own = ownMcpOverHttp({ name, command: stdio.command, args: stdio.args as string[], env: (stdio.env ?? {}) as Record<string, string> });
+    if (own) mcpServers[name] = { type: "http", url: own.url, headers: own.headers, ...(stdio.alwaysLoad === true ? { alwaysLoad: true } : {}) };
+  }
+}
+
 /** The turn's MCP servers as ACP session/new takes them. stdio is the baseline every ACP agent supports; an agent that
  * reaches servers by URL (`http`) gets OpenMausBot's own as endpoints of this server instead of a proxy process each.
  * `engine` is the driver kind, whose provider may limit each tool's schema; `toolBudget`, how many MCP tools the model's

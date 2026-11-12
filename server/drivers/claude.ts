@@ -36,8 +36,7 @@ import type {
   TextGenerationOptions,
 } from "../contracts.ts";
 import { appMountFor, customServerGate, gateQueryTools, gateServer } from "../mcp-gate-config.ts";
-import { ownMcpOverHttp } from "./turn-mcp.ts";
-import { canUseMcpServer } from "../../shared/tool-scope.ts";
+import { canUseMcpServer } from "../../shared/tool-scope.ts"; import { reachOwnMcpByUrl } from "./turn-mcp.ts";
 import { assertToolScopeSupported } from "../../shared/tool-scope-support.ts";
 import { newEventId, newId } from "../contracts.ts";
 import { askInputSummary, commandSummary, toolDetailPreview } from "../tool-summary.ts";
@@ -1121,16 +1120,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         const gated = gateServer({ name, server: mcpServers[name], threadId, nodeEnv: NODE_ENV_FLAG, toolScope: turn.toolScope, ...customServerGate(name, botOwned.has(name), turn.integrations?.customResultBudgets, turnEnvironment), apps: appMountFor(name, turn) });
         if (gated) mcpServers[name] = { ...gated, ...((mcpServers[name] as { alwaysLoad?: unknown })?.alwaysLoad === true ? { alwaysLoad: true } : {}) };
       }
-      // OpenMausBot's own servers (agents, browser, data, device) run once inside this server and are reached by URL, instead of
-      // one Node proxy process per server per session (~240 MB each). Gated or the person's servers stay stdio; OMB_OWN_MCP_STDIO=1 opts out.
-      if (process.env.OMB_OWN_MCP_STDIO !== "1") {
-        for (const [name, spec] of Object.entries(mcpServers)) {
-          const stdio = spec as { command?: unknown; args?: unknown; env?: unknown; alwaysLoad?: unknown };
-          if (typeof stdio.command !== "string" || !Array.isArray(stdio.args)) continue;
-          const own = ownMcpOverHttp({ name, command: stdio.command, args: stdio.args as string[], env: (stdio.env ?? {}) as Record<string, string> });
-          if (own) mcpServers[name] = { type: "http", url: own.url, headers: own.headers, ...(stdio.alwaysLoad === true ? { alwaysLoad: true } : {}) };
-        }
-      }
       allowed.splice(0, allowed.length, ...allowed.filter((name) => Object.hasOwn(mcpServers, name.slice("mcp__".length).split("__")[0]!)));
       // Full access keeps ask_user: native bypass skips permission prompts, not questions.
       let broker: Awaited<ReturnType<typeof createPermissionBroker>> | undefined;
@@ -1140,7 +1129,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       }
       const permissionEnv = { ...NODE_ENV_FLAG, ...(turn.toolScope !== undefined ? { OMB_PERMISSION_TOOL_SCOPE: JSON.stringify(turn.toolScope) } : {}) };
       mcpServers.ogb = { command: process.execPath, args: [PERM_PROXY_PATH, socketPath], env: permissionEnv, alwaysLoad: true };
-      allowed.push("mcp__ogb", ...gateQueryTools(mcpServers));
+      allowed.push("mcp__ogb", ...gateQueryTools(mcpServers)); reachOwnMcpByUrl(mcpServers);
       // A guest pre-allows only harness tools; anything else (the browser can open file:) asks.
       if (turn.guestConfined) allowed.splice(0, allowed.length, ...allowed.filter((name) => name === "mcp__ogb" || name === "mcp__agents"));
       const env = withEndpointFolder(environment(config.endpointModels ? undefined : turnModel), config, () => retryState.delete(threadId));
