@@ -10202,5 +10202,18 @@
   "phoneUpdate.body": "{phone} has an older version of the MausBot app, which can no longer connect to this computer away from your Wi-Fi. Update the app on that phone, then open it once on the same Wi-Fi as this computer. If that doesn't reconnect it, pair it again.",
   "phoneUpdate.bodyMany": "{count} of your phones have an older version of the MausBot app, which can no longer connect to this computer away from your Wi-Fi. Update the app on each phone, then open it once on the same Wi-Fi as this computer. If that doesn't reconnect it, pair it again.",
   "phoneUpdate.open": "Open Phone & devices",
-  "remote.devices.pairAgain": "Pair again"
+  "remote.devices.pairAgain": "Pair again",
+  "board.allTeams": "All teams",
+  "board.column.attention": "Needs you",
+  "board.column.done": "Done in the last day",
+  "board.column.idle": "Idle",
+  "board.column.teammates": "Waiting on teammates",
+  "board.column.working": "Working",
+  "board.empty": "Nothing here",
+  "board.showMore": "Show {count} more",
+  "board.stalled": "No signal",
+  "board.team": "Team",
+  "board.unread": "Unread",
+  "canvas.view.board": "Board",
+  "canvas.view.map": "Map"
 }
