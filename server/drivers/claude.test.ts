@@ -1275,6 +1275,26 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     }
   });
 
+  it("keeps own servers on stdio proxies when OMB_OWN_MCP_STDIO=1", async () => {
+    await create();
+    const dump = join(scratch, "dump.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    process.env.OMB_OWN_MCP_STDIO = "1";
+    try {
+      await instance.adapter.sendTurn({
+        threadId: "t-agents-stdio",
+        text: "hi",
+        approvalMode: "ask",
+        integrations: { agents: { command: process.execPath, args: ["/fake/agents-proxy.js"], env: { OMB_HARNESS_URL: "http://127.0.0.1:1", OMB_BOT_ID: "b1", OMB_COMMS_TOKEN: "tok", OMB_TURN_DEPTH: "0" } } },
+      });
+      await recorder.until((e) => e.type === "turn.completed");
+    } finally {
+      delete process.env.OMB_OWN_MCP_STDIO;
+    }
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.mcpConfig.mcpServers.agents).toMatchObject({ args: ["/fake/agents-proxy.js"], env: { OMB_BOT_ID: "b1", OMB_COMMS_TOKEN: "tok" } });
+  });
+
   it.each(["ask", "auto"] as const)("pre-allows the agents comms proxy while retaining native %s approval", async (approvalMode) => {
     await create();
     const dump = join(scratch, "dump.json");
@@ -1295,11 +1315,14 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await recorder.until((e) => e.type === "turn.completed");
 
     const seen = JSON.parse(readFileSync(dump, "utf8"));
+    // Own servers are reached by URL on the harness, not one Node proxy process per session.
     expect(seen.mcpConfig.mcpServers.agents).toMatchObject({
+      type: "http",
       alwaysLoad: true,
-      args: ["/fake/agents-proxy.js"],
-      env: { OMB_BOT_ID: "b1", OMB_COMMS_TOKEN: "tok" },
+      url: "http://127.0.0.1:1/api/internal/mcp-http/agents",
+      headers: { authorization: "Bearer tok" },
     });
+    expect(seen.mcpConfig.mcpServers.agents).not.toHaveProperty("command");
     expect(JSON.stringify(seen.argv)).not.toContain("tok");
     const allowed = seen.argv[seen.argv.indexOf("--allowedTools") + 1];
     expect(allowed).toContain("mcp__agents");
