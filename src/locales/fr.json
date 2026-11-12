@@ -1235,7 +1235,6 @@
   "task.updated.hours": "il y a {count} h",
   "task.updated.yesterday": "hier",
   "task.updated.days": "il y a {count} j",
-  "task.helperGroup": "Ouverts par des bots",
   "onboarding.continue": "Continuer",
   "onboarding.engines.otherWays": "Autres options",
   "onboarding.engines.connected": "{name} est connecté. Vos bots peuvent commencer dès maintenant.",

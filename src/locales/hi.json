@@ -1235,7 +1235,6 @@
   "task.updated.hours": "{count} घंटे पहले",
   "task.updated.yesterday": "कल",
   "task.updated.days": "{count} दिन पहले",
-  "task.helperGroup": "बॉट्स द्वारा खोले गए",
   "onboarding.continue": "जारी रखें",
   "onboarding.engines.otherWays": "दूसरे तरीके",
   "onboarding.engines.connected": "{name} जुड़ गया है। आपके बॉट अब शुरू कर सकते हैं।",

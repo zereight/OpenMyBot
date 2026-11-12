@@ -1,6 +1,6 @@
-import { memo, useEffect, useRef, useState, type Dispatch, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type Dispatch } from "react";
 import { createPortal } from "react-dom";
-import { Archive, ArchiveRestore, BellOff, Check, ChevronRight, Clock, Clock3, FolderInput, Link2, Link2Off, Loader2, MoreHorizontal, Pencil, Pin, PinOff, RefreshCw, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, BellOff, Bot, Check, Clock, Clock3, FolderInput, Link2, Link2Off, Loader2, MoreHorizontal, Pencil, Pin, PinOff, RefreshCw, Trash2 } from "lucide-react";
 import type { Action, AppState, BotProject, Task } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { MENU_SHEET } from "./menu-recipe";
@@ -94,33 +94,8 @@ const isWaitingOnTeammate = (task: Pick<Task, "waitingForTeammates">): boolean =
 const demandsAttention = (task: ThreadRowTask, activeId: string) =>
   task.threadId === activeId || task.activity === "waiting-on-you" || isWorking(task) || isWaitingOnTeammate(task) || Boolean(task.queued) || Boolean(task.unread);
 
-export function partitionHelperThreads<T extends ThreadRowTask>(tasks: T[], activeId: string, query = "", folders: BotProject[] = []): { own: T[]; helpers: T[] } {
-  if (query.trim()) return { own: tasks, helpers: [] };
-  const own: T[] = [];
-  const helpers: T[] = [];
-  for (const task of tasks) {
-    const filed = folders.some((folder) => folder.id === task.projectId);
-    const helper = Boolean(task.openedBy) && task.pinned !== true && !filed && !demandsAttention(task, activeId) &&
-      !task.closedBy && !isArchived(task) && !isSnoozed(task);
-    (helper ? helpers : own).push(task);
-  }
-  return { own, helpers };
-}
-
-export function HelperThreadGroup<T>({ tasks, renderThread }: { tasks: T[]; renderThread: (task: T) => ReactNode }) {
-  const [open, setOpen] = useState(false);
-  if (tasks.length === 0) return null;
-  const label = t("task.helperGroup");
-  return <div data-sidebar-helper-threads="">
-    <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} aria-label={t(open ? "task.collapseNamed" : "task.expandNamed", { name: label })}
-      className="flex min-h-8 w-full items-center gap-1.5 rounded-md py-1 pl-1.5 pr-3 text-left text-[12px] text-ink-secondary hover:bg-raised/30 hover:text-ink">
-      <ChevronRight aria-hidden="true" size={11} className={cn("shrink-0 transition-transform", open && "rotate-90")} />
-      <span className="truncate">{label}</span>
-      <span className="shrink-0 text-[10px] opacity-50">{tasks.length}</span>
-    </button>
-    {open && <div role="group" aria-label={label}>{tasks.map(renderThread)}</div>}
-  </div>;
-}
+/** Threads a bot opened sit in the list by recency but spend their own rows, so they never push the person's threads out of the six. */
+const BOT_OPENED_VISIBLE = 3;
 
 export function visibleSidebarThreads<T extends ThreadRowTask>(tasks: T[], activeId: string, query = "", folders: BotProject[] = [], showAll = false): T[] {
   const needle = query.trim().toLowerCase();
@@ -129,13 +104,14 @@ export function visibleSidebarThreads<T extends ThreadRowTask>(tasks: T[], activ
   }
   if (showAll) return tasks;
   let open = 0;
+  let botOpened = 0;
   return orderedThreadList(tasks).filter((task) => {
     if (task.pinned === true) return true;
     if (task.openedBy?.burstId) return task.threadId === activeId || demandsAttention(task, activeId);
     if (isArchived(task)) return task.threadId === activeId;
-    return task.closedBy || isSnoozed(task)
-      ? demandsAttention(task, activeId)
-      : open++ < 6 || demandsAttention(task, activeId);
+    if (task.closedBy || isSnoozed(task)) return demandsAttention(task, activeId);
+    if (task.openedBy) return botOpened++ < BOT_OPENED_VISIBLE || demandsAttention(task, activeId);
+    return open++ < 6 || demandsAttention(task, activeId);
   });
 }
 
@@ -256,7 +232,8 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, 
   const menuRef = useRef<HTMLDivElement>(null);
   const actionRef = useRef<HTMLButtonElement>(null);
   const status = task.activity === "waiting-on-you" ? t("task.waiting") : isWaitingOnTeammate(task) ? t("task.waitingOnTeammate") : isWorking(task) ? activityLabel ?? t("chat.activity.working") : task.queued ? t("task.queued") : null;
-  const byline = threadByline(task);
+  const opener = threadOpenerLabel(task);
+  const byline = threadByline({ ...task, openedBy: undefined });
   const updatedAt = threadRecency(task);
   const updatedStamp = formatUpdatedAt(updatedAt);
   const updatedLabel = now === undefined ? updatedStamp : threadUpdatedLabel(updatedAt, now);
@@ -344,6 +321,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, 
         className={cn("shrink-0 rounded px-1 font-mono text-[11px] text-ink-secondary hover:bg-raised hover:text-ink outline-none focus-visible:ring-1 focus-visible:ring-accent/60 [unicode-bidi:isolate]", panel && "mt-2.5")}>{threadLinkLabel(task.link) ?? t("task.link")}</a>}
       {!renaming && <span className={cn("flex shrink-0 items-center gap-2 px-1", panel && "pt-2.5 empty:hidden")} onClick={choose} onContextMenu={contextMenu}>
         {updatedLabel && !panel && <time dateTime={new Date(updatedAt).toISOString()} className="shrink-0 tabular-nums text-[10px] text-ink-secondary">{updatedLabel}</time>}
+        {opener && <span title={opener} role="img" aria-label={opener} className="shrink-0 text-ink-tertiary"><Bot size={11} aria-hidden="true" /></span>}
         {task.pinned === true && <Pin size={11} className="shrink-0 text-ink-secondary" aria-label={t("sidebar.bot.pin")} />}
         {task.activity === "waiting-on-you" ? <span className="shrink-0 text-[10px] font-medium text-warning">{t("task.waiting")}</span> : isWaitingOnTeammate(task) ? <Clock3 size={11} className="shrink-0 text-ink-secondary" aria-label={t("task.waitingOnTeammate")} /> : isWorking(task) && !panel ? <Loader2 size={11} className="shrink-0 animate-spin text-success" aria-label={activityLabel ?? t("chat.activity.working")} /> : task.queued ? <span className="shrink-0 text-[10px] text-ink-secondary">{t("task.queued")}</span> : null}
         {task.unread && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label={t("task.unread")} />}
