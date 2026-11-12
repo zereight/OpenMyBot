@@ -18,6 +18,7 @@ export interface OpenRouterModelList {
 
 export const OPENROUTER_DECIDER_MODELS: ReadonlyArray<{ id: string; name: string }> = [
   { id: OPENROUTER_DEFAULT_MODEL, name: "TypeSafe: Jev 1.13" },
+  { id: "google/gemini-decision-1", name: "Google: Gemini Decision 1" },
   { id: "perplexity/pplx-decider-v1.1-27b", name: "Perplexity: Decider V1.1 27B" },
   { id: "openai/gpt-6-luna-decisions", name: "OpenAI: GPT-6 Luna Decisions" },
   { id: "nace-ai/drex-v1.5", name: "Nace.AI: Drex v1.5" },
