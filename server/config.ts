@@ -16,7 +16,7 @@ import { withoutComputerEngine } from "./computer-engine-removal.ts";
 import { newBotDefaultsSchema, type NewBotDefaults } from "./new-bot-defaults.ts";
 import { replaySettings } from "./replay-settings.ts";
 import { EFFORT_LEVELS, type EffortLevel } from "../shared/wire.ts";
-import { isModelVariant, type InstanceConfigMap, type McpServerSpec, type ModelSelection } from "./contracts.ts";
+import { isModelVariant, type InstanceConfigMap, type ModelSelection } from "./contracts.ts";
 import { API_KEY_FLEET, DEFAULT_FLEET, OPENAI_API_INSTANCE, OPENROUTER_API_INSTANCE, CLAUDE_API_INSTANCE, PRODUCT_FLEET_ADDITIONS } from "./instance-fleets.ts";
 export { CLAUDE_API_INSTANCE, OPENAI_API_INSTANCE, OPENROUTER_API_INSTANCE, XAI_API_INSTANCE } from "./instance-fleets.ts";
 import { DEFAULT_WINDOW_MINUTES, MAX_WINDOW_MINUTES } from "./cache-keepwarm.ts";
@@ -25,7 +25,6 @@ import { helperStoredShape, type HelperConfig } from "./side-jobs.ts";
 import { loopGuardConfigSchema, type LoopGuardConfig } from "./host/loop-guard.ts";
 import { migrateLegacyFeatureFlags } from "./legacy-feature-flags.ts";
 import { settledFileCache, settledFileStamp } from "./settled-file.ts";
-import { isRemoteMcpServer, mcpServerServes, parseStoredMcpServer } from "./mcp-registry.ts"; import { postizKeyHeaders } from "./postiz/connection.ts";
 import { parseJson, schemaIssue, type JsonObject, type JsonValue } from "./schema.ts";
 import { deciderConfigSchema, type DeciderConfig } from "./decider/config.ts";
 import { liveConfigSchema, liveConfigWithEnv, liveSettingEnv, type LiveConfig } from "./live-config.ts";
@@ -290,6 +289,10 @@ const threadsConfigSchema = z.object({
   eventLogMaxBytes: z.number().int().min(MIN_THREAD_EVENT_LOG_BYTES).max(MAX_THREAD_EVENT_LOG_BYTES).optional(),
   /** Days a closed or archived thread's event logs survive; absent keeps them forever. */
   eventLogRetentionDays: z.number().int().min(1).max(3650).optional(),
+  /** Archive bot threads left idle for `autoArchiveDays`; on unless false. A new message restores one. */
+  autoArchive: z.boolean().optional(),
+  /** Days a thread must sit without a message before it is archived; absent means 5. */
+  autoArchiveDays: z.number().int().min(1).max(3650).optional(),
 }).strict();
 const newBotsConfigSchema = z.object({
   /** Effort for a new bot whose model selection names none. */
@@ -302,6 +305,8 @@ const threadsPatchSchema = threadsConfigSchema.extend({
   maxConcurrentPerBot: threadsConfigSchema.shape.maxConcurrentPerBot.optional(),
   eventLogMaxBytes: threadsConfigSchema.shape.eventLogMaxBytes.nullable(),
   eventLogRetentionDays: threadsConfigSchema.shape.eventLogRetentionDays.nullable(),
+  autoArchive: threadsConfigSchema.shape.autoArchive.nullable(),
+  autoArchiveDays: threadsConfigSchema.shape.autoArchiveDays.nullable(),
 });
 const appConfigSchema = z.object({
   /** Set only by the verified domain endpoint, never by a config patch. */
@@ -479,7 +484,7 @@ export interface AppConfig extends HelperConfig {
   profile?: { name?: string; email?: string; aboutMe?: string; avatarUrl?: string }; everyBotRules?: string;
   rooms?: { turnTimeoutMinutes: number };
   mcp?: { callTimeoutMinutes?: number };
-  threads?: { maxConcurrentPerBot: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number }; burst?: { maxParallel?: number };
+  threads?: { maxConcurrentPerBot: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number; autoArchive?: boolean; autoArchiveDays?: number }; burst?: { maxParallel?: number };
   context?: { rebuildBytes?: number; compactAt?: number; autoCompact?: boolean; roomCompactAt?: number; roomSessions?: boolean; replayToolHistory?: boolean };
   memory?: { captureQuietMs?: number; tidyHour?: number };
   localVm?: { mode?: "shared" | "per-bot" | "pool"; maxInstances?: number; idleTimeoutMinutes?: number; preserveInstalledApps?: boolean; memoryGb?: number; cpus?: number };
@@ -610,6 +615,12 @@ export function threadEventLogMaxBytes(cfg: AppConfig): number | null {
 
 export function threadEventLogRetentionDays(cfg: AppConfig): number | null {
   return cfg.threads?.eventLogRetentionDays ?? null;
+}
+
+export const DEFAULT_AUTO_ARCHIVE_DAYS = 5;
+
+export function threadAutoArchiveDays(cfg: AppConfig): number | null {
+  return cfg.threads?.autoArchive === false ? null : cfg.threads?.autoArchiveDays ?? DEFAULT_AUTO_ARCHIVE_DAYS;
 }
 
 export function skillAuthoringEnabled(cfg: AppConfig): boolean {
@@ -1214,32 +1225,3 @@ export function instanceConfigs(cfg: AppConfig): InstanceConfigMap {
   return map;
 }
 
-// config.json: { "mcpServers": { "notes": { "command": "npx", "args": ["-y", "@x/notes-mcp"], "env": { "NOTES_TOKEN": "…" } },
-//                                "docs": { "type": "http", "url": "https://…/mcp", "headers": { "Authorization": "Bearer …" } } } }
-
-export type CustomMcpServer = McpServerSpec;
-
-const reportedMcpSkips = new Set<string>();
-function skipMcpEntry(name: string, why: string): void {
-  const key = `${name}: ${why}`;
-  if (reportedMcpSkips.has(key)) return;
-  reportedMcpSkips.add(key);
-  console.error(`mcpServers.${JSON.stringify(name)} skipped — ${why}`);
-}
-
-export function customMcpServers(cfg: AppConfig, only?: string[], botId?: string): Record<string, CustomMcpServer> {
-  const out: Record<string, CustomMcpServer> = {};
-  for (const [name, raw] of Object.entries(cfg.mcpServers ?? {})) {
-    if (only && !only.includes(name)) continue;
-    const parsed = parseStoredMcpServer(name, raw);
-    if (!parsed.ok) {
-      skipMcpEntry(name, `${parsed.error} Expected { "command": "npx", "args": [...], "env": { ... } } or { "type": "http", "url": "https://…", "headers": { ... } }`);
-      continue;
-    }
-    if (!parsed.server.enabled || parsed.server.runsOn || !mcpServerServes(parsed.server, botId)) continue; // another computer's or bot's own
-    out[name] = isRemoteMcpServer(parsed.server)
-      ? { type: parsed.server.type, url: parsed.server.url, headers: { ...parsed.server.headers, ...postizKeyHeaders(cfg.postiz, name, parsed.server) } }
-      : { command: parsed.server.command, args: parsed.server.args, env: parsed.server.env };
-  }
-  return out;
-}

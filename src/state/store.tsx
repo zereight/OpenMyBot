@@ -12,7 +12,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import type { BotMovedTo, BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, LiveCallState, ServerFrame, GroupThreadUsage, ResolvedSender, SteerQueueReason, WireBot, WireGroup, WireTask, OptionCardData as WireOptionCard } from "../../shared/wire"; import type { InstanceEndpointInfo } from "../../shared/claude-endpoint";
-import { movesThreadToTop } from "../../shared/wire"; import type { DefaultBotFields } from "../../shared/default-bot";
+import { movesThreadToTop } from "../../shared/thread-order"; import type { DefaultBotFields } from "../../shared/default-bot";
 import { reorderStable } from "../../shared/bot-order";
 import { withOneChief } from "../../shared/bot-owner";
 import { DATA_ROUTES, type DataSheet, type DataTable } from "../../shared/data-surface";

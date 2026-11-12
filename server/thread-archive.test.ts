@@ -42,6 +42,35 @@ describe("thread archive through an isolated HTTP fixture", () => {
     expect("archivedAt" in persistedTask(bot.id, task.threadId)).toBe(false);
   });
 
+  it("stamps restoredAt when a person unarchives, and a later archive is not marked automatic", async () => {
+    const bot = (await api("POST", "/api/bots", { name: "Restore stamp" })).body.bot;
+    const task = (await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Bring back" })).body.task;
+    const untouched = await api("PATCH", `/api/bots/${bot.id}/tasks/${task.threadId}`, { archivedAt: null });
+    expect(untouched.status).toBe(200);
+    expect(untouched.body.task.restoredAt).toBeUndefined();
+    expect("restoredAt" in persistedTask(bot.id, task.threadId)).toBe(false);
+    const at = 1700000000000;
+    expect((await api("PATCH", `/api/bots/${bot.id}/tasks/${task.threadId}`, { archivedAt: at })).status).toBe(200);
+    const before = Date.now();
+    const restored = await api("PATCH", `/api/bots/${bot.id}/tasks/${task.threadId}`, { archivedAt: null });
+    const after = Date.now();
+    expect(restored.status).toBe(200);
+    expect(restored.body.task.archivedAt).toBeUndefined();
+    expect(restored.body.task.archivedBy).toBeUndefined();
+    expect(restored.body.task.restoredAt).toBeGreaterThanOrEqual(before);
+    expect(restored.body.task.restoredAt).toBeLessThanOrEqual(after);
+    const saved = persistedTask(bot.id, task.threadId);
+    expect(saved.restoredAt).toBe(restored.body.task.restoredAt);
+    expect("archivedAt" in saved).toBe(false);
+    expect("archivedBy" in saved).toBe(false);
+    const again = await api("PATCH", `/api/bots/${bot.id}/tasks/${task.threadId}`, { archivedAt: at + 1 });
+    expect(again.status).toBe(200);
+    expect(again.body.task.archivedAt).toBe(at + 1);
+    expect(again.body.task.archivedBy).toBeUndefined();
+    expect(again.body.task.restoredAt).toBe(saved.restoredAt);
+    expect("archivedBy" in persistedTask(bot.id, task.threadId)).toBe(false);
+  });
+
   it("rejects values that are not timestamps so the flag cannot drift into junk", async () => {
     const bot = (await api("POST", "/api/bots", { name: "Archive validation" })).body.bot;
     const task = (await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Validated" })).body.task;

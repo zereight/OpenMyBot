@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { AppConfig } from "../config.ts";
-import { customMcpServers } from "../config.ts";
+import { customMcpServers } from "../custom-mcp.ts";
 import { noteKeyAccepted } from "../key-rejections.ts";
 import { McpOAuthManager } from "../mcp-oauth.ts";
 import { startFakeHttpMcp } from "../testing/fake-http-mcp-server.ts";

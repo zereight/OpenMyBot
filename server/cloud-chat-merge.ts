@@ -6,7 +6,7 @@ import { chmodSync, constants, copyFileSync, lstatSync, mkdirSync, readFileSync 
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { splitTranscriptAttachments } from "../src/lib/composer-attachments.ts";
-import { movesThreadToTop } from "../shared/wire.ts";
+import { movesThreadToTop } from "../shared/thread-order.ts";
 import { cleanupStaleAttachmentPartials } from "./attachments.ts";
 import { stampOwner, type CloudOwner } from "./cloud-owner-lines.ts";
 import type { BotRecord, GroupDefaultResponder, GroupRecord, GroupTaskRecord, Message, Store, TaskRecord } from "./store.ts";

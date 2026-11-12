@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { writeFileAtomic } from "../atomic.ts";
 import type { AppConfig } from "../config.ts";
 import { launcherOf } from "../cloud-connections.ts";
-import { customMcpServers } from "../config.ts";
+import { customMcpServers } from "../custom-mcp.ts";
 import type { McpServerSpec, StdioMcpSpec } from "../contracts.ts";
 import { addBotMcpServer, claimBotMcpServers, keepForBot, withoutBotMcpServers, type BotKept, type BotMcpServerAdd } from "../mcp-bot-servers.ts";
 import { MCP_RESTART_ENV } from "../mcp-app-catalog.ts";

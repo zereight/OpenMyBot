@@ -1,4 +1,5 @@
 import { failedTurnTool } from "../../shared/failed-turn.ts";
+import { archivedByPerson } from "../../shared/thread-order.ts";
 import { admit } from "../admission.ts";
 import { memoryStopped } from "../engine-memory.ts";
 import {
@@ -155,7 +156,7 @@ export function createChiefNotices(deps: ChiefNoticeDeps) {
     const routing = deps.routing;
     const person = chief && routing ? routing.personOf(chief) : null;
     if (!chief || !reachesChief(chief, bot, threadId)) return tellThePerson();
-    const notices = store.tasks(chief.id).find((candidate) => (candidate.title === input.title || (input.title === INCIDENTS_THREAD_TITLE && candidate.title === OLD_INCIDENTS_THREAD_TITLE)) && !candidate.archivedAt &&
+    const notices = store.tasks(chief.id).find((candidate) => (candidate.title === input.title || (input.title === INCIDENTS_THREAD_TITLE && candidate.title === OLD_INCIDENTS_THREAD_TITLE)) && !archivedByPerson(candidate) &&
         (!routing || routing.startedBy(candidate.threadId) === (person ?? undefined)))
       ?? store.createTask(chief.id, input.title, false, undefined, { botId: chief.id, name: chief.name, at: Date.now() }, undefined, undefined, undefined,
         routing && person ? (created) => routing.open(created.threadId, person) : undefined);

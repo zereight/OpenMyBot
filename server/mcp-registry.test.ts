@@ -362,7 +362,7 @@ describe("a server of another computer's", () => {
   });
 
   it("is never started here", async () => {
-    const { customMcpServers } = await import("./config.ts");
+    const { customMcpServers } = await import("./custom-mcp.ts");
     const servers = customMcpServers({ mcpServers: { notes: { command: "notes-mcp", runsOn: MAC }, dodo: { command: "npx", args: ["dodo"] } } } as never);
     expect(Object.keys(servers)).toEqual(["dodo"]);
   });

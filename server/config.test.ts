@@ -9,9 +9,9 @@ import { botThreadLimitText, defaultBotThreads, maxConcurrentBotThreads, maxConc
 import type { JsonValue } from "./schema.ts";
 import { imageSlots } from "./image-generation.ts";
 
+import { customMcpServers } from "./custom-mcp.ts";
 import { cacheUntilConfigChanges,
   changedInstanceIds,
-  customMcpServers,
   engineLaunches,
   DATA_DIR,
   ensureDirs,
@@ -27,6 +27,7 @@ import { cacheUntilConfigChanges,
   persistableInstanceConfigs,
   roomTurnTimeoutMinutes,
   mcpCallTimeoutMinutes,
+  threadAutoArchiveDays,
   threadEventLogMaxBytes,
   threadEventLogRetentionDays,
   showToolCallsEnabled,
@@ -176,6 +177,21 @@ describe("configuration boundaries", () => {
     expect(parseConfigPatch({ threads: { eventLogMaxBytes: null } })).toEqual({ threads: { eventLogMaxBytes: null } });
     for (const value of [0, -1, 256 * 1024 - 1, 1.5, "1000"]) {
       expect(() => parseConfigPatch({ threads: { maxConcurrentPerBot: 3, eventLogMaxBytes: value } })).toThrow("threads.eventLogMaxBytes");
+    }
+  });
+
+  it("archives idle threads after five days unless the switch is off", () => {
+    expect(threadAutoArchiveDays({})).toBe(5);
+    expect(threadAutoArchiveDays(parseStoredConfig({ threads: { maxConcurrentPerBot: 2 } }))).toBe(5);
+    expect(threadAutoArchiveDays(parseStoredConfig({ threads: { maxConcurrentPerBot: 2, autoArchiveDays: 14 } }))).toBe(14);
+    expect(threadAutoArchiveDays(parseStoredConfig({ threads: { maxConcurrentPerBot: 2, autoArchive: false } }))).toBeNull();
+    expect(threadAutoArchiveDays(parseStoredConfig({ threads: { maxConcurrentPerBot: 2, autoArchive: false, autoArchiveDays: 14 } }))).toBeNull();
+    expect(parseConfigPatch({ threads: { autoArchiveDays: 14 } })).toEqual({ threads: { autoArchiveDays: 14 } });
+    expect(parseConfigPatch({ threads: { autoArchive: false } })).toEqual({ threads: { autoArchive: false } });
+    expect(parseConfigPatch({ threads: { autoArchive: null } })).toEqual({ threads: { autoArchive: null } });
+    expect(parseConfigPatch({ threads: { autoArchiveDays: null } })).toEqual({ threads: { autoArchiveDays: null } });
+    for (const value of [0, -1, 1.5, "5", 3651]) {
+      expect(() => parseConfigPatch({ threads: { maxConcurrentPerBot: 2, autoArchiveDays: value } })).toThrow("threads.autoArchiveDays");
     }
   });
 
@@ -877,6 +893,14 @@ describe("saving the newer sections", () => {
       expect(parseStoredConfig(disk).threads).toEqual({ maxConcurrentPerBot: 3 });
       expect(threadEventLogRetentionDays(parseStoredConfig(disk))).toBeNull();
       expect(threadEventLogMaxBytes(parseStoredConfig(disk))).toBeNull();
+      saveConfig({ threads: { autoArchive: false, autoArchiveDays: 9 } });
+      disk = JSON.parse(readFileSync(path, "utf8"));
+      expect(disk.threads).toEqual({ maxConcurrentPerBot: 3, autoArchive: false, autoArchiveDays: 9 });
+      expect(threadAutoArchiveDays(parseStoredConfig(disk))).toBeNull();
+      saveConfig({ threads: { autoArchive: null } });
+      disk = JSON.parse(readFileSync(path, "utf8"));
+      expect(disk.threads).toEqual({ maxConcurrentPerBot: 3, autoArchiveDays: 9 });
+      expect(threadAutoArchiveDays(parseStoredConfig(disk))).toBe(9);
     } finally {
       rmSync(path, { force: true });
     }

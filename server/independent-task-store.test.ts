@@ -646,4 +646,51 @@ describe("independent bot task state", () => {
     expect(store.taskByThread(bot.id, task.threadId)).toMatchObject({ lastThreadOrderAt: at + 30, updatedAt: at + 40 });
     expect(new Store(selection).taskByThread(bot.id, task.threadId)?.lastThreadOrderAt).toBe(at + 30);
   });
+
+  it("brings an auto-archived thread back on a new message or turn, and keeps routing to it", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({}, { seedMessages: false });
+    const peer = store.createBot({}, { seedMessages: false });
+    const auto = store.createTask(bot.id, "Idle")!;
+    const manual = store.createTask(bot.id, "Kept")!;
+    const hidden = store.createTask(bot.id, "Hidden work", false)!;
+    const work = store.createTask(bot.id, "Work", false)!;
+    const openedBy = { botId: peer.id, name: "Peer", kind: "work" as const, threadId: peer.threadId, at: Date.now() };
+    store.setTaskOpenedBy(bot.id, hidden.threadId, openedBy);
+    store.setTaskOpenedBy(bot.id, work.threadId, openedBy);
+    store.patchTask(bot.id, auto.threadId, { archivedAt: Date.now(), archivedBy: "auto" });
+    store.patchTask(bot.id, manual.threadId, { archivedAt: Date.now() });
+    store.patchTask(bot.id, hidden.threadId, { archivedAt: Date.now() });
+    store.patchTask(bot.id, work.threadId, { archivedAt: Date.now(), archivedBy: "auto" });
+
+    expect(store.workThread(bot.id, peer.id, peer.threadId)?.threadId).toBe(work.threadId);
+    store.appendMessage(auto.threadId, { role: "user", kind: "text", text: "back" });
+    expect(store.taskByThread(bot.id, auto.threadId)?.archivedAt).toBeUndefined();
+    expect(store.taskByThread(bot.id, auto.threadId)?.archivedBy).toBeUndefined();
+    expect(store.taskByThread(bot.id, manual.threadId)?.archivedAt).toBeDefined();
+    expect(store.workThread(bot.id, peer.id, peer.threadId)?.threadId).toBe(work.threadId);
+    store.patchTask(bot.id, manual.threadId, { archivedBy: "auto" });
+    store.setTaskActivity(bot.id, manual.threadId, "working");
+    expect(store.taskByThread(bot.id, manual.threadId)?.archivedAt).toBeUndefined();
+    expect(store.taskByThread(bot.id, manual.threadId)?.archivedBy).toBeUndefined();
+  });
+
+  it("still records the message when restoring an auto-archived thread cannot be saved", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({}, { seedMessages: false });
+    const task = store.createTask(bot.id, "Idle")!;
+    const archivedAt = Date.now();
+    store.patchTask(bot.id, task.threadId, { archivedAt, archivedBy: "auto" });
+    const save = vi.spyOn(store as unknown as { saveBotsSoon(): void }, "saveBotsSoon").mockImplementation(() => { throw new Error("fixture disk full"); });
+    let messageText: string | undefined;
+    try {
+      messageText = store.appendMessage(task.threadId, { role: "user", kind: "text", text: "kept" }).text;
+    } finally { save.mockRestore(); }
+    expect(messageText).toBe("kept");
+    expect(store.messagesFor(task.threadId).at(-1)?.text).toBe("kept");
+    expect(store.taskByThread(bot.id, task.threadId)).toMatchObject({ archivedAt, archivedBy: "auto" });
+    const reloaded = new Store(selection);
+    expect(reloaded.messagesFor(task.threadId).at(-1)?.text).toBe("kept");
+    expect(reloaded.taskByThread(bot.id, task.threadId)).toMatchObject({ archivedAt, archivedBy: "auto" });
+  });
 });

@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { customMcpServers, type AppConfig } from "./config.ts";
+import type { AppConfig } from "./config.ts";
+import { customMcpServers } from "./custom-mcp.ts";
 import { addBotMcpServer, botFolderUse, claimBotMcpServers, keepInBotFolder, withoutBotMcpServers } from "./mcp-bot-servers.ts";
 
 const dirs: string[] = [];

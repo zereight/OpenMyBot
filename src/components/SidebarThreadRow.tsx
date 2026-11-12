@@ -12,7 +12,7 @@ import { threadRefUrl } from "@/lib/thread-refs";
 import { copyText } from "@/lib/copy-text";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { threadLinkLabel } from "../../shared/thread-link";
-import { isSnoozed, orderedThreadList } from "../../shared/wire";
+import { isSnoozed, orderedThreadList } from "../../shared/thread-order";
 import { Select } from "./Select";
 import { WorkingTimer } from "./WorkingIndicator";
 import { useHeldText } from "./SidebarWorkingStep";
