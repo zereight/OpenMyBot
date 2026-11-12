@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { customMcpServers } from "./config.ts";
+import { customMcpServers } from "./custom-mcp.ts";
 import { attachCustomMcp, customMcpResultBudgets } from "./mcp-result-budget.ts";
 
 const cfg = (mcpServers: Record<string, unknown>) =>

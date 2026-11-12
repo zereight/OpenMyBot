@@ -34,7 +34,8 @@ import type {
   TaskClosedBy, TaskOpenedBy, TaskUsage, WireBot, WireGroup,
   WireMessage, WireTask, BotProject as BotProjectRecord,
 } from "../shared/wire.ts";
-import { archivedByPerson, movesThreadToTop, nextOpenThread } from "../shared/wire.ts";
+import { archivedByPerson, movesThreadToTop, nextOpenThread } from "../shared/thread-order.ts";
+import { fillTaskAskedAts, noteImportedActivity, noteThreadActivity, repairThreadUpdatedAts, restoreAutoArchived, restoreAutoArchivedThread } from "./thread-activity.ts";
 import { parseConnectorTools } from "./connector-tools.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
 import { initialGreetingMessage } from "./initial-greeting.ts"; import { createDefaultBot, defaultBotRefusal, type DefaultBotIntro } from "./default-bot.ts";
@@ -576,72 +577,11 @@ export class Store {
       if (existsSync(legacyFile)) mdb.readThread(threadId, legacyFile);
     }
     // After the transcript migration, so each stamp sees its thread's newest message.
-    this.repairThreadUpdatedAts();
-    if (fillAskedAts) this.fillTaskAskedAts();
+    repairThreadUpdatedAts(this as any);
+    if (fillAskedAts) fillTaskAskedAts(this as any, ASKED_AT_FILLED);
     // After the roster loads, so identity resolution sees which opener ids are live.
     this.repairDuplicatePairConversations();
     this.registeringInitialSections = false;
-  }
-
-  /** In memory only: message writes must not rewrite bots.json. */
-  private noteThreadActivity(threadId: string, at: number, forOrder = false, orderAt = at): void {
-    if (!Number.isFinite(at)) return;
-    for (const task of [...this.bots, ...this.groups].map((owner) => owner.tasks?.find((candidate) => candidate.threadId === threadId))) {
-      if (!task) continue;
-      task.updatedAt = Math.max(task.updatedAt ?? 0, at);
-      if (forOrder) task.lastThreadOrderAt = Math.max(task.lastThreadOrderAt ?? 0, orderAt);
-    }
-  }
-
-  private restoreAutoArchivedThread(threadId: string): void {
-    const owner = this.bots.find((bot) => bot.tasks?.some((task) => task.threadId === threadId && task.archivedBy === "auto"));
-    if (owner) this.restoreAutoArchived(owner.id, threadId);
-  }
-
-  private restoreAutoArchived(botId: string, threadId: string): void {
-    if (this.taskByThread(botId, threadId)?.archivedBy !== "auto") return;
-    try {
-      this.patchTask(botId, threadId, { archivedAt: undefined, archivedBy: undefined });
-    } catch (error) {
-      console.warn(`bringing an auto-archived thread back failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  /** Never moves a stamp backwards: a clock skew must not reshuffle the list on every boot. */
-  private repairThreadUpdatedAts(): void {
-    const botTasks = this.bots.flatMap((bot) => bot.tasks ?? []);
-    const groupTasks = this.groups.flatMap((group) => group.tasks ?? []);
-    const latest = mdb.latestMessageAts([...botTasks, ...groupTasks].map((task) => task.threadId));
-    const latestOrder = mdb.latestMessageAts([...botTasks, ...groupTasks].map((task) => task.threadId), true);
-    let botsDirty = false;
-    let groupsDirty = false;
-    const repair = (task: { threadId: string; createdAt: number; updatedAt?: number; lastThreadOrderAt?: number }) => {
-      const fromMessages = latest.get(task.threadId);
-      const next = fromMessages !== undefined && (task.updatedAt === undefined || fromMessages > task.updatedAt)
-        ? fromMessages
-        : task.updatedAt ?? task.createdAt;
-      const fromOrder = latestOrder.get(task.threadId);
-      const orderAt = fromOrder === undefined ? task.lastThreadOrderAt : Math.max(task.lastThreadOrderAt ?? task.createdAt, fromOrder);
-      const changed = task.updatedAt !== next || task.lastThreadOrderAt !== orderAt;
-      task.updatedAt = next;
-      task.lastThreadOrderAt = orderAt;
-      return changed;
-    };
-    for (const task of botTasks) if (repair(task)) botsDirty = true;
-    for (const task of groupTasks) if (repair(task)) groupsDirty = true;
-    if (botsDirty) this.saveBots();
-    if (groupsDirty) this.saveGroups();
-  }
-
-  private fillTaskAskedAts(): void {
-    const tasks = this.bots.flatMap((bot) => bot.tasks ?? []).filter((task) => task.askedAt === undefined && !task.routineRunId);
-    const asked = mdb.latestPersonLineAts(tasks.map((task) => task.threadId));
-    for (const task of tasks) {
-      const at = asked.get(task.threadId);
-      if (at !== undefined) task.askedAt = at;
-    }
-    if (asked.size) this.saveBots();
-    writeFileAtomic(ASKED_AT_FILLED, "Threads from before askedAt have it from the lines people wrote there.\n", { mode: 0o600 });
   }
 
   private openerIdentity(openedBy: TaskOpenedBy): string {
@@ -1135,9 +1075,7 @@ export class Store {
     if (!relinked && this.messagesFor(threadId).length) throw new Error("Cannot import over an existing conversation");
     mdb.importThread(threadId, messages, activeLeafId, relinked);
     this.threads.delete(threadId);
-    const newest = messages.reduce((max, message) => Math.max(max, message.at), Number.NEGATIVE_INFINITY);
-    const newestOrder = messages.reduce((max, message) => movesThreadToTop(message) ? Math.max(max, message.turnCompletedAt ?? message.at) : max, Number.NEGATIVE_INFINITY);
-    if (Number.isFinite(newest)) this.noteThreadActivity(threadId, newest, Number.isFinite(newestOrder), newestOrder);
+    noteImportedActivity(this as any, threadId, messages);
   }
 
   activeLeaf(threadId: string): string | null {
@@ -1182,8 +1120,8 @@ export class Store {
         this.emit({ type: "message.patch", threadId, message: pruned });
       }
     }
-    this.noteThreadActivity(threadId, full.at, movesThreadToTop(full), full.turnCompletedAt ?? full.at);
-    this.restoreAutoArchivedThread(threadId);
+    noteThreadActivity(this as any, threadId, full.at, movesThreadToTop(full), full.turnCompletedAt ?? full.at);
+    restoreAutoArchivedThread(this as any, threadId);
     this.emit({ type: "message", threadId, message: full });
     if (full.role === "user" && full.kind === "text") this.dismissOnboardingCard(threadId);
     return full;
@@ -1203,8 +1141,8 @@ export class Store {
         this.emit({ type: "message.patch", threadId, message: pruned });
       }
     }
-    this.noteThreadActivity(threadId, full.at, movesThreadToTop(full), full.turnCompletedAt ?? full.at);
-    this.restoreAutoArchivedThread(threadId);
+    noteThreadActivity(this as any, threadId, full.at, movesThreadToTop(full), full.turnCompletedAt ?? full.at);
+    restoreAutoArchivedThread(this as any, threadId);
     this.emit({ type: "message", threadId, message: full });
     // After the insert, so no client ever sees two siblings claiming the same parent.
     for (const child of children) this.patchMessage(threadId, child.id, { parentId: full.id });
@@ -1255,7 +1193,7 @@ export class Store {
     t.messages.push(full);
     t.activeLeafId = full.id;
     mdb.appendMessage(threadId, full);
-    this.noteThreadActivity(threadId, full.at, true);
+    noteThreadActivity(this as any, threadId, full.at, true);
     this.emit({ type: "message", threadId, message: full });
     // A client adopts a new message as its leaf only when it chains onto its leaf; a sibling needs this pointer.
     this.emit({ type: "thread", threadId, activeLeafId: full.id });
@@ -1287,7 +1225,7 @@ export class Store {
     const persist = () => { mdb.updateMessage(threadId, next); applied = true; return next; };
     const committed = command ? runCommand(command, persist) : persist();
     if (!applied) return committed;
-    if (!movesThreadToTop(t.messages[idx]) && movesThreadToTop(next)) this.noteThreadActivity(threadId, next.at, true, next.turnCompletedAt ?? next.at);
+    if (!movesThreadToTop(t.messages[idx]) && movesThreadToTop(next)) noteThreadActivity(this as any, threadId, next.at, true, next.turnCompletedAt ?? next.at);
     t.messages[idx] = next;
     this.emit({ type: "message.patch", threadId, message: next });
     return next;
@@ -1670,7 +1608,7 @@ export class Store {
       task.snoozedUntil = undefined;
       this.saveBots();
     }
-    if (busy && !wasBusy) this.restoreAutoArchived(botId, threadId);
+    if (busy && !wasBusy) restoreAutoArchived(this as any, botId, threadId);
     this.refreshBotActivity(bot);
     this.emit({ type: "bot", botId });
     return bot;

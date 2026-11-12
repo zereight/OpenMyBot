@@ -1,4 +1,4 @@
-import { archivedByPerson } from "../../shared/wire.ts";
+import { archivedByPerson } from "../../shared/thread-order.ts";
 import type { Store, TaskRecord } from "../store.ts";
 import { OUTSIDE_STAYS_HERE } from "./outside-lineage.ts";
 

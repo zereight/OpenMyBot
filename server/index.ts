@@ -161,8 +161,7 @@ import {
   mcpCallTimeoutMinutes,
   cacheKeepWarmSettings,
   threadEventLogMaxBytes,
-  threadEventLogRetentionDays,
-  threadAutoArchiveDays,
+  threadEventLogRetentionDays, threadAutoArchiveDays,
   saveConfig,
   showToolCallsEnabled,
   claudeUserMcpEnabled,
@@ -184,8 +183,7 @@ import {
   openCodeProviderKeys,
 } from "./config.ts";
 import { serveStatic } from "./static-files.ts";
-import { startUpkeep } from "./host/start-upkeep.ts";
-import { startAutoArchive, toAutoArchiveThread, notHeld, type AutoArchiveHeld } from "./thread-auto-archive.ts";
+import { startUpkeep } from "./host/start-upkeep.ts"; import { autoArchiveStatus, startThreadAutoArchive } from "./host/auto-archive.ts";
 import { ComputerControl } from "./computer-control.ts";
 import { resetPathCache } from "./env-path.ts";
 import { registerEnginesBinDir } from "./engine-install.ts"; import { engineUpdatesFor } from "./engine-updates-host.ts";
@@ -2212,24 +2210,6 @@ function botForThread(botId: string, threadId: string): BotRecord | null {
 
 function threadBusy(botId: string, threadId: string): boolean {
   return store.taskByThread(botId, threadId)?.busy === true || directTurnDispatchClaims.has(threadId);
-}
-
-function autoArchiveHeld(botId: string, threadId: string): AutoArchiveHeld {
-  const routineResults = (routines?.listRoutines() ?? []).some((routine) => routine.enabled && (routine.resultsThreadId === threadId || routine.sourceThreadId === threadId));
-  return {
-    ...notHeld,
-    busy: threadBusy(botId, threadId),
-    waitingOnYou: coordinator.awaitingAnswer(threadId),
-    queued: queuedThreadPosition(botId, threadId) !== null,
-    parked: turnResourceOwners.get(threadId)?.computerParkedOn !== undefined,
-    awaitingTeammate: coordinator.awaitingTeammateThreads().has(threadId),
-    openDirectHandoff: coordinator.activeDirect(threadId),
-    openPersonCard: openPersonCard(threadId) !== undefined,
-    hasWait: botWaits.all().some((wait) => wait.botId === botId && wait.threadId === threadId),
-    routineRun: routines?.isActiveThread(threadId) === true,
-    routineResults,
-    mainThread: botMainThread(botId) === threadId,
-  };
 }
 
 function parksBehindCoordination(botId: string, threadId: string): boolean {
@@ -11791,9 +11771,7 @@ function configStatus() {
     threads: {
       maxConcurrentPerBot: maxConcurrentBotThreads(cfg, botThreadsHost(cloudPlanTier.starter())),
       ...(eventLogMaxBytes !== null ? { eventLogMaxBytes } : {}),
-      ...(eventLogRetentionDays !== null ? { eventLogRetentionDays } : {}),
-      autoArchive: threadAutoArchiveDays(cfg) !== null,
-      autoArchiveDays: threadAutoArchiveDays(cfg) ?? 5,
+      ...(eventLogRetentionDays !== null ? { eventLogRetentionDays } : {}), ...autoArchiveStatus(cfg),
     },
     localVm: {
       mode: localVmMode(cfg),
@@ -15414,16 +15392,7 @@ server.listen(PORT, listenHost(server), async () => {
   drainQueuedSends();
   drainQueuedChannelSends();
   void cloudComputerPower.armRunning();
-  startUpkeep({ bots: () => store.bots, retentionDays: () => threadEventLogRetentionDays(cfg), busy: threadBusy, openDirectHandoff: (threadId) => coordinator.activeDirect(threadId) });
-  startAutoArchive({
-    days: () => CLOUD_TEAM || CLOUD_HOME ? null : threadAutoArchiveDays(cfg),
-    threads: () => store.bots.flatMap((bot) => store.tasks(bot.id).map((task) => toAutoArchiveThread(bot, task))),
-    held: (thread) => autoArchiveHeld(thread.botId, thread.threadId),
-    archive: (botId, threadId, now) => {
-      store.patchTask(botId, threadId, { archivedAt: now, archivedBy: "auto" });
-      engineBrowsers.stopped(threadId);
-    },
-  });
+  startUpkeep({ bots: () => store.bots, retentionDays: () => threadEventLogRetentionDays(cfg), busy: threadBusy, openDirectHandoff: (threadId) => coordinator.activeDirect(threadId) }); startThreadAutoArchive({ cloud: () => Boolean(CLOUD_TEAM || CLOUD_HOME), days: () => threadAutoArchiveDays(cfg), bots: () => store.bots, tasks: (botId) => store.tasks(botId), busy: threadBusy, mainThread: botMainThread, waitingOnYou: (threadId) => coordinator.awaitingAnswer(threadId), queued: (botId, threadId) => queuedThreadPosition(botId, threadId) !== null, parked: (threadId) => turnResourceOwners.get(threadId)?.computerParkedOn !== undefined, awaitingTeammate: (threadId) => coordinator.awaitingTeammateThreads().has(threadId), openDirectHandoff: (threadId) => coordinator.activeDirect(threadId), openPersonCard: (threadId) => openPersonCard(threadId) !== undefined, hasWait: (botId, threadId) => botWaits.all().some((wait) => wait.botId === botId && wait.threadId === threadId), routineRun: (threadId) => routines?.isActiveThread(threadId) === true, routineResults: (threadId) => (routines?.listRoutines() ?? []).some((routine) => routine.enabled && (routine.resultsThreadId === threadId || routine.sourceThreadId === threadId)), archive: (botId, threadId, now) => { store.patchTask(botId, threadId, { archivedAt: now, archivedBy: "auto" }); engineBrowsers.stopped(threadId); } });
   if (enginesRead) {
     await enginesRead;
     if (companyShutdown) return;

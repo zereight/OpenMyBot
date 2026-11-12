@@ -1,5 +1,5 @@
 import { failedTurnTool } from "../../shared/failed-turn.ts";
-import { archivedByPerson } from "../../shared/wire.ts";
+import { archivedByPerson } from "../../shared/thread-order.ts";
 import { admit } from "../admission.ts";
 import { memoryStopped } from "../engine-memory.ts";
 import {

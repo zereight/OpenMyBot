@@ -9,9 +9,9 @@ import { botThreadLimitText, defaultBotThreads, maxConcurrentBotThreads, maxConc
 import type { JsonValue } from "./schema.ts";
 import { imageSlots } from "./image-generation.ts";
 
+import { customMcpServers } from "./custom-mcp.ts";
 import { cacheUntilConfigChanges,
   changedInstanceIds,
-  customMcpServers,
   engineLaunches,
   DATA_DIR,
   ensureDirs,

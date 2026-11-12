@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
-import { archivedByPerson } from "../shared/wire.ts";
+import { archivedByPerson } from "../shared/thread-order.ts";
 type RuntimeBot = { id: string; hidden?: boolean; tasks?: Array<{ threadId: string; archivedAt?: number; archivedBy?: "auto" }> };
 type BotLookup = (id: string) => RuntimeBot | null | undefined;
 type Registration = { botId: string; tokenHash: string; threadId: string };

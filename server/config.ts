@@ -16,7 +16,7 @@ import { withoutComputerEngine } from "./computer-engine-removal.ts";
 import { newBotDefaultsSchema, type NewBotDefaults } from "./new-bot-defaults.ts";
 import { replaySettings } from "./replay-settings.ts";
 import { EFFORT_LEVELS, type EffortLevel } from "../shared/wire.ts";
-import { isModelVariant, type InstanceConfigMap, type McpServerSpec, type ModelSelection } from "./contracts.ts";
+import { isModelVariant, type InstanceConfigMap, type ModelSelection } from "./contracts.ts";
 import { API_KEY_FLEET, DEFAULT_FLEET, OPENAI_API_INSTANCE, OPENROUTER_API_INSTANCE, CLAUDE_API_INSTANCE, PRODUCT_FLEET_ADDITIONS } from "./instance-fleets.ts";
 export { CLAUDE_API_INSTANCE, OPENAI_API_INSTANCE, OPENROUTER_API_INSTANCE, XAI_API_INSTANCE } from "./instance-fleets.ts";
 import { DEFAULT_WINDOW_MINUTES, MAX_WINDOW_MINUTES } from "./cache-keepwarm.ts";
@@ -25,7 +25,6 @@ import { helperStoredShape, type HelperConfig } from "./side-jobs.ts";
 import { loopGuardConfigSchema, type LoopGuardConfig } from "./host/loop-guard.ts";
 import { migrateLegacyFeatureFlags } from "./legacy-feature-flags.ts";
 import { settledFileCache, settledFileStamp } from "./settled-file.ts";
-import { isRemoteMcpServer, mcpServerServes, parseStoredMcpServer } from "./mcp-registry.ts"; import { postizKeyHeaders } from "./postiz/connection.ts";
 import { parseJson, schemaIssue, type JsonObject, type JsonValue } from "./schema.ts";
 import { deciderConfigSchema, type DeciderConfig } from "./decider/config.ts";
 import { liveConfigSchema, liveConfigWithEnv, liveSettingEnv, type LiveConfig } from "./live-config.ts";
@@ -1226,32 +1225,3 @@ export function instanceConfigs(cfg: AppConfig): InstanceConfigMap {
   return map;
 }
 
-// config.json: { "mcpServers": { "notes": { "command": "npx", "args": ["-y", "@x/notes-mcp"], "env": { "NOTES_TOKEN": "…" } },
-//                                "docs": { "type": "http", "url": "https://…/mcp", "headers": { "Authorization": "Bearer …" } } } }
-
-export type CustomMcpServer = McpServerSpec;
-
-const reportedMcpSkips = new Set<string>();
-function skipMcpEntry(name: string, why: string): void {
-  const key = `${name}: ${why}`;
-  if (reportedMcpSkips.has(key)) return;
-  reportedMcpSkips.add(key);
-  console.error(`mcpServers.${JSON.stringify(name)} skipped — ${why}`);
-}
-
-export function customMcpServers(cfg: AppConfig, only?: string[], botId?: string): Record<string, CustomMcpServer> {
-  const out: Record<string, CustomMcpServer> = {};
-  for (const [name, raw] of Object.entries(cfg.mcpServers ?? {})) {
-    if (only && !only.includes(name)) continue;
-    const parsed = parseStoredMcpServer(name, raw);
-    if (!parsed.ok) {
-      skipMcpEntry(name, `${parsed.error} Expected { "command": "npx", "args": [...], "env": { ... } } or { "type": "http", "url": "https://…", "headers": { ... } }`);
-      continue;
-    }
-    if (!parsed.server.enabled || parsed.server.runsOn || !mcpServerServes(parsed.server, botId)) continue; // another computer's or bot's own
-    out[name] = isRemoteMcpServer(parsed.server)
-      ? { type: parsed.server.type, url: parsed.server.url, headers: { ...parsed.server.headers, ...postizKeyHeaders(cfg.postiz, name, parsed.server) } }
-      : { command: parsed.server.command, args: parsed.server.args, env: parsed.server.env };
-  }
-  return out;
-}
