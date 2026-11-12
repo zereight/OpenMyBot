@@ -2,7 +2,7 @@ import { createElement, type ComponentProps, type MemoExoticComponent, type Reac
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "@/lib/i18n";
-import { formatUpdatedAt, nextSnoozeExpiry, orderedSidebarThreads, orderedThreadList, partitionHelperThreads, SidebarThreadRow, stampClock, threadByline, threadOpenerLabel, threadUpdatedLabel, visibleSidebarThreads } from "./SidebarThreadRow";
+import { formatUpdatedAt, nextSnoozeExpiry, orderedSidebarThreads, orderedThreadList, SidebarThreadRow, stampClock, threadByline, threadOpenerLabel, threadUpdatedLabel, visibleSidebarThreads } from "./SidebarThreadRow";
 
 type ThreadRowProps = ComponentProps<typeof SidebarThreadRow>;
 
@@ -223,7 +223,7 @@ describe("threads a bot closed", () => {
     expect(threadByline({})).toBeNull();
     const markup = render({ threadId: "h", title: "Helper 1", openedBy, closedBy });
     expect(markup).toContain("closed by Parker");
-    expect(markup).not.toContain("opened by");
+    expect(markup).not.toContain(">opened by");
     expect(markup).toContain('title="Helper 1 · Closed"');
     expect(markup).toContain('text-ink-tertiary">Helper 1</span>');
     expect(render({ threadId: "h", title: "Helper 1", closedBy, busy: true })).toContain('title="Helper 1 · Working"');
@@ -707,47 +707,56 @@ describe("Thread link", () => {
   });
 });
 
-describe("helper threads a bot opened", () => {
+describe("threads a bot opened", () => {
   const opener = { botId: "pepper", name: "Pepper", at: 1 };
   const thread = (threadId: string, patch: Record<string, unknown> = {}) =>
     ({ threadId, title: threadId, createdAt: 1, updatedAt: 1, ...patch }) as any;
+  const render = (task: ThreadRowProps["task"], panel = false) => renderToStaticMarkup(createElement(SidebarThreadRow, {
+    task, ownerId: "pm", current: false, panel, onSelect: vi.fn(), onRename: vi.fn(), onDelete: vi.fn(), locale: "en",
+  }));
 
-  it("folds idle bot-opened threads into a group and keeps the person's own threads", () => {
-    const tasks = [thread("mine"), thread("email", { openedBy: opener }), thread("pricing", { openedBy: opener })];
-    const { own, helpers } = partitionHelperThreads(tasks, "mine");
-    expect(own.map((task) => task.threadId)).toEqual(["mine"]);
-    expect(helpers.map((task) => task.threadId)).toEqual(["email", "pricing"]);
+  it("marks the row with a labelled bot badge instead of an opened-by line", () => {
+    for (const panel of [false, true]) {
+      const markup = render({ threadId: "email", title: "Draft email", openedBy: opener }, panel);
+      expect(markup).toContain('role="img" aria-label="opened by Pepper"');
+      expect(markup).toContain('title="opened by Pepper"');
+      expect(markup).not.toContain(">opened by Pepper<");
+    }
+    expect(render({ threadId: "mine", title: "Mine" })).not.toContain("opened by");
   });
 
-  it("keeps a helper thread in view while it needs the person or is doing something, as the phone lists it", () => {
+  it("still names who closed, archived or snoozed it under the title, with the badge beside it", () => {
+    const markup = render({ threadId: "h", title: "Helper", openedBy: opener, closedBy: { botId: "pepper", name: "Pepper", at: 2 } });
+    expect(markup).toContain("closed by Pepper");
+    expect(markup).toContain('aria-label="opened by Pepper"');
+  });
+
+  it("keeps bot-opened threads in the list by recency, on rows of their own so the person's six stay put", () => {
+    const own = Array.from({ length: 8 }, (_, index) => thread(`own-${index}`, { createdAt: 100 - index }));
+    const bots = Array.from({ length: 5 }, (_, index) => thread(`bot-${index}`, { openedBy: opener, createdAt: 200 - index }));
+    expect(visibleSidebarThreads([...own, ...bots], "own-0").map((task) => task.threadId)).toEqual(
+      ["bot-0", "bot-1", "bot-2", "own-0", "own-1", "own-2", "own-3", "own-4", "own-5"],
+    );
+    expect(visibleSidebarThreads([...own, ...bots], "own-0", "", [], true)).toHaveLength(13);
+  });
+
+  it("keeps a bot-opened thread in view while it needs the person or is doing something", () => {
     const tasks = [
-      thread("open-now", { openedBy: opener }),
+      thread("a", { openedBy: opener }), thread("b", { openedBy: opener }), thread("c", { openedBy: opener }),
       thread("approval", { openedBy: opener, activity: "waiting-on-you" }),
       thread("reply", { openedBy: opener, unread: true }),
-      thread("pinned", { openedBy: opener, pinned: true }),
       thread("working", { openedBy: opener, busy: true }),
-      thread("thinking", { openedBy: opener, activity: "working" }),
       thread("waiting", { openedBy: opener, waitingForTeammates: true }),
       thread("queued", { openedBy: opener, queued: true }),
+      thread("pinned", { openedBy: opener, pinned: true }),
+      thread("quiet", { openedBy: opener }),
     ];
-    const { own, helpers } = partitionHelperThreads(tasks, "open-now");
-    expect(own.map((task) => task.threadId)).toEqual(["open-now", "approval", "reply", "pinned", "working", "thinking", "waiting", "queued"]);
-    expect(helpers).toEqual([]);
+    expect(visibleSidebarThreads(tasks, "a").map((task) => task.threadId).sort())
+      .toEqual(["a", "approval", "b", "c", "pinned", "queued", "reply", "waiting", "working"].sort());
   });
 
-  it("leaves filed, closed, archived and snoozed helper threads where they already go", () => {
-    const tasks = [
-      thread("filed", { openedBy: opener, projectId: "launch" }),
-      thread("closed", { openedBy: opener, closedBy: opener }),
-      thread("archived", { openedBy: opener, archivedAt: 1 }),
-      thread("snoozed", { openedBy: opener, snoozedUntil: Date.now() + 60_000 }),
-    ];
-    const { helpers } = partitionHelperThreads(tasks, "mine", "", [{ id: "launch", name: "Launch" } as any]);
-    expect(helpers).toEqual([]);
-  });
-
-  it("does not group search results", () => {
-    const tasks = [thread("email", { openedBy: opener })];
-    expect(partitionHelperThreads(tasks, "mine", "email")).toEqual({ own: tasks, helpers: [] });
+  it("finds bot-opened threads when searching", () => {
+    const tasks = [thread("email", { openedBy: opener }), thread("other")];
+    expect(visibleSidebarThreads(tasks, "other", "email").map((task) => task.threadId)).toEqual(["email"]);
   });
 });

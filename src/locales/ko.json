@@ -2813,7 +2813,6 @@
   "task.waiting": "대기 중",
   "task.waitingOnTeammate": "팀원 대기 중",
   "task.openedBy": "{name}이(가) 엶",
-  "task.helperGroup": "봇이 연 스레드",
   "task.closedBy": "{name}이(가) 닫음",
   "task.closed": "닫힘",
   "task.archive": "보관",

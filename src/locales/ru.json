@@ -2650,7 +2650,6 @@
   "task.waiting": "Ожидает",
   "task.waitingOnTeammate": "Ожидает коллегу",
   "task.openedBy": "создано: {name}",
-  "task.helperGroup": "Созданы ботами",
   "task.closedBy": "закрыто: {name}",
   "task.closed": "Закрыта",
   "task.archive": "В архив",

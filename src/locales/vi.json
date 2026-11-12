@@ -2183,7 +2183,6 @@
   "task.waiting": "Đang chờ",
   "task.waitingOnTeammate": "Đang chờ đồng đội",
   "task.openedBy": "mở bởi {name}",
-  "task.helperGroup": "Do bot mở",
   "task.closedBy": "đóng bởi {name}",
   "task.closed": "Đã đóng",
   "task.archive": "Lưu trữ",

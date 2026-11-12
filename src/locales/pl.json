@@ -2612,7 +2612,6 @@
   "task.waiting": "Oczekiwanie",
   "task.waitingOnTeammate": "Oczekiwanie na członka zespołu",
   "task.openedBy": "otwarty przez: {name}",
-  "task.helperGroup": "Otwarte przez boty",
   "task.closedBy": "zamknięty przez: {name}",
   "task.closed": "Zamknięty",
   "task.archive": "Archiwizuj",

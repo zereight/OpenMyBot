@@ -2183,7 +2183,6 @@
   "task.waiting": "Bekliyor",
   "task.waitingOnTeammate": "Ekip arkadaşı bekleniyor",
   "task.openedBy": "{name} tarafından açıldı",
-  "task.helperGroup": "Botların açtıkları",
   "task.closedBy": "{name} tarafından kapatıldı",
   "task.closed": "Kapatıldı",
   "task.archive": "Arşivle",

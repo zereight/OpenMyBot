@@ -104,7 +104,7 @@ describe("sidebar bot threads", () => {
     }
   });
 
-  it("folds idle threads another bot opened into one collapsed group outside the six visible rows, and keeps one at work in view", () => {
+  it("lists threads another bot opened in the same list, badged, without spending the six visible rows, and keeps one at work in view", () => {
     const openedBy = { botId: "pepper", name: "Pepper", at: 1 };
     const own = Array.from({ length: 7 }, (_, index) => ({ threadId: `own-${index}`, title: `Own ${index}`, createdAt: 10 + index, busy: false, activity: "idle" as const }));
     const helpers = [
@@ -113,17 +113,25 @@ describe("sidebar bot threads", () => {
       { threadId: "review", title: "Review copy", createdAt: 5, busy: false, activity: "idle" as const, openedBy, unread: true },
     ];
     const markup = renderToStaticMarkup(threadList({ ...bot, threadId: "own-6", tasks: [...own, ...helpers] }));
-    const group = markup.slice(markup.indexOf("data-sidebar-helper-threads"));
-    expect(group).toContain('aria-expanded="false" aria-label="Expand Opened by bots threads"');
-    expect(group).toContain('opacity-50">1</span>');
-    expect(group).not.toContain("animate-spin");
+    expect(markup).not.toContain("data-sidebar-helper-threads");
     expect(markup).toContain('data-sidebar-thread-row="email"');
-    expect(markup).not.toContain('data-sidebar-thread-row="pricing"');
+    expect(markup).toContain('data-sidebar-thread-row="pricing"');
     expect(markup).toContain('data-sidebar-thread-row="review"');
-    expect(markup).toContain("Show all 9 threads");
+    expect(markup.match(/aria-label="opened by Pepper"/g)).toHaveLength(3);
+    expect(markup.indexOf('data-sidebar-thread-row="pricing"')).toBeLessThan(markup.indexOf('data-sidebar-thread-row="own-6"'));
+    expect(markup).toContain("Show all 10 threads");
     const searched = renderToStaticMarkup(threadList({ ...bot, threadId: "own-6", tasks: [...own, ...helpers] }, "pricing"));
     expect(searched).toContain('data-sidebar-thread-row="pricing"');
-    expect(searched).not.toContain("data-sidebar-helper-threads");
+  });
+
+  it("shows a bot-opened thread past the three-row limit only through Show all", () => {
+    const openedBy = { botId: "pepper", name: "Pepper", at: 1 };
+    const helpers = Array.from({ length: 5 }, (_, index) => ({ threadId: `h-${index}`, title: `Helper ${index}`, createdAt: 30 + index, busy: false, activity: "idle" as const, openedBy }));
+    const own = [{ threadId: "mine", title: "Mine", createdAt: 1, busy: false, activity: "idle" as const }];
+    const markup = renderToStaticMarkup(threadList({ ...bot, threadId: "mine", tasks: [...own, ...helpers] }));
+    expect(markup).not.toContain('data-sidebar-thread-row="h-0"');
+    expect(markup).toContain('data-sidebar-thread-row="h-4"');
+    expect(markup).toContain("Show all 6 threads");
   });
 
   it("exposes group history through the same nested thread rows and All threads picker", () => {

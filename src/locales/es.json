@@ -2480,7 +2480,6 @@
   "task.waiting": "Esperando",
   "task.waitingOnTeammate": "Esperando a un compañero",
   "task.openedBy": "abierto por {name}",
-  "task.helperGroup": "Abiertos por bots",
   "task.closedBy": "cerrado por {name}",
   "task.closed": "Cerrado",
   "task.archive": "Archivar",
