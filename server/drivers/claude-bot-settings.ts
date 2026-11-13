@@ -3,6 +3,8 @@
 import { closeSync, constants, fstatSync, openSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { attributionOf } from "./claude-attribution.ts";
+
 type Settings = Record<string, unknown>;
 
 /** Far above any real settings file; only bounds what is read for a turn. */
@@ -59,6 +61,7 @@ export function botSettingsFor(file: string | undefined, cwd: string, processEnv
     permissions: entriesOf(parsed.permissions, (rules, key) => ["allow", "ask", "deny", "additionalDirectories"].includes(key) && Array.isArray(rules)
       ? nonEmpty(rules.filter((rule) => typeof rule === "string")) : undefined),
     env: entriesOf(parsed.env, (value, name) => typeof value === "string" && !Object.hasOwn(processEnv, name) ? value : undefined),
+    attribution: Object.keys(attributionOf(parsed)).length ? attributionOf(parsed) : undefined,
   };
   return Object.fromEntries(Object.entries(carried).filter(([, value]) => value !== undefined));
 }
