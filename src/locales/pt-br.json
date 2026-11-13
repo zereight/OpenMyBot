@@ -10210,7 +10210,7 @@
   "board.column.teammates": "Aguardando colegas",
   "board.column.working": "Em andamento",
   "board.empty": "Nada aqui",
-  "board.panel.archived": "Arquivada. Desarquive para continuar a conversa aqui.",
+  "board.panel.archived": "Arquivada. Enviar uma mensagem a restaura.",
   "board.panel.empty": "Ainda sem mensagens",
   "board.panel.needsYou": "Esta conversa espera sua resposta. Responda no chat completo.",
   "board.panel.openChat": "Abrir chat completo",

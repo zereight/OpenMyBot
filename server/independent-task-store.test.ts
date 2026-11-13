@@ -675,6 +675,26 @@ describe("independent bot task state", () => {
     expect(store.taskByThread(bot.id, manual.threadId)?.archivedBy).toBeUndefined();
   });
 
+  it("brings back a thread the person archived when they write in it, but not for a bot's line or a teammate's ask", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({}, { seedMessages: false });
+    const mine = store.createTask(bot.id, "Put away")!;
+    const quiet = store.createTask(bot.id, "Stays away")!;
+    store.patchTask(bot.id, mine.threadId, { archivedAt: Date.now() });
+    store.patchTask(bot.id, quiet.threadId, { archivedAt: Date.now() });
+
+    store.appendMessage(quiet.threadId, { role: "bot", kind: "text", text: "a late reply" });
+    store.appendMessage(quiet.threadId, { role: "user", kind: "text", text: "from a teammate", peerAsk: { botId: "peer", name: "Peer" } });
+    expect(store.taskByThread(bot.id, quiet.threadId)?.archivedAt).toBeDefined();
+
+    const before = Date.now();
+    store.appendMessage(mine.threadId, { role: "user", kind: "text", text: "back again" });
+    const task = store.taskByThread(bot.id, mine.threadId)!;
+    expect(task.archivedAt).toBeUndefined();
+    expect(task.restoredAt).toBeGreaterThanOrEqual(before);
+    expect(savedBots().find((entry) => entry.id === bot.id)!.tasks!.find((entry) => entry.threadId === mine.threadId)!.archivedAt).toBeUndefined();
+  });
+
   it("still records the message when restoring an auto-archived thread cannot be saved", () => {
     const store = new Store(selection);
     const bot = store.createBot({}, { seedMessages: false });

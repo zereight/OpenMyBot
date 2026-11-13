@@ -41,9 +41,8 @@ function useThreadMessages(card: BoardCard, bot: Bot | undefined, refreshing: bo
 }
 
 /** Why the person cannot type here, or null when they can. */
-function blockedNote(column: BoardColumn, card: BoardCard): string | null {
+function blockedNote(column: BoardColumn): string | null {
   if (column === "attention") return t("board.panel.needsYou");
-  if (card.archived) return t("board.panel.archived");
   return null;
 }
 
@@ -63,7 +62,7 @@ export function ThreadBoardPanel({ card, column, bot, onOpen, onClose }: {
   const messages = useThreadMessages(card, bot, pending.length > 0);
   const shown = (messages ?? []).filter(said).slice(-PANEL_MESSAGES);
   const waiting = pending.filter((entry) => !(messages ?? []).some((message) => message.sendId === entry.sendId));
-  const note = blockedNote(column, card);
+  const note = blockedNote(column);
   const canType = note === null && canWrite === true && bot !== undefined;
 
   useEffect(() => {
@@ -116,7 +115,8 @@ export function ThreadBoardPanel({ card, column, bot, onOpen, onClose }: {
       </div>
       <footer className="shrink-0 border-t border-hairline/40 p-3">
         {note && <p data-board-panel-note className="mb-2 text-[12px] text-ink-secondary">{note}</p>}
-        {!note && card.locked && <p className="mb-2 text-[11px] text-ink-secondary">{t("board.panel.queueHint")}</p>}
+        {!note && card.archived && <p data-board-panel-hint className="mb-2 text-[11px] text-ink-secondary">{t("board.panel.archived")}</p>}
+        {!note && !card.archived && card.locked && <p className="mb-2 text-[11px] text-ink-secondary">{t("board.panel.queueHint")}</p>}
         <div className="flex items-end gap-2 rounded-2xl bg-composer px-3 py-2 ring-1 ring-composer-ring">
           <textarea rows={1} dir="auto" value={text} disabled={!canType} aria-label={t("board.panel.placeholder", { name: card.botName })}
             placeholder={t("board.panel.placeholder", { name: card.botName })}
