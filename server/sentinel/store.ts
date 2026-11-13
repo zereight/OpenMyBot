@@ -22,14 +22,22 @@ export interface SentinelState {
   logs: Record<string, LogOffset>;
   /** Kept only while a later scan could still see the same occurrence again. */
   seen: Record<string, number>;
+  /** Recent turn costs per bot, oldest first. Numbers only. Absent on a state file from before this field: that is an empty baseline, not a version break. */
+  costs: Record<string, number[]>;
 }
 
 export function emptyState(): SentinelState {
-  return { version: STATE_VERSION, lastScanAt: null, fingerprint: null, queueDueAt: null, logs: {}, seen: {} };
+  return { version: STATE_VERSION, lastScanAt: null, fingerprint: null, queueDueAt: null, logs: {}, seen: {}, costs: {} };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isCostHistory(value: unknown): value is Record<string, number[]> {
+  if (!isRecord(value)) return false;
+  return Object.values(value).every((entry) => Array.isArray(entry)
+    && entry.every((cost) => typeof cost === "number" && Number.isFinite(cost) && cost >= 0));
 }
 
 export function readState(out: string): SentinelState {
@@ -41,6 +49,7 @@ export function readState(out: string): SentinelState {
     if (parsed.lastScanAt !== null && !(typeof parsed.lastScanAt === "number" && Number.isFinite(parsed.lastScanAt))) return emptyState();
     if (typeof parsed.fingerprint !== "string" && parsed.fingerprint !== null) return emptyState();
     if (parsed.queueDueAt !== undefined && parsed.queueDueAt !== null && !Number.isFinite(parsed.queueDueAt)) return emptyState();
+    if (parsed.costs !== undefined && !isCostHistory(parsed.costs)) return emptyState();
     return { ...emptyState(), ...parsed };
   } catch {
     return emptyState();

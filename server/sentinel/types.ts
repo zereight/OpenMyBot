@@ -42,6 +42,8 @@ export interface DetectorConfig {
   queueWaitMs: number;
   costUsd: number;
   retryLoopMin: number;
+  /** Recent turn costs per bot from earlier scans, oldest first. "" holds turns with no bot id. Not mutated. */
+  costHistory: Readonly<Record<string, readonly number[]>>;
   now: number;
 }
 
