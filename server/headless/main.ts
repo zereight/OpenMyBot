@@ -22,7 +22,12 @@ export const VERB_HELP: Record<string, string> = {
 openmausbot doctor --host [--data-dir DIR] [--port 8799] [--domain HOST]
   Check this Linux machine can run the server and the bots' sandbox: the system, Docker or Podman, user
   namespaces, seccomp, cgroup v2, free disk, size, ports and the clock. Each problem says its fix.
-  Exit 0 ready (warnings allowed), 7 something is missing. On macOS and Windows it says it is for Linux.`,
+  Exit 0 ready (warnings allowed), 7 something is missing. On macOS and Windows it says it is for Linux.
+openmausbot doctor --claude [--data-dir DIR]
+  Check what Claude bots on this machine take from files you and they can edit: each bot's .claude/settings.json
+  (hooks, permission rules and env that the turn drops for a wrong shape, or a rule that allows every shell
+  command) and the ~/.claude/skills you share with bots. It prints paths, key names and counts, never values.
+  Exit 0; a warning does not fail it.`,
   bots: "openmausbot bots\n  Your bots and what each is doing.",
   channels: "openmausbot channels\n  Your rooms (group chats) and who is in them.",
   models: "openmausbot models\n  The engines and the models each offers (use them as INSTANCE/MODEL).",
