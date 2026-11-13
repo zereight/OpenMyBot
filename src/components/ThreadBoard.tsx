@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Archive, ArchiveRestore, Trash2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { BOARD_COLUMNS, buildThreadBoard, type BoardCard, type BoardColumn } from "@/lib/thread-board";
@@ -8,8 +9,9 @@ import { openThread } from "@/state/thread-navigation";
 import { setMapView, useMapView, type MapView } from "@/lib/map-view";
 import { useStore, type Bot } from "@/state/store";
 import { BotAvatar } from "./Avatar";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { Select } from "./Select";
-import { threadUpdatedLabel, useRelativeNow } from "./SidebarThreadRow";
+import { threadRowActions, threadUpdatedLabel, useRelativeNow } from "./SidebarThreadRow";
 
 /** A long column shows this many cards until the person asks for the rest. */
 export const BOARD_CARDS_SHOWN = 25;
@@ -22,23 +24,47 @@ const COLUMN_TONE: Record<BoardColumn, string> = {
   done: "bg-ink-secondary/25",
 };
 
-function Card({ card, bot, now, onOpen }: { card: BoardCard; bot: Bot | undefined; now: number; onOpen: (card: BoardCard) => void }) {
+interface CardActions {
+  onOpen: (card: BoardCard) => void;
+  onArchive: (card: BoardCard) => void;
+  onDelete: (card: BoardCard) => void;
+}
+
+const ACTION_CLS = "flex size-6 items-center justify-center rounded-md text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-secondary";
+
+function Card({ card, bot, now, actions }: { card: BoardCard; bot: Bot | undefined; now: number; actions: CardActions }) {
+  const editable = bot?.yourAccess !== "view";
+  const archiveLabel = card.archived ? t("task.unarchive") : t("task.archive");
   return (
-    <button type="button" data-board-card={card.threadId} onClick={() => onOpen(card)}
-      className="flex w-full flex-col gap-1.5 rounded-xl border border-hairline/40 bg-card px-3 py-2.5 text-left transition hover:bg-raised/50">
-      <span className="line-clamp-2 text-[13px] font-medium text-ink">{localizedTaskTitle(card.title) || t("task.untitledChat")}</span>
-      <span className="flex items-center gap-2 text-[11px] text-ink-secondary">
-        {bot && <BotAvatar bot={bot} size={16} motion="none" motionKey={0} animated={false} />}
-        <span className="min-w-0 flex-1 truncate">{card.botName}</span>
-        {card.stalled && <span className="rounded-full bg-danger/15 px-1.5 py-0.5 font-medium text-danger">{t("board.stalled")}</span>}
-        {card.unread && <span aria-label={t("board.unread")} className="size-1.5 shrink-0 rounded-full bg-accent" />}
-        {card.at > 0 && <span className="shrink-0">{threadUpdatedLabel(card.at, now)}</span>}
-      </span>
-    </button>
+    <div className="group/card relative">
+      <button type="button" data-board-card={card.threadId} onClick={() => actions.onOpen(card)}
+        className="flex w-full flex-col gap-1.5 rounded-xl border border-hairline/40 bg-card px-3 py-2.5 text-left transition hover:bg-raised/50">
+        <span className="line-clamp-2 text-[13px] font-medium text-ink">{localizedTaskTitle(card.title) || t("task.untitledChat")}</span>
+        <span className="flex items-center gap-2 text-[11px] text-ink-secondary">
+          {bot && <BotAvatar bot={bot} size={16} motion="none" motionKey={0} animated={false} />}
+          <span className="min-w-0 flex-1 truncate">{card.botName}</span>
+          {card.stalled && <span className="rounded-full bg-danger/15 px-1.5 py-0.5 font-medium text-danger">{t("board.stalled")}</span>}
+          {card.unread && <span aria-label={t("board.unread")} className="size-1.5 shrink-0 rounded-full bg-accent" />}
+          {card.at > 0 && <span className="shrink-0">{threadUpdatedLabel(card.at, now)}</span>}
+        </span>
+      </button>
+      {editable && (
+        <div className="absolute right-1.5 top-1.5 flex gap-0.5 rounded-lg bg-card/95 opacity-0 shadow-sm ring-1 ring-hairline/40 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100">
+          <button type="button" data-board-archive={card.threadId} disabled={card.locked} aria-label={archiveLabel} title={archiveLabel}
+            onClick={() => actions.onArchive(card)} className={ACTION_CLS}>
+            {card.archived ? <ArchiveRestore size={14} aria-hidden="true" /> : <Archive size={14} aria-hidden="true" />}
+          </button>
+          <button type="button" data-board-delete={card.threadId} disabled={card.locked} aria-label={t("task.deleteAria")} title={t("task.deleteAria")}
+            onClick={() => actions.onDelete(card)} className={cn(ACTION_CLS, "hover:text-danger")}>
+            <Trash2 size={14} aria-hidden="true" />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
-function Column({ column, cards, bots, now, onOpen }: { column: BoardColumn; cards: BoardCard[]; bots: Map<string, Bot>; now: number; onOpen: (card: BoardCard) => void }) {
+function Column({ column, cards, bots, now, actions }: { column: BoardColumn; cards: BoardCard[]; bots: Map<string, Bot>; now: number; actions: CardActions }) {
   const [all, setAll] = useState(false);
   const shown = all ? cards : cards.slice(0, BOARD_CARDS_SHOWN);
   return (
@@ -50,7 +76,7 @@ function Column({ column, cards, bots, now, onOpen }: { column: BoardColumn; car
       </h2>
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
         {shown.length === 0 && <p className="px-2 py-4 text-center text-[12px] text-ink-secondary">{t("board.empty")}</p>}
-        {shown.map((card) => <Card key={`${card.botId}:${card.threadId}`} card={card} bot={bots.get(card.botId)} now={now} onOpen={onOpen} />)}
+        {shown.map((card) => <Card key={`${card.botId}:${card.threadId}`} card={card} bot={bots.get(card.botId)} now={now} actions={actions} />)}
         {!all && cards.length > shown.length && (
           <button type="button" onClick={() => setAll(true)} className="rounded-lg px-2 py-1.5 text-[12px] text-ink-secondary hover:bg-control hover:text-ink">
             {t("board.showMore", { count: cards.length - shown.length })}
@@ -69,6 +95,14 @@ export function ThreadBoard({ bots, teams }: { bots: Bot[]; teams: Array<{ key: 
   const scoped = useMemo(() => team === null ? bots : bots.filter((bot) => (bot.section?.trim() ?? "") === team), [bots, team]);
   const byId = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
   const board = useMemo(() => buildThreadBoard(scoped, now, state.pendingQueued), [scoped, now, state.pendingQueued]);
+  const [deleting, setDeleting] = useState<{ botId: string; threadId: string } | null>(null);
+  // The open dialog follows the board, so a thread that started working or went away since it was asked about is not deleted.
+  const doomed = deleting ? BOARD_COLUMNS.flatMap((column) => board[column]).find((card) => card.botId === deleting.botId && card.threadId === deleting.threadId) : undefined;
+  const actions: CardActions = {
+    onOpen: (card) => openThread(dispatch, { botId: card.botId, threadId: card.threadId }, state, showThreads),
+    onArchive: (card) => threadRowActions(card.botId, dispatch, false).onArchive(card, card.archived ? null : Date.now()),
+    onDelete: (card) => setDeleting({ botId: card.botId, threadId: card.threadId }),
+  };
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {teams.length > 1 && (
@@ -82,10 +116,16 @@ export function ThreadBoard({ bots, teams }: { bots: Bot[]; teams: Array<{ key: 
       )}
       <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-6">
         {BOARD_COLUMNS.map((column) => (
-          <Column key={column} column={column} cards={board[column]} bots={byId} now={now}
-            onOpen={(card) => openThread(dispatch, { botId: card.botId, threadId: card.threadId }, state, showThreads)} />
+          <Column key={column} column={column} cards={board[column]} bots={byId} now={now} actions={actions} />
         ))}
       </div>
+      <ConfirmDialog open={doomed !== undefined} title={t("task.deleteConfirm")}
+        body={t("task.deleteBody", { title: localizedTaskTitle(doomed?.title ?? "") || t("task.untitledChat") })} confirmLabel={t("task.deleteAria")}
+        onCancel={() => setDeleting(null)}
+        onConfirm={() => {
+          if (doomed && !doomed.locked) threadRowActions(doomed.botId, dispatch, false).onDelete(doomed);
+          setDeleting(null);
+        }} />
     </div>
   );
 }

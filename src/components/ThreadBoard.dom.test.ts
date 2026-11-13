@@ -73,6 +73,53 @@ describe("ThreadBoard", () => {
   });
 });
 
+describe("ThreadBoard card actions", () => {
+  const card = (threadId: string) => host.querySelector<HTMLElement>(`[data-board-card="${threadId}"]`)!;
+  const act = (kind: "archive" | "delete", threadId: string) => host.querySelector<HTMLButtonElement>(`[data-board-${kind}="${threadId}"]`)!;
+
+  it("archives an idle thread and restores an archived one without opening it", () => {
+    fixture.bots = [bot("ada", [task("calm"), task("old", { archivedAt: now - 1000 })])];
+    render(createElement(ThreadBoard, { bots: fixture.bots, teams: [] }));
+    flushSync(() => act("archive", "calm").click());
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "updateTask", botId: "ada", threadId: "calm", patch: { archivedAt: expect.any(Number) } });
+    flushSync(() => act("archive", "old").click());
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "updateTask", botId: "ada", threadId: "old", patch: { archivedAt: null } });
+    expect(fixture.dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: "revealThread" }));
+  });
+
+  it("asks before deleting and deletes only after confirming", () => {
+    fixture.bots = [bot("ada", [task("calm")])];
+    render(createElement(ThreadBoard, { bots: fixture.bots, teams: [] }));
+    flushSync(() => act("delete", "calm").click());
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Delete thread?");
+    const confirm = [...document.body.querySelectorAll("button")].find((button) => button.textContent === "Delete thread")!;
+    flushSync(() => confirm.click());
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "deleteTask", botId: "ada", threadId: "calm" });
+  });
+
+  it("does not delete a thread that started working while the dialog was open", () => {
+    fixture.bots = [bot("ada", [task("calm")])];
+    render(createElement(ThreadBoard, { bots: fixture.bots, teams: [] }));
+    flushSync(() => act("delete", "calm").click());
+    fixture.bots = [bot("ada", [task("calm", { busy: true })])];
+    render(createElement(ThreadBoard, { bots: fixture.bots, teams: [] }));
+    const confirm = [...document.body.querySelectorAll("button")].find((button) => button.textContent === "Delete thread");
+    if (confirm) flushSync(() => confirm.click());
+    expect(fixture.dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: "deleteTask" }));
+  });
+
+  it("locks a working thread but still lets a stalled one be cleared, and hides the actions from a view-only bot", () => {
+    fixture.bots = [bot("ada", [task("run", { busy: true }), task("dead", { activity: "dead" })]), bot("view", [task("v1")], { yourAccess: "view" })];
+    render(createElement(ThreadBoard, { bots: fixture.bots, teams: [] }));
+    expect(act("archive", "run").disabled).toBe(true);
+    expect(act("delete", "run").disabled).toBe(true);
+    expect(act("delete", "dead").disabled).toBe(false);
+    expect(card("v1")).not.toBeNull();
+    expect(act("archive", "v1")).toBeNull();
+  });
+});
+
 describe("MapViewToggle", () => {
   it("switches the shared view between map and board", () => {
     let seen = "";
