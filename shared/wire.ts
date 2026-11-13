@@ -37,7 +37,7 @@ import type { LiveCallRecord, LiveCallState } from "./live-call-wire.ts";
 /** What a team bot's main chat is called, beside each person's own chats. */
 export const SHARED_CHAT_TITLE = "Shared chat";
 
-export type { LiveCallRecord, LiveCallState, LiveCallStatus, LiveClient, LiveEndReason, LiveKeySource, LiveProvider, LiveSettings } from "./live-call-wire.ts";
+export type { LiveCallRecord, LiveCallState, LiveCallStatus, LiveClient, LiveEndReason, LiveFishRelayCommand, LiveFishRelayEvent, LiveFishSessionToken, LiveFishTransport, LiveKeySource, LiveProvider, LiveSettings } from "./live-call-wire.ts";
 
 /** Reasoning-effort levels, ascending: a union of what any engine accepts;
  * each driver declares the subset its CLI will take. */
@@ -155,6 +155,9 @@ export interface WireTask extends InboxTask {
   /** Set when a bot, not a person, opened this thread. */ openedBy?: TaskOpenedBy;
   /** On a team's server: one person's conversation, seen by them alone (never by another member or an admin). */
   private?: true;
+  /** On a team's server: a private conversation its person shared, never private again. `sharedWith`: shared with one person,
+   * the other reader as this viewer sees them (`byYou` to the one who shared it); nobody else, an admin included, is sent it. */
+  shared?: true; sharedWith?: { name: string; byYou?: true };
   /** Team Cloud, where several people write, while it works: whose request runs (they or an Owner or Admin stop it). */ askedBy?: ResolvedSender;
   /** Set by close_thread; absent while the thread is open. */
   closedBy?: TaskClosedBy;
@@ -536,7 +539,7 @@ export interface WireMessage extends ServerTextLine, HelperIntroField, SetupCard
    * one. Absent reads as the profile name. */
   sender?: ResolvedSender;
   /** Provider turn that produced this message. */
-  turnId?: string; /** A stopped row where several people use the server: who pressed Stop. */ stoppedBy?: ResolvedSender;
+  turnId?: string; /** A stopped row where several people use the server: who pressed Stop. */ stoppedBy?: ResolvedSender; /** A bot reply: the `itemId` its words streamed under, so a client swaps the streamed text for this message. */ itemId?: string;
   /** Server-proven originating user message, including supported harness
    * continuations. Absent means external clients must not infer ownership. */
   requestMessageId?: string;
@@ -562,8 +565,8 @@ export interface WireMessage extends ServerTextLine, HelperIntroField, SetupCard
   sendId?: string;
   /** Per-send channel behavior. Absent is legacy quick chat. */
   channelMode?: "chat" | "goal";
-  /** group threads: which member said this (sender attribution). */
-  from?: { botId: string; name: string; color: string };
+  /** from: which member said this (group threads, and post_to_thread). threadPost: a bot posted this row with post_to_thread; seen once a run has read it. */
+  from?: { botId: string; name: string; color: string }; threadPost?: { deliveryId: string; fromBotId: string; fromThreadId: string; seen?: boolean };
   /** Set on a room message a bot pushed in with post_to_room. */
   peerPost?: { unattended?: boolean };
   /** A room reply whose speaker the decision model picked (an Auto room),
@@ -962,8 +965,8 @@ export type ServerFrame =
   /** A bot's data sheet changed. Whole sheet each time. */
   | DataBroadcast
   | { kind: "bot.deleted"; botId: string }
-  /** The whole fleet in its new order (PUT /api/bots/order); a member is sent only the bots they see. */
-  | { kind: "bots.order"; botIds: string[] }
+  /** The whole fleet (PUT /api/bots/order) or every room (PUT /api/groups/order) in its new order; a member is sent only the ones they see. */
+  | { kind: "bots.order"; botIds: string[] } | { kind: "groups.order"; groupIds: string[] }
   | { kind: "live.call"; botId: string; threadId: string; call: LiveCallState | null }
   /** A job is waiting for the phone whose registry key this is; it polls now. */
   | { kind: "device.job"; phone: string; id: string }

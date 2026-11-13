@@ -63,6 +63,9 @@ function profiles(): Record<string, Profile> {
   all["default+no-computer-pick"] = { env: { ...all.default!.env, OMB_COMPUTER_SELECTION: "0" } };
   for (const name of ["default", "non-chief"]) all[`${name}+room`] = { env: { ...all[name]!.env, OMB_COMPUTER_SELECTION: "0", OMB_ROOM: "1" } };
   all["default+images"] = { env: { ...all.default!.env, OMB_IMAGE_GENERATION: "1" } };
+  // The plan's included app hosting reaches only a Cloud home the Admin wired for it; the fullest profile carries it.
+  all["skills+shared+voice+x+team+images+hosting"] = { env: { ...all["skills+shared+voice+x+team+images"]!.env, OMB_APP_HOSTING: "1" } };
+  all["default+hosting"] = { env: { ...all.default!.env, OMB_APP_HOSTING: "1" } };
   return all;
 }
 
@@ -78,38 +81,40 @@ const RESEARCH_TOOLS = ["x_search", "research_search", "research_endpoint", "res
 /** Only on the person's own Cloud: never on the fullest profile, a Team Cloud's. */
 const OWN_CLOUD_TOOLS = ["ask_for_computer"];
 /** The fullest profile, checked in whole; every other one is pinned by tool names, bytes and sha256. */
-const FULL = "skills+shared+voice+x+team+images";
+const FULL = "skills+shared+voice+x+team+images+hosting";
 
 /** Bytes when the budget was last set; a profile may move at most 2% either way (lower it to lock in a win). */
 const BUDGET_BASELINE: Record<string, number> = {
-  "default": 60451,
-  "voice": 61232,
-  "shared": 62716,
-  "shared+voice": 63497,
-  "skills": 63527,
-  "skills+voice": 64308,
-  "skills+shared": 65792,
-  "skills+shared+voice": 66573,
-  "non-chief": 51235,
-  "voice+non-chief": 52016,
-  "shared+non-chief": 53500,
-  "shared+voice+non-chief": 54281,
-  "skills+non-chief": 54311,
-  "skills+voice+non-chief": 55092,
-  "skills+shared+non-chief": 56576,
-  "skills+shared+voice+non-chief": 57357,
-  "skills+shared+voice+cloud-home": 66339,
-  "skills+shared+voice+non-chief+cloud-home": 57123,
-  "default+legacy-switches": 60451,
-  "default+mausbot": 61102,
-  "skills+shared+voice+mausbot": 67224,
-  "skills+shared+voice+x": 71242,
-  "skills+shared+voice+x+team": 71242,
-  "default+no-computer-pick": 59239,
-  "default+room": 57595,
-  "non-chief+room": 48379,
-  "skills+shared+voice+x+team+images": 72015,
-  "default+images": 61224,
+  "default": 61763,
+  "voice": 62544,
+  "shared": 64028,
+  "shared+voice": 64809,
+  "skills": 64839,
+  "skills+voice": 65620,
+  "skills+shared": 67009,
+  "skills+shared+voice": 67790,
+  "non-chief": 52785,
+  "voice+non-chief": 53566,
+  "shared+non-chief": 55050,
+  "shared+voice+non-chief": 55831,
+  "skills+non-chief": 55861,
+  "skills+voice+non-chief": 56642,
+  "skills+shared+non-chief": 58126,
+  "skills+shared+voice+non-chief": 58907,
+  "skills+shared+voice+cloud-home": 67556,
+  "skills+shared+voice+non-chief+cloud-home": 58673,
+  "default+legacy-switches": 61763,
+  "default+mausbot": 62414,
+  "skills+shared+voice+mausbot": 68441,
+  "skills+shared+voice+x": 71614,
+  "skills+shared+voice+x+team": 71614,
+  "default+no-computer-pick": 60923,
+  "default+room": 58440,
+  "non-chief+room": 49224,
+  "skills+shared+voice+x+team+images": 72387,
+  "default+images": 62536,
+  "skills+shared+voice+x+team+images+hosting": 74226,
+  "default+hosting": 63965,
 };
 
 const RPC_PREFIX = '{"jsonrpc":"2.0","id":1,"result":';
@@ -258,6 +263,15 @@ describe("agents proxy tools/list golden", () => {
     }
     const team = catalogProfileFromEnv({ ...PROFILES["skills+shared+voice+cloud-home"]!.env, OMB_TEAM_PEOPLE: "1", OMB_BOT_ID: "bot-golden" });
     expect(availableTools(team).map((tool) => tool.name)).not.toContain("ask_for_computer");
+  });
+
+  it("mounts publish_app and check_app_hosting only where the plan's included app hosting reaches the server, and adds nothing else", () => {
+    const names = (wire: string) => toolsOf(wire).map((tool) => tool.name);
+    const HOSTING_TOOLS = ["publish_app", "check_app_hosting"];
+    expect(names(wires["default+hosting"]!).filter((tool) => !HOSTING_TOOLS.includes(tool))).toEqual(names(wires.default!));
+    for (const [name, profile] of Object.entries(PROFILES)) {
+      for (const tool of HOSTING_TOOLS) expect(names(wires[name]!).includes(tool), `${name}: ${tool}`).toBe(profile.env.OMB_APP_HOSTING === "1");
+    }
   });
 
   it("mounts generate_image only when an image provider is set up, and adds nothing else", () => {

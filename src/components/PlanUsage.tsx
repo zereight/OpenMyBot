@@ -1,37 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
-import { Card, SIMPLE_CARD } from "./SettingsPrimitives";
-import type { ReactNode } from "react";
-type MeterBand = "ok" | "near" | "full";
-function meterBand(percent: number): MeterBand { return percent >= 100 ? "full" : percent >= 80 ? "near" : "ok"; }
-const SUMMARY_BAR: Record<MeterBand, string> = { ok: "bg-ink/80", near: "bg-warning", full: "bg-danger" };
-function UsageSummaryCard({ kind, title, percent, label, note, children }: {
-  kind: "cloud" | "plan";
-  title: string;
-  percent: number;
-  label: string;
-  note: ReactNode;
-  children?: ReactNode;
-}) {
-  const band = meterBand(percent);
-  return (
-    <section data-usage-summary={kind} data-band={band} aria-label={label} className={cn(SIMPLE_CARD, "px-4 py-3.5")}>
-      <p className="text-[13px] leading-[18px] text-ink">{title}</p>
-      <p className="mt-2 flex items-baseline gap-1.5">
-        <span className="text-[22px] font-medium leading-7 tracking-[-0.012em] text-ink tabular-nums">{percent}%</span>
-        <span className="text-[13px] text-ink-secondary">{t("settings.simple.billing.used")}</span>
-      </p>
-      <div role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} className="mt-2 h-1 w-full overflow-hidden rounded-full bg-ink/[0.04]">
-        <div className={cn("h-full rounded-full", SUMMARY_BAR[band])} style={{ width: `${percent > 0 ? Math.max(percent, 1) : 0}%` }} />
-      </div>
-      <p className="mt-2 text-[12px] leading-4 text-ink-secondary">{note}</p>
-      {children}
-    </section>
-  );
-}
+import { Card, SIMPLE_CARD, SettingsEmptyRow, SettingsGroup, SettingsLook, SettingsRows } from "./SettingsPrimitives";
+import { UsageSummaryCard } from "./CloudUsageMeter";
 import { formatPlanSpend, type PlanSpend } from "@/lib/plan-spend";
 
 interface PlanWindow {
@@ -262,6 +235,20 @@ export function PlanUsageSummary() {
 
 export function PlanUsage() {
   const { report, loading, error, now, load } = usePlanUsage();
+  const settings = useContext(SettingsLook);
+
+  // Settings: an empty state is one quiet row, and Refresh is the section's action.
+  if (settings && (!report || report.providers.length === 0)) {
+    return (
+      <SettingsGroup label={t("settings.spending.aiLimits")} block="plan-usage"
+        actions={<button type="button" onClick={() => void load(true)} disabled={loading} className="settings-quiet flex cursor-pointer items-center gap-1.5">
+          {loading ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <RefreshCw size={14} aria-hidden="true" />}{t("planUsage.refresh")}
+        </button>}
+        footnote={error ? <span role="alert" className="text-danger">{error}</span> : undefined}>
+        <SettingsRows><SettingsEmptyRow>{loading && !report ? t("planUsage.loading") : t("planUsage.emptyShort")}</SettingsEmptyRow></SettingsRows>
+      </SettingsGroup>
+    );
+  }
 
   return (
     <Card title={t("planUsage.title")} subtitle={t("planUsage.subtitle")}>
