@@ -56,7 +56,7 @@ const WAITING = {
 } satisfies ParseArgsOptionsConfig;
 
 const VERBS: Record<string, { options: ParseArgsOptionsConfig; positionals: number }> = {
-  doctor: { options: { wait: { type: "string" }, host: { type: "boolean" }, "data-dir": { type: "string" }, domain: { type: "string" } }, positionals: 0 },
+  doctor: { options: { wait: { type: "string" }, host: { type: "boolean" }, claude: { type: "boolean" }, "data-dir": { type: "string" }, domain: { type: "string" } }, positionals: 0 },
   bots: { options: {}, positionals: 0 },
   channels: { options: {}, positionals: 0 },
   models: { options: {}, positionals: 0 },
