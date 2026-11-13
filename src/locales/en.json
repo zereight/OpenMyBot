@@ -10203,6 +10203,7 @@
   "phoneUpdate.open": "Open Phone & devices",
   "remote.devices.pairAgain": "Pair again",
   "board.allTeams": "All teams",
+  "board.column.archived": "Archived",
   "board.column.attention": "Needs you",
   "board.column.done": "Done in the last day",
   "board.column.idle": "Idle",
