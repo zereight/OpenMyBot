@@ -96,4 +96,16 @@ describe("buildThreadBoard", () => {
     ], NOW);
     expect(ids(board.idle)).toEqual(["newer", "older"]);
   });
+
+  it("marks archived cards, and locks a running or queued thread but not a stalled one", () => {
+    const board = buildThreadBoard([bot("ada", [
+      task("shelved", { archivedAt: NOW - HOUR }), task("calm"), task("busy", { busy: true }), task("dead", { activity: "dead" }), task("queued"),
+    ])], NOW, { queued: [{}] });
+    const card = (threadId: string) => [...board.done, ...board.working, ...board.idle].find((entry) => entry.threadId === threadId)!;
+    expect(card("shelved")).toMatchObject({ archived: true, locked: false });
+    expect(card("calm")).toMatchObject({ archived: false, locked: false });
+    expect(card("busy").locked).toBe(true);
+    expect(card("dead")).toMatchObject({ stalled: true, locked: false });
+    expect(card("queued").locked).toBe(true);
+  });
 });
