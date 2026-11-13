@@ -1957,6 +1957,27 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect((await turn("project", project)).settings.env.ENABLE_TOOL_SEARCH).toBe("auto:100");
   });
 
+  it("carries the person's attribution opt-out into an isolated turn, but not the project's own keys", async () => {
+    const account = join(scratch, "account");
+    mkdirSync(account);
+    writeFileSync(join(account, "settings.json"), JSON.stringify({ attribution: { commit: "", pr: "" } }));
+    const dump = join(scratch, "attribution.json");
+    await create(undefined, { FAKE_CLAUDE_DUMP: dump }, { configDir: account });
+    const turn = async (text: string, cwd?: string) => {
+      const { turnId } = await instance.adapter.sendTurn({
+        threadId: "t-attribution", text, ...(cwd ? { cwd } : {}),
+        integrations: { composio: { command: process.execPath, args: ["/fake/composio.js"], env: {} } },
+      });
+      await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+      return JSON.parse(readFileSync(dump, "utf8")) as { settings: { attribution?: Record<string, string> } };
+    };
+    expect((await turn("hi")).settings.attribution).toEqual({ commit: "", pr: "" });
+    const project = join(scratch, "project-attribution");
+    mkdirSync(join(project, ".claude"), { recursive: true });
+    writeFileSync(join(project, ".claude", "settings.json"), JSON.stringify({ attribution: { commit: "repo" } }));
+    expect((await turn("project", project)).settings.attribution).toEqual({ pr: "" });
+  });
+
   it("does not mix a personal helper/endpoint with an explicitly configured OMB connection", async () => {
     const account = join(scratch, "account");
     mkdirSync(account);
