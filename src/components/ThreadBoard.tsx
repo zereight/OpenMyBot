@@ -7,10 +7,12 @@ import { localizedTaskTitle } from "@/lib/task-title";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { openThread } from "@/state/thread-navigation";
 import { setMapView, useMapView, type MapView } from "@/lib/map-view";
+import { SIDEBAR_INLINE, useMediaQuery } from "@/lib/use-media-query";
 import { useStore, type Bot } from "@/state/store";
 import { BotAvatar } from "./Avatar";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Select } from "./Select";
+import { ThreadBoardPanel } from "./ThreadBoardPanel";
 import { threadRowActions, threadUpdatedLabel, useRelativeNow } from "./SidebarThreadRow";
 
 /** A long column shows this many cards until the person asks for the rest. */
@@ -25,6 +27,7 @@ const COLUMN_TONE: Record<BoardColumn, string> = {
 };
 
 interface CardActions {
+  selected: { botId: string; threadId: string } | null;
   onOpen: (card: BoardCard) => void;
   onArchive: (card: BoardCard) => void;
   onDelete: (card: BoardCard) => void;
@@ -34,11 +37,12 @@ const ACTION_CLS = "flex size-6 items-center justify-center rounded-md text-ink-
 
 function Card({ card, bot, now, actions }: { card: BoardCard; bot: Bot | undefined; now: number; actions: CardActions }) {
   const editable = bot?.yourAccess !== "view";
+  const selected = actions.selected?.botId === card.botId && actions.selected.threadId === card.threadId;
   const archiveLabel = card.archived ? t("task.unarchive") : t("task.archive");
   return (
     <div className="group/card relative">
-      <button type="button" data-board-card={card.threadId} onClick={() => actions.onOpen(card)}
-        className="flex w-full flex-col gap-1.5 rounded-xl border border-hairline/40 bg-card px-3 py-2.5 text-left transition hover:bg-raised/50">
+      <button type="button" data-board-card={card.threadId} aria-pressed={selected} onClick={() => actions.onOpen(card)}
+        className={cn("flex w-full flex-col gap-1.5 rounded-xl border bg-card px-3 py-2.5 text-left transition hover:bg-raised/50", selected ? "border-accent/60 ring-1 ring-accent/40" : "border-hairline/40")}>
         <span className="line-clamp-2 text-[13px] font-medium text-ink">{localizedTaskTitle(card.title) || t("task.untitledChat")}</span>
         <span className="flex items-center gap-2 text-[11px] text-ink-secondary">
           {bot && <BotAvatar bot={bot} size={16} motion="none" motionKey={0} animated={false} />}
@@ -98,8 +102,16 @@ export function ThreadBoard({ bots, teams }: { bots: Bot[]; teams: Array<{ key: 
   const [deleting, setDeleting] = useState<{ botId: string; threadId: string } | null>(null);
   // The open dialog follows the board, so a thread that started working or went away since it was asked about is not deleted.
   const doomed = deleting ? BOARD_COLUMNS.flatMap((column) => board[column]).find((card) => card.botId === deleting.botId && card.threadId === deleting.threadId) : undefined;
+  const wide = useMediaQuery(SIDEBAR_INLINE, true);
+  const [selected, setSelected] = useState<{ botId: string; threadId: string } | null>(null);
+  const open = (card: BoardCard) => openThread(dispatch, { botId: card.botId, threadId: card.threadId }, state, showThreads);
+  // Looked up on every render: a thread that was deleted, snoozed or ended since closes the panel instead of leaving a stale copy.
+  const chosen = wide && selected
+    ? BOARD_COLUMNS.flatMap((column) => board[column].map((card) => ({ card, column }))).find(({ card }) => card.botId === selected.botId && card.threadId === selected.threadId)
+    : undefined;
   const actions: CardActions = {
-    onOpen: (card) => openThread(dispatch, { botId: card.botId, threadId: card.threadId }, state, showThreads),
+    selected: chosen ? selected : null,
+    onOpen: (card) => (wide ? setSelected({ botId: card.botId, threadId: card.threadId }) : open(card)),
     onArchive: (card) => threadRowActions(card.botId, dispatch, false).onArchive(card, card.archived ? null : Date.now()),
     onDelete: (card) => setDeleting({ botId: card.botId, threadId: card.threadId }),
   };
@@ -114,10 +126,14 @@ export function ThreadBoard({ bots, teams }: { bots: Bot[]; teams: Array<{ key: 
           </Select>
         </div>
       )}
-      <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-6">
-        {BOARD_COLUMNS.map((column) => (
-          <Column key={column} column={column} cards={board[column]} bots={byId} now={now} actions={actions} />
-        ))}
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1 gap-3 overflow-x-auto p-6">
+          {BOARD_COLUMNS.map((column) => (
+            <Column key={column} column={column} cards={board[column]} bots={byId} now={now} actions={actions} />
+          ))}
+        </div>
+        {chosen && <ThreadBoardPanel key={`${chosen.card.botId}:${chosen.card.threadId}`} card={chosen.card} column={chosen.column} bot={byId.get(chosen.card.botId)}
+          onOpen={() => open(chosen.card)} onClose={() => setSelected(null)} />}
       </div>
       <ConfirmDialog open={doomed !== undefined} title={t("task.deleteConfirm")}
         body={t("task.deleteBody", { title: localizedTaskTitle(doomed?.title ?? "") || t("task.untitledChat") })} confirmLabel={t("task.deleteAria")}
