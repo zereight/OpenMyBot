@@ -46,6 +46,7 @@ describe("ThreadBoard", () => {
     expect(column("working").textContent).toContain("Title run");
     expect(column("idle").textContent).toContain("Title calm");
     expect(column("done").textContent).toContain("Nothing here");
+    expect(column("archived").textContent).toContain("Nothing here");
     flushSync(() => column("attention").querySelector<HTMLButtonElement>("[data-board-card]")!.click());
     expect(fixture.dispatch).not.toHaveBeenCalled();
     flushSync(() => host.querySelector<HTMLButtonElement>("[data-board-panel-open]")!.click());
@@ -100,7 +101,31 @@ describe("ThreadBoard card actions", () => {
     expect(document.body.textContent).toContain("Delete thread?");
     const confirm = [...document.body.querySelectorAll("button")].find((button) => button.textContent === "Delete thread")!;
     flushSync(() => confirm.click());
-    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "deleteTask", botId: "ada", threadId: "calm" });
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "deleteTask", botId: "ada", threadId: "calm", onError: expect.any(Function) });
+  });
+
+  it("lists an archived thread in the Archived column, where it can be restored or deleted", () => {
+    fixture.bots = [bot("ada", [task("calm"), task("old", { archivedAt: now - 1000 })])];
+    render(createElement(ThreadBoard, { bots: fixture.bots, teams: [] }));
+    expect(column("archived").textContent).toContain("Title old");
+    expect(column("idle").textContent).not.toContain("Title old");
+    fixture.bots = [bot("ada", [task("calm", { archivedAt: now }), task("old", { archivedAt: now - 1000 })])];
+    render(createElement(ThreadBoard, { bots: fixture.bots, teams: [] }));
+    expect([...column("archived").querySelectorAll("[data-board-card]")].map((entry) => entry.getAttribute("data-board-card"))).toEqual(["calm", "old"]);
+    expect(column("idle").textContent).not.toContain("Title calm");
+    expect(column("archived").querySelector("[data-board-delete=old]")).not.toBeNull();
+  });
+
+  it("takes a deleted thread off the board at once and brings it back when the delete fails", () => {
+    fixture.bots = [bot("ada", [task("calm"), task("other")])];
+    render(createElement(ThreadBoard, { bots: fixture.bots, teams: [] }));
+    flushSync(() => act("delete", "calm").click());
+    flushSync(() => [...document.body.querySelectorAll("button")].find((button) => button.textContent === "Delete thread")!.click());
+    expect(card("calm")).toBeNull();
+    expect(card("other")).not.toBeNull();
+    const deleted = fixture.dispatch.mock.calls.map(([action]) => action).find((action) => action.type === "deleteTask");
+    flushSync(() => deleted.onError());
+    expect(card("calm")).not.toBeNull();
   });
 
   it("does not delete a thread that started working while the dialog was open", () => {
@@ -192,6 +217,42 @@ describe("ThreadBoard panel", () => {
     expect(sent()).toHaveLength(0);
     select("ask");
     expect(panel()!.querySelector("[data-board-panel-note]")!.textContent).toContain("waiting for your answer");
+  });
+
+  it("keeps the panel open on the next card when its own thread is deleted", () => {
+    fixture.bots = [bot("ada", [task("first", { updatedAt: now - 1000 }), task("second", { updatedAt: now - 2000 }), task("third", { updatedAt: now - 3000 })])];
+    render(createElement(ThreadBoard, { bots: fixture.bots, teams: [] }));
+    const remove = (threadId: string) => {
+      flushSync(() => host.querySelector<HTMLButtonElement>(`[data-board-delete="${threadId}"]`)!.click());
+      flushSync(() => [...document.body.querySelectorAll("button")].find((button) => button.textContent === "Delete thread")!.click());
+    };
+    select("second");
+    remove("second");
+    expect(panel()!.getAttribute("data-board-panel")).toBe("third");
+    remove("third");
+    expect(panel()!.getAttribute("data-board-panel")).toBe("first");
+    remove("first");
+    expect(panel()).toBeNull();
+  });
+
+  it("leaves the panel on a thread when a different one is deleted", () => {
+    fixture.bots = [bot("ada", [task("calm"), task("other")])];
+    render(createElement(ThreadBoard, { bots: fixture.bots, teams: [] }));
+    select("calm");
+    flushSync(() => host.querySelector<HTMLButtonElement>("[data-board-delete=other]")!.click());
+    flushSync(() => [...document.body.querySelectorAll("button")].find((button) => button.textContent === "Delete thread")!.click());
+    expect(panel()!.getAttribute("data-board-panel")).toBe("calm");
+  });
+
+  it("follows an archived thread into the Archived column without closing", () => {
+    fixture.bots = [bot("ada", [task("calm")])];
+    render(createElement(ThreadBoard, { bots: fixture.bots, teams: [] }));
+    select("calm");
+    fixture.bots = [bot("ada", [task("calm", { archivedAt: now })])];
+    render(createElement(ThreadBoard, { bots: fixture.bots, teams: [] }));
+    expect(panel()!.getAttribute("data-board-panel")).toBe("calm");
+    expect(column("archived").querySelector("[data-board-card=calm]")).not.toBeNull();
+    expect(panel()!.querySelector("[data-board-panel-note]")).not.toBeNull();
   });
 
   it("closes when the selected thread leaves the board", () => {

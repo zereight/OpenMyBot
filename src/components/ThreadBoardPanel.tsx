@@ -21,7 +21,7 @@ const said = (message: Message) => message.kind === "text" && Boolean(message.te
 
 /** The thread's newest messages: the open thread from the store, any other one fetched whenever the card changes. */
 function useThreadMessages(card: BoardCard, bot: Bot | undefined, refreshing: boolean): Message[] | null {
-  const open = bot !== undefined && bot.threadId === card.threadId;
+  const open = bot !== undefined && bot.threadId === card.threadId && !bot.awaitingThreadSnapshot;
   const [fetched, setFetched] = useState<Message[] | null>(null);
   const [tick, setTick] = useState(0);
   useEffect(() => {

@@ -29,7 +29,8 @@ describe("buildThreadBoard", () => {
     expect(ids(board.working).sort()).toEqual(["busy", "parked", "working"]);
     expect(ids(board.teammates)).toEqual(["team"]);
     expect(ids(board.idle)).toEqual(["calm"]);
-    expect(ids(board.done).sort()).toEqual(["closed", "shelved"]);
+    expect(ids(board.done)).toEqual(["closed"]);
+    expect(ids(board.archived)).toEqual(["shelved"]);
   });
 
   it("keeps a closed thread that needs the person or is running out of Done", () => {
@@ -41,6 +42,7 @@ describe("buildThreadBoard", () => {
     expect(ids(board.attention)).toEqual(["again"]);
     expect(ids(board.working)).toEqual(["rerun"]);
     expect(board.done).toEqual([]);
+    expect(board.archived).toEqual([]);
   });
 
   it("lets a running thread win over waiting on teammates", () => {
@@ -52,7 +54,6 @@ describe("buildThreadBoard", () => {
   it("drops what is old, snoozed or a finished routine run", () => {
     const board = buildThreadBoard([bot("ada", [
       task("old-closed", { closedBy: { botId: "x", name: "x", at: NOW - BOARD_DONE_WINDOW_MS - 1 } }),
-      task("old-archived", { archivedAt: NOW - BOARD_DONE_WINDOW_MS - 1 }),
       task("until-new", { snoozedUntil: 0 }),
       task("until-later", { snoozedUntil: NOW + HOUR }),
       task("run", { routineRunId: "r1" }),
@@ -60,6 +61,25 @@ describe("buildThreadBoard", () => {
     ])], NOW);
     expect(ids(board.idle)).toEqual(["expired"]);
     expect(board.done).toEqual([]);
+  });
+
+  it("keeps an archived thread in Archived however old, newest archive first, and over a closed or snoozed one", () => {
+    const board = buildThreadBoard([bot("ada", [
+      task("ancient", { archivedAt: NOW - 400 * HOUR, updatedAt: NOW }),
+      task("fresh", { archivedAt: NOW - HOUR, updatedAt: NOW - 50 * HOUR }),
+      task("also-closed", { archivedAt: NOW - 2 * HOUR, closedBy: { botId: "x", name: "x", at: NOW - HOUR } }),
+      task("also-snoozed", { archivedAt: NOW - 3 * HOUR, snoozedUntil: NOW + HOUR }),
+    ])], NOW);
+    expect(ids(board.archived)).toEqual(["fresh", "also-closed", "also-snoozed", "ancient"]);
+    expect(board.done).toEqual([]);
+  });
+
+  it("moves a thread to Archived as soon as its archive time is set and back to Idle when it is cleared", () => {
+    const before = buildThreadBoard([bot("ada", [task("a")])], NOW);
+    const during = buildThreadBoard([bot("ada", [task("a", { archivedAt: NOW })])], NOW);
+    const after = buildThreadBoard([bot("ada", [task("a", { archivedAt: undefined })])], NOW);
+    expect([ids(before.idle), ids(during.archived), ids(after.idle)]).toEqual([["a"], ["a"], ["a"]]);
+    expect(during.idle).toEqual([]);
   });
 
   it("shows a routine run only while it runs", () => {
@@ -101,7 +121,7 @@ describe("buildThreadBoard", () => {
     const board = buildThreadBoard([bot("ada", [
       task("shelved", { archivedAt: NOW - HOUR }), task("calm"), task("busy", { busy: true }), task("dead", { activity: "dead" }), task("queued"),
     ])], NOW, { queued: [{}] });
-    const card = (threadId: string) => [...board.done, ...board.working, ...board.idle].find((entry) => entry.threadId === threadId)!;
+    const card = (threadId: string) => [...board.archived, ...board.working, ...board.idle].find((entry) => entry.threadId === threadId)!;
     expect(card("shelved")).toMatchObject({ archived: true, locked: false });
     expect(card("calm")).toMatchObject({ archived: false, locked: false });
     expect(card("busy").locked).toBe(true);

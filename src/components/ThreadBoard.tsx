@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Archive, ArchiveRestore, Trash2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { BOARD_COLUMNS, buildThreadBoard, type BoardCard, type BoardColumn } from "@/lib/thread-board";
+import { BOARD_COLUMNS, buildThreadBoard, type BoardCard, type BoardColumn, type ThreadBoard as ThreadBoardColumns } from "@/lib/thread-board";
 import { localizedTaskTitle } from "@/lib/task-title";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { openThread } from "@/state/thread-navigation";
@@ -18,12 +18,15 @@ import { threadRowActions, threadUpdatedLabel, useRelativeNow } from "./SidebarT
 /** A long column shows this many cards until the person asks for the rest. */
 export const BOARD_CARDS_SHOWN = 25;
 
+const cardKey = (card: { botId: string; threadId: string }) => `${card.botId}:${card.threadId}`;
+
 const COLUMN_TONE: Record<BoardColumn, string> = {
   attention: "bg-warning",
   working: "bg-success",
   teammates: "bg-accent",
   idle: "bg-ink-secondary/50",
   done: "bg-ink-secondary/25",
+  archived: "bg-ink-secondary/15",
 };
 
 interface CardActions {
@@ -80,7 +83,7 @@ function Column({ column, cards, bots, now, actions }: { column: BoardColumn; ca
       </h2>
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
         {shown.length === 0 && <p className="px-2 py-4 text-center text-[12px] text-ink-secondary">{t("board.empty")}</p>}
-        {shown.map((card) => <Card key={`${card.botId}:${card.threadId}`} card={card} bot={bots.get(card.botId)} now={now} actions={actions} />)}
+        {shown.map((card) => <Card key={cardKey(card)} card={card} bot={bots.get(card.botId)} now={now} actions={actions} />)}
         {!all && cards.length > shown.length && (
           <button type="button" onClick={() => setAll(true)} className="rounded-lg px-2 py-1.5 text-[12px] text-ink-secondary hover:bg-control hover:text-ink">
             {t("board.showMore", { count: cards.length - shown.length })}
@@ -98,7 +101,13 @@ export function ThreadBoard({ bots, teams }: { bots: Bot[]; teams: Array<{ key: 
   const [team, setTeam] = useState<string | null>(null);
   const scoped = useMemo(() => team === null ? bots : bots.filter((bot) => (bot.section?.trim() ?? "") === team), [bots, team]);
   const byId = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
-  const board = useMemo(() => buildThreadBoard(scoped, now, state.pendingQueued), [scoped, now, state.pendingQueued]);
+  // A deleted thread leaves the board at once; the server's answer follows a moment later, and a refused delete brings it back.
+  const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
+  const built = useMemo(() => buildThreadBoard(scoped, now, state.pendingQueued), [scoped, now, state.pendingQueued]);
+  const board = useMemo<ThreadBoardColumns>(() => {
+    if (removed.size === 0) return built;
+    return Object.fromEntries(BOARD_COLUMNS.map((column) => [column, built[column].filter((card) => !removed.has(cardKey(card)))])) as ThreadBoardColumns;
+  }, [built, removed]);
   const [deleting, setDeleting] = useState<{ botId: string; threadId: string } | null>(null);
   // The open dialog follows the board, so a thread that started working or went away since it was asked about is not deleted.
   const doomed = deleting ? BOARD_COLUMNS.flatMap((column) => board[column]).find((card) => card.botId === deleting.botId && card.threadId === deleting.threadId) : undefined;
@@ -109,6 +118,21 @@ export function ThreadBoard({ bots, teams }: { bots: Bot[]; teams: Array<{ key: 
   const chosen = wide && selected
     ? BOARD_COLUMNS.flatMap((column) => board[column].map((card) => ({ card, column }))).find(({ card }) => card.botId === selected.botId && card.threadId === selected.threadId)
     : undefined;
+  const remove = (card: BoardCard) => {
+    const key = cardKey(card);
+    // The panel moves to the card beside the deleted one, so deleting a run of threads does not keep closing it.
+    if (chosen && cardKey(chosen.card) === key) {
+      const column = board[chosen.column];
+      const index = column.findIndex((entry) => cardKey(entry) === key);
+      const next = column[index + 1] ?? column[index - 1];
+      setSelected(next ? { botId: next.botId, threadId: next.threadId } : null);
+    }
+    setRemoved((current) => new Set(current).add(key));
+    dispatch({
+      type: "deleteTask", botId: card.botId, threadId: card.threadId,
+      onError: () => setRemoved((current) => { const rest = new Set(current); rest.delete(key); return rest; }),
+    });
+  };
   const actions: CardActions = {
     selected: chosen ? selected : null,
     onOpen: (card) => (wide ? setSelected({ botId: card.botId, threadId: card.threadId }) : open(card)),
@@ -132,14 +156,14 @@ export function ThreadBoard({ bots, teams }: { bots: Bot[]; teams: Array<{ key: 
             <Column key={column} column={column} cards={board[column]} bots={byId} now={now} actions={actions} />
           ))}
         </div>
-        {chosen && <ThreadBoardPanel key={`${chosen.card.botId}:${chosen.card.threadId}`} card={chosen.card} column={chosen.column} bot={byId.get(chosen.card.botId)}
+        {chosen && <ThreadBoardPanel key={cardKey(chosen.card)} card={chosen.card} column={chosen.column} bot={byId.get(chosen.card.botId)}
           onOpen={() => open(chosen.card)} onClose={() => setSelected(null)} />}
       </div>
       <ConfirmDialog open={doomed !== undefined} title={t("task.deleteConfirm")}
         body={t("task.deleteBody", { title: localizedTaskTitle(doomed?.title ?? "") || t("task.untitledChat") })} confirmLabel={t("task.deleteAria")}
         onCancel={() => setDeleting(null)}
         onConfirm={() => {
-          if (doomed && !doomed.locked) threadRowActions(doomed.botId, dispatch, false).onDelete(doomed);
+          if (doomed && !doomed.locked) remove(doomed);
           setDeleting(null);
         }} />
     </div>
