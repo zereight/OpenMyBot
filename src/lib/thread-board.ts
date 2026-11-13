@@ -1,10 +1,10 @@
 import { isSnoozed } from "../../shared/wire";
 import type { Bot, Task } from "@/state/store";
 
-export const BOARD_COLUMNS = ["attention", "working", "teammates", "idle", "done"] as const;
+export const BOARD_COLUMNS = ["attention", "working", "teammates", "idle", "done", "archived"] as const;
 export type BoardColumn = (typeof BOARD_COLUMNS)[number];
 
-/** A closed or archived thread stays in the Done column this long. */
+/** A closed thread stays in the Done column this long. */
 export const BOARD_DONE_WINDOW_MS = 86_400_000;
 
 export interface BoardCard {
@@ -17,6 +17,9 @@ export interface BoardCard {
   /** The engine stopped or went silent while the thread was meant to be working. */
   stalled: boolean;
   unread: boolean;
+  archived: boolean;
+  /** A running or queued turn: archiving or deleting the thread now would cut it off. A stalled thread is not locked, so it can still be cleared. */
+  locked: boolean;
 }
 
 export type ThreadBoard = Record<BoardColumn, BoardCard[]>;
@@ -46,13 +49,15 @@ function stateOf(bot: Bot, task: Task) {
  * meaning of the board: a closed thread that is waiting on the person again is "attention", not "done".
  */
 export function buildThreadBoard(bots: readonly Bot[], now: number, queued: Queued = {}): ThreadBoard {
-  const board: ThreadBoard = { attention: [], working: [], teammates: [], idle: [], done: [] };
+  const board: ThreadBoard = { attention: [], working: [], teammates: [], idle: [], done: [], archived: [] };
+  const archivedAt = new Map<BoardCard, number>();
   for (const bot of bots) {
     if (bot.hidden) continue;
     for (const task of threadsOf(bot)) {
       const { activity, busy, teammates } = stateOf(bot, task);
       const stalled = activity === "dead" || activity === "no-signal";
-      const working = busy || activity === "working" || activity === "parked.computer" || (queued[task.threadId]?.length ?? 0) > 0 || stalled;
+      const hasQueued = (queued[task.threadId]?.length ?? 0) > 0;
+      const working = busy || activity === "working" || activity === "parked.computer" || hasQueued || stalled;
       const archived = task.archivedAt !== undefined;
       let column: BoardColumn | null;
       if (activity === "waiting-on-you" || (task.openAsks ?? 0) > 0) column = "attention";
@@ -60,17 +65,21 @@ export function buildThreadBoard(bots: readonly Bot[], now: number, queued: Queu
       // A routine run is a thread only while it runs.
       else if (task.routineRunId) column = null;
       else if (teammates && !archived) column = "teammates";
-      else if (archived || task.closedBy) {
-        const endedAt = archived ? task.archivedAt! : task.closedBy!.at;
-        column = now - endedAt <= BOARD_DONE_WINDOW_MS ? "done" : null;
-      } else column = isSnoozed(task, now) ? null : "idle";
+      else if (archived) column = "archived";
+      else if (task.closedBy) column = now - task.closedBy.at <= BOARD_DONE_WINDOW_MS ? "done" : null;
+      else column = isSnoozed(task, now) ? null : "idle";
       if (!column) continue;
-      board[column].push({
+      const card: BoardCard = {
         botId: bot.id, botName: bot.name, threadId: task.threadId, title: task.title,
         at: recency(task), stalled, unread: task.unread === true,
-      });
+        archived, locked: busy || activity === "working" || hasQueued,
+      };
+      if (archived) archivedAt.set(card, task.archivedAt!);
+      board[column].push(card);
     }
   }
   for (const column of BOARD_COLUMNS) board[column].sort((a, b) => b.at - a.at);
+  // A thread just archived leads its column even though nothing in it changed.
+  board.archived.sort((a, b) => archivedAt.get(b)! - archivedAt.get(a)!);
   return board;
 }

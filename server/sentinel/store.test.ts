@@ -46,7 +46,7 @@ describe("sentinel issue store", () => {
   it("keeps every detector's issue for one record", () => {
     const issues = new Map();
     const timedOutAndCostly: SentinelRecord = { type: "turn", id: "e1", threadId: "t1", turnId: "u1", botId: "b1", at: 2_000, ok: false, stopReason: "timeout", cost: 9 };
-    const observations = DETECTORS.flatMap((detector) => detector.detect([timedOutAndCostly], { queueWaitMs: 300_000, costUsd: 5, retryLoopMin: 3, now: 10_000 }));
+    const observations = DETECTORS.flatMap((detector) => detector.detect([timedOutAndCostly], { queueWaitMs: 300_000, costUsd: 5, retryLoopMin: 3, costHistory: {}, now: 10_000 }));
     expect(upsertIssues(issues, emptyState(), observations).added).toBe(2);
     expect([...issues.values()].map((issue) => issue.kind).sort()).toEqual(["cost", "turn_timeout"]);
   });
@@ -78,7 +78,7 @@ describe("sentinel issue store", () => {
     expect(readState(dir)).toEqual(emptyState());
     expect([...readIssues(dir).keys()]).toEqual(["cost:1"]);
     // the right version with a field of the wrong shape would fail every scan
-    for (const damaged of [{ seen: null }, { logs: [] }, { seen: [] }, { lastScanAt: "x" }, { fingerprint: 1 }]) {
+    for (const damaged of [{ seen: null }, { logs: [] }, { seen: [] }, { lastScanAt: "x" }, { fingerprint: 1 }, { costs: { b1: [1, "two"] } }, { costs: [] }]) {
       writeFileSync(join(dir, STATE_FILE), JSON.stringify({ ...emptyState(), lastScanAt: 5, ...damaged }));
       expect(readState(dir)).toEqual(emptyState());
     }

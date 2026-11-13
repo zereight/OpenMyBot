@@ -4,6 +4,7 @@ import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, s
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { INJECTION_NEEDLES } from "./detectors/injection-scan.ts";
 import { HARNESS_NOTICE, isToolIdentifier } from "./normalize.ts";
 import type { SentinelRecord } from "./types.ts";
 
@@ -81,6 +82,38 @@ export function readToolRecords(dataDir: string, sinceAt: number, who: ThreadOwn
     records.push({
       type: "tool", id: row.id, threadId: row.thread_id, at: Number(row.at), ok: false,
       tool: notice ? HARNESS_NOTICE : name, text: text.slice(0, MAX_TEXT),
+      ...(message.turnId ? { turnId: message.turnId } : {}),
+      ...(botId ? { botId } : {}),
+    });
+  }
+  records.push(...readInjectionRecords(dataDir, sinceAt, who));
+  return records;
+}
+
+/** Successful calls whose output holds a steering phrase. The LIKE keeps every other successful call, nearly all of them, out of JS. */
+function readInjectionRecords(dataDir: string, sinceAt: number, who: ThreadOwners): SentinelRecord[] {
+  const where = INJECTION_NEEDLES.map(() => "lower(json_extract(json, '$.tool.output')) LIKE ?").join(" OR ");
+  const rows = withReadOnlyDb(join(dataDir, "messages.db"), (db) => {
+    const threads = db.prepare("SELECT DISTINCT thread_id FROM messages").all() as Array<{ thread_id: string }>;
+    const suspect = db.prepare(`SELECT thread_id, id, at, json FROM messages
+      WHERE thread_id = ? AND at >= ? AND kind = 'activity' AND json_extract(json, '$.tool.ok') = 1 AND (${where})`);
+    const likes = INJECTION_NEEDLES.map((needle) => `%${needle}%`);
+    return threads.flatMap(({ thread_id }) => suspect.all(thread_id, sinceAt, ...likes) as Array<{ thread_id: string; id: string; at: number; json: string }>);
+  }) ?? [];
+  const records: SentinelRecord[] = [];
+  for (const row of rows) {
+    let message: ActivityJson;
+    try {
+      message = JSON.parse(row.json) as ActivityJson;
+    } catch {
+      continue;
+    }
+    const name = message.tool?.name ?? "";
+    if (!isToolIdentifier(name)) continue;
+    const botId = message.from?.botId ?? who.owners.get(row.thread_id);
+    records.push({
+      type: "tool", id: row.id, threadId: row.thread_id, at: Number(row.at), ok: true,
+      tool: name, text: (message.tool?.output ?? "").slice(0, MAX_TEXT),
       ...(message.turnId ? { turnId: message.turnId } : {}),
       ...(botId ? { botId } : {}),
     });

@@ -20,8 +20,9 @@ export const SENTINEL_USAGE = `openmausbot sentinel [--data-dir DIR] [--out DIR]
                      [--queue-wait SECONDS] [--cost USD]
 openmausbot sentinel --check-install [--json]
 
-Scans an OpenMausBot data dir, read-only, for failed tool calls, stopped or
-timed-out turns, long queue waits, expensive turns and retry loops, and keeps
+Scans an OpenMausBot data dir, read-only, for failed tool calls, tool output
+holding a steering phrase, stopped or timed-out turns, long queue waits,
+expensive turns and retry loops, and keeps
 them as issues in issues.jsonl, outside the data dir: on macOS in
 ~/Library/Application Support/openmausbot-sentinel, on Linux in
 $XDG_STATE_HOME/openmausbot-sentinel (~/.local/state/…), or in --out. Issues
