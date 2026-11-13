@@ -4,10 +4,10 @@ import * as mdb from "./message-db.ts";
 import { movesThreadToTop } from "../shared/thread-order.ts";
 
 interface ThreadActivity {
-  bots: Array<{ id: string; tasks?: Array<{ threadId: string; createdAt: number; updatedAt?: number; lastThreadOrderAt?: number; askedAt?: number; routineRunId?: string; archivedBy?: "auto" }> }>;
+  bots: Array<{ id: string; tasks?: Array<{ threadId: string; createdAt: number; updatedAt?: number; lastThreadOrderAt?: number; askedAt?: number; routineRunId?: string; archivedAt?: number; archivedBy?: "auto" }> }>;
   groups: Array<{ tasks?: Array<{ threadId: string; createdAt: number; updatedAt?: number; lastThreadOrderAt?: number }> }>;
   taskByThread(botId: string, threadId: string): { archivedBy?: "auto" } | undefined;
-  patchTask(botId: string, threadId: string, patch: { archivedAt?: number; archivedBy?: "auto" }): unknown;
+  patchTask(botId: string, threadId: string, patch: { archivedAt?: number; archivedBy?: "auto"; restoredAt?: number }): unknown;
   saveBots(): void;
   saveGroups(): void;
 }
@@ -32,6 +32,17 @@ export function noteImportedActivity(host: ThreadActivity, threadId: string, mes
 export function restoreAutoArchivedThread(host: ThreadActivity, threadId: string): void {
   const owner = host.bots.find((bot) => bot.tasks?.some((task) => task.threadId === threadId && task.archivedBy === "auto"));
   if (owner) restoreAutoArchived(host, owner.id, threadId);
+}
+
+/** A person writing in a thread brings it back, however it was archived: they would not keep talking in a thread they had put away. */
+export function restoreArchivedForPerson(host: ThreadActivity, threadId: string): void {
+  const owner = host.bots.find((bot) => bot.tasks?.some((task) => task.threadId === threadId && task.archivedAt !== undefined));
+  if (!owner) return;
+  try {
+    host.patchTask(owner.id, threadId, { archivedAt: undefined, archivedBy: undefined, restoredAt: Date.now() });
+  } catch (error) {
+    console.warn(`bringing an archived thread back failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 export function restoreAutoArchived(host: ThreadActivity, botId: string, threadId: string): void {

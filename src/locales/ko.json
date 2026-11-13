@@ -7431,7 +7431,7 @@
   "board.column.teammates": "팀원 대기 중",
   "board.column.working": "진행 중",
   "board.empty": "비어 있어요",
-  "board.panel.archived": "보관된 스레드예요. 보관을 해제하면 여기서 이어서 대화할 수 있어요.",
+  "board.panel.archived": "보관된 스레드예요. 메시지를 보내면 보관이 풀려요.",
   "board.panel.empty": "아직 메시지가 없어요",
   "board.panel.needsYou": "이 스레드는 내 답변을 기다리고 있어요. 전체 채팅에서 답해 주세요.",
   "board.panel.openChat": "전체 채팅 열기",

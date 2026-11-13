@@ -267,10 +267,10 @@ describe("ThreadBoard panel", () => {
     expect(panel()!.querySelector("[data-board-message=pending]")).toBeNull();
   });
 
-  it("does not take a message for a thread that is waiting on the person, an archived one or a view-only bot", () => {
-    fixture.bots = [bot("ada", [task("ask", { activity: "waiting-on-you" }), task("old", { archivedAt: now - 1000 })]), bot("view", [task("v1")], { yourAccess: "view" })];
+  it("does not take a message for a thread that is waiting on the person or a view-only bot", () => {
+    fixture.bots = [bot("ada", [task("ask", { activity: "waiting-on-you" })]), bot("view", [task("v1")], { yourAccess: "view" })];
     render(createElement(ThreadBoard, { bots: fixture.bots, teams: [] }));
-    for (const threadId of ["ask", "old", "v1"]) {
+    for (const threadId of ["ask", "v1"]) {
       select(threadId);
       expect(input().disabled).toBe(true);
       press({ key: "Enter" });
@@ -278,6 +278,17 @@ describe("ThreadBoard panel", () => {
     expect(sent()).toHaveLength(0);
     select("ask");
     expect(panel()!.querySelector("[data-board-panel-note]")!.textContent).toContain("waiting for your answer");
+  });
+
+  it("takes a message for an archived thread and says that sending brings it back", () => {
+    fixture.bots = [bot("ada", [task("old", { archivedAt: now - 1000 })])];
+    render(createElement(ThreadBoard, { bots: fixture.bots, teams: [] }));
+    select("old");
+    expect(input().disabled).toBe(false);
+    expect(panel()!.querySelector("[data-board-panel-hint]")!.textContent).toContain("Sending a message brings it back");
+    type("hello again");
+    press({ key: "Enter" });
+    expect(sent()).toEqual([expect.objectContaining({ botId: "ada", threadId: "old", text: "hello again" })]);
   });
 
   it("keeps the panel open on the next card when its own thread is deleted", () => {
@@ -313,7 +324,8 @@ describe("ThreadBoard panel", () => {
     render(createElement(ThreadBoard, { bots: fixture.bots, teams: [] }));
     expect(panel()!.getAttribute("data-board-panel")).toBe("calm");
     expect(column("archived").querySelector("[data-board-card=calm]")).not.toBeNull();
-    expect(panel()!.querySelector("[data-board-panel-note]")).not.toBeNull();
+    expect(panel()!.querySelector("[data-board-panel-hint]")).not.toBeNull();
+    expect(input().disabled).toBe(false);
   });
 
   it("closes when the selected thread leaves the board", () => {
