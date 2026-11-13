@@ -1,3 +1,4 @@
+import { collectCandidates, describeCandidates, USABLE_ELEMENT } from "./candidates.ts";
 import { DriverError, messageOf } from "./errors.ts";
 import { callInWorld } from "./evaluate.ts";
 import type { FrameTree } from "./frames.ts";
@@ -63,6 +64,42 @@ const QUERY_TEXT = `function (text, exact) {
   return found.length === 1 ? found[0] : found.length;
 }`;
 
+/** The index-th visible, enabled CSS match (shadow roots included), or null: only the error's candidate list uses it. */
+const NTH_CSS = `function (css, index) {
+  const usable = ${USABLE_ELEMENT};
+  const found = new Set();
+  const visit = (root) => {
+    for (const element of root.querySelectorAll(css)) found.add(element);
+    for (const element of root.querySelectorAll("*")) if (element.shadowRoot) visit(element.shadowRoot);
+  };
+  visit(this);
+  return [...found].filter(usable)[index] ?? null;
+}`;
+
+/** Like NTH_CSS for text matches, each lifted from its text node's element to the control around it, once. */
+const NTH_TEXT = `function (text, exact, index) {
+  const usable = ${USABLE_ELEMENT};
+  const normal = (value) => value.replace(/\\s+/g, " ").trim();
+  const wanted = exact ? normal(text) : normal(text).toLowerCase();
+  const matches = (element) => {
+    if (element.checkVisibility && !element.checkVisibility()) return false;
+    const own = normal(element.innerText ?? element.textContent ?? "");
+    return exact ? own === wanted : own.toLowerCase().includes(wanted);
+  };
+  const control = 'a,button,summary,label,input,select,[role="button"],[role="link"],[role="menuitem"],[role="tab"],[role="checkbox"],[role="option"]';
+  const found = new Set();
+  const visit = (root) => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+    for (let element = walker.nextNode(); element; element = walker.nextNode()) {
+      if (element.shadowRoot) visit(element.shadowRoot);
+      if (["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "HEAD"].includes(element.tagName)) continue;
+      if (matches(element) && ![...element.children].some(matches)) found.add(element.closest(control) ?? element);
+    }
+  };
+  visit(this);
+  return [...found].filter(usable)[index] ?? null;
+}`;
+
 interface AXQueryNode {
   backendDOMNodeId?: number;
   ignored?: boolean;
@@ -123,10 +160,44 @@ export async function resolveSelector(frames: FrameTree, input: string): Promise
   return { frameId: frames.mainFrameId, session: frames.mainSession, backendNodeId };
 }
 
+/** The i-th match of an ambiguous selector as a node id, for the candidates the error lists. */
+async function nthMatch(frames: FrameTree, selector: Selector, roleIds: number[], index: number): Promise<number | null> {
+  if (selector.engine === "role") return roleIds[index] ?? null;
+  const fn = selector.engine === "css" ? NTH_CSS : NTH_TEXT;
+  const args = selector.engine === "css" ? [selector.css, index] : [selector.text, selector.exact, index];
+  const { session, result } = await callInWorld(frames, frames.mainFrameId, fn, args);
+  if (!result.objectId) return null;
+  try {
+    const { node } = await session.send<{ node: { backendNodeId: number } }>("DOM.describeNode", { objectId: result.objectId });
+    return node.backendNodeId;
+  } finally {
+    void session.send("Runtime.releaseObject", { objectId: result.objectId }).catch(() => {});
+  }
+}
+
+/** The ambiguous error, with the visible, enabled matches (ref, role, name, context) so one can be clicked without a snapshot. It still says "strict mode violation" and still acts on nothing. */
+async function withCandidates(error: unknown, frames: FrameTree, refs: RefTable, input: string): Promise<unknown> {
+  if (!(error instanceof DriverError) || error.code !== "ambiguous") return error;
+  try {
+    const selector = parseSelector(input);
+    const roleIds = selector.engine === "role" ? [...new Set(await queryRole(frames, selector))] : [];
+    const wanted = selector.engine === "role" ? selector.name : selector.engine === "text" ? selector.text : undefined;
+    const found = await collectCandidates(frames, refs, (index) => nthMatch(frames, selector, roleIds, index), wanted);
+    const extra = describeCandidates(found);
+    return extra ? new DriverError("ambiguous", error.message + extra, { ...error.detail, candidates: found.candidates }) : error;
+  } catch {
+    return error;
+  }
+}
+
 /** A ref, or a selector that reads as one ("aria-ref=e5"), resolves through the tab's refs. */
 export async function resolveElement(frames: FrameTree, refs: RefTable, target: { ref?: string; selector?: string }): Promise<NodeHandle & { ref?: string }> {
   if (target.ref !== undefined) return refs.resolve(target.ref);
   if (target.selector === undefined) throw new DriverError("invalid-selector", "Name the element with a ref or a selector.");
   if (parseRef(target.selector)) return refs.resolve(target.selector);
-  return resolveSelector(frames, target.selector);
+  try {
+    return await resolveSelector(frames, target.selector);
+  } catch (error) {
+    throw await withCandidates(error, frames, refs, target.selector);
+  }
 }
