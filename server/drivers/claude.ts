@@ -14,8 +14,7 @@ import { brokerSocketPath, describeSpawnFailure, execCli, killCliTree, spawnCli 
 import { cliVersionProbe } from "../cli-version-probe.ts";
 import { claudeAuthStatus } from "./claude-auth-status.ts";
 import { projectMcpServers } from "./claude-project-mcp.ts";
-import { botSettingsFor, withBotSettings } from "./claude-bot-settings.ts";
-import { attributionToCarry, type Attribution } from "./claude-attribution.ts";
+import { botSettingsFor, withBotSettings } from "./claude-bot-settings.ts"; import { withCarriedAttribution } from "./claude-attribution.ts";
 import { claudeBilling, claudeCallUsage } from "./claude-billing.ts";
 import { claudeAuthFailure, claudeAuthRecovery, claudeOAuthExpired } from "./claude-auth-recovery.ts"; import { AWS_CREDENTIAL_ENV_KEYS, bedrockResultError, withBedrockCredentialError } from "./claude-bedrock-aws.ts";
 import { CLAUDE_MODEL_ID, STATIC_CLAUDE_MODELS, claudeModelExtras, currentEngineCatalog, endpointModelCatalog, withCliVersionGate } from "./claude-model-extras.ts";
@@ -1168,12 +1167,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "1";
       // Never for a guest: --restricted leaves project settings out, and a hook is a command.
       const botSettings = turn.guestConfined ? {} : botSettingsFor(turn.botSettingsFile, cwd, env);
-      const settings = withBotSettings(botSettings, own);
-      // Isolated turns skip the person's own settings, so their attribution opt-out is carried here (never for a guest).
-      if (isolated && !turn.guestConfined) {
-        const attribution = attributionToCarry(resolveClaudeConfigDir(undefined, env), cwd, botSettings.attribution as Attribution | undefined);
-        if (attribution) settings.attribution = attribution; else delete settings.attribution;
-      }
+      const settings = withCarriedAttribution(withBotSettings(botSettings, own), isolated && !turn.guestConfined, resolveClaudeConfigDir(undefined, env), cwd);
       const authSettingsPath = mcpConfigPath && Object.keys(settings).length
         ? join(dirname(mcpConfigPath), "auth-settings.json") : null;
       if (authSettingsPath) args.push("--settings", authSettingsPath);
@@ -1190,8 +1184,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         configDir: env.CLAUDE_CONFIG_DIR ?? null,
         hooks: Boolean(hooks),
         toolSearch,
-        botSettings: createHash("sha256").update(JSON.stringify(botSettings)).digest("hex"),
-        attribution: createHash("sha256").update(JSON.stringify(settings.attribution ?? null)).digest("hex"),
+        botSettings: createHash("sha256").update(JSON.stringify([botSettings, settings.attribution ?? null])).digest("hex"),
         // Rotating an account's key/helper must not reuse the old process.
         auth: createHash("sha256").update(JSON.stringify({
           settings: authSettings,

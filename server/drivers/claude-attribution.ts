@@ -47,3 +47,12 @@ export function attributionToCarry(configDir: string, cwd: string, bot: Attribut
   for (const key of Object.keys(project) as (keyof Attribution)[]) delete merged[key];
   return Object.keys(merged).length ? merged : undefined;
 }
+
+/** Isolated turns skip the person's own settings, so their attribution opt-out rides in --settings (never for a guest).
+ * `settings` for the turn's --settings file with the attribution to carry (or none) in place of the bot's own. */
+export function withCarriedAttribution(settings: Record<string, unknown>, applies: boolean, configDir: string, cwd: string): Record<string, unknown> {
+  if (!applies) return settings;
+  const { attribution: bot, ...rest } = settings;
+  const carried = attributionToCarry(configDir, cwd, bot as Attribution | undefined);
+  return carried ? { ...rest, attribution: carried } : rest;
+}
