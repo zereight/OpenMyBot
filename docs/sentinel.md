@@ -26,7 +26,7 @@ All sources are opened read-only:
 
 | Source | What Sentinel takes from it |
 |---|---|
-| `messages.db` | Activity rows whose `tool.ok` is false: tool name, `turnId`, `from.botId`, and the error output, which is used only for the signature |
+| `messages.db` | Activity rows whose `tool.ok` is false, plus successful rows whose output holds a steering phrase: tool name, `turnId`, `from.botId`, and the output, which is used only for the signature |
 | `events/*.ndjson` | `turn.completed` events: `ok`, `stopReason`, `cost` |
 | `runtime.db` | `assignment_events`: the gap from `enqueued` or `resume_due` to `started`, which is the queue wait |
 | `bots.json` | Which bot owns which thread. Bot names are held in memory only, so they can be removed from harness notices before hashing |
@@ -118,6 +118,7 @@ in its `index.ts`. A detector may see the same record on several scans. The
 | Kind | Fires on | Origin |
 |---|---|---|
 | `tool_error` | A failed tool call, grouped by tool and normalized error | `harness` for OpenMausBot's own MCP servers (`mcp__agents__*`, `computer`, `browser`, …) and harness notices; `shell` for Bash and exec; `external` for other MCP servers and the engine's built-in tools |
+| `injection_scan` | A successful tool call whose output holds a steering phrase (`ignore previous instructions`, `you are now`, `system prompt`, …). It records the sighting and changes nothing: the call still ran. Output that holds a credential is skipped, because that is a secret, not instructions | `external` |
 | `turn_timeout` / `turn_stop` | A `turn.completed` that is not ok (stops the person chose are excluded), a turn stopped on budget (`max_tokens`, `max_turns`), or a room turn the harness stopped for running too long | `external` for account stops (`auth_required`, `quota`, …), otherwise `harness` |
 | `queue_wait` | Delegated work that waited longer than `--queue-wait` (default 300 s) before starting, or is still waiting | `harness` |
 | `cost` | A single turn that cost more than `--cost` (default $5) | `harness` |
