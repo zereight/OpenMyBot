@@ -33,7 +33,7 @@ describe("a room's status rows", () => {
 });
 
 describe("the sentinel reading a German room", () => {
-  const config: DetectorConfig = { queueWaitMs: 300_000, costUsd: 5, retryLoopMin: 3, now: 10_000_000 };
+  const config: DetectorConfig = { queueWaitMs: 300_000, costUsd: 5, retryLoopMin: 3, costHistory: {}, now: 10_000_000 };
   // As sentinel/sources.ts reads a status row: a harness notice with the bots' names taken out.
   const notice = (id: string, text: string): SentinelRecord => ({ type: "tool", id, threadId: "room", at: 1, ok: false, tool: HARNESS_NOTICE, text });
 

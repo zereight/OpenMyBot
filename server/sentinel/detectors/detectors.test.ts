@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { HARNESS_NOTICE } from "../normalize.ts";
 import type { DetectorConfig, SentinelRecord } from "../types.ts";
 import { cost } from "./cost.ts";
+import { costSpike } from "./cost-spike.ts";
 import { DETECTORS } from "./index.ts";
 import { queueWait } from "./queue-wait.ts";
 import { retryLoop } from "./retry-loop.ts";
@@ -10,7 +11,7 @@ import { toolError } from "./tool-error.ts";
 import { heldMemberLine } from "../../room-holds.ts";
 import { turnStop } from "./turn-stop.ts";
 
-const config: DetectorConfig = { queueWaitMs: 300_000, costUsd: 5, retryLoopMin: 3, now: 10_000_000 };
+const config: DetectorConfig = { queueWaitMs: 300_000, costUsd: 5, retryLoopMin: 3, costHistory: {}, now: 10_000_000 };
 
 function tool(id: string, name: string, text: string, extra: Partial<Extract<SentinelRecord, { type: "tool" }>> = {}): SentinelRecord {
   return { type: "tool", id, threadId: "t1", botId: "b1", at: 1_000 + Number(id.replace(/\D/g, "") || 0), tool: name, ok: false, text, ...extra };
@@ -100,6 +101,28 @@ describe("sentinel detectors", () => {
     expect(cost.detect([turn("e2", { cost: 4.99 })], { ...config, costUsd: 1 })).toHaveLength(1);
   });
 
+  it("cost_spike flags a turn that costs several times the bot's usual, not a new bot or a small jump", () => {
+    const usual = Array.from({ length: 8 }, (_, i) => turn(`u${i}`, { at: 1_000 + i, cost: 0.2 }));
+    const spiked = costSpike.detect([...usual, turn("e9", { at: 2_000, cost: 3 })], config);
+    expect(spiked).toHaveLength(1);
+    expect(spiked[0]).toMatchObject({
+      kind: "cost_spike", severity: "medium", botId: "b1", turnId: "turn-e9", occurrence: "turn:e9",
+      title: "a turn cost $3.00, over 5× this bot's usual $0.20",
+    });
+    // exactly 5× the median is the boundary, not a spike, and a first spike resets the usual
+    expect(costSpike.detect([...usual, turn("e9", { at: 2_000, cost: 1 })], config)).toEqual([]);
+    expect(costSpike.detect([...usual.slice(0, 7), turn("e9", { at: 2_000, cost: 9 })], config)).toEqual([]);
+    // a jump between cents is not worth an issue, and one bot's usual is not another's
+    expect(costSpike.detect([...usual, turn("e9", { at: 2_000, cost: 0.9 })], config)).toEqual([]);
+    const otherBot = usual.map((record) => record.type === "turn" ? { ...record, botId: "b2" } : record);
+    expect(costSpike.detect([...otherBot, turn("e9", { at: 2_000, cost: 9 })], config)).toEqual([]);
+    // history from earlier scans stands in for turns this scan did not read
+    const fromHistory = costSpike.detect([turn("e9", { at: 2_000, cost: 3 })], { ...config, costHistory: { b1: usual.map((record) => record.type === "turn" ? record.cost! : 0) } });
+    expect(fromHistory).toHaveLength(1);
+    // a turn with no cost never moves the baseline
+    expect(costSpike.detect([...usual, turn("e8", { at: 1_900, cost: null }), turn("e9", { at: 2_000, cost: 3 })], config)).toHaveLength(1);
+  });
+
   it("retry_loop needs the same failure three times in one turn, and counts the loop once", () => {
     const records = [
       tool("m1", "mcp__agents__send", "no layer 1", { turnId: "x" }),
@@ -125,6 +148,6 @@ describe("sentinel detectors", () => {
   });
 
   it("runs every detector", () => {
-    expect(DETECTORS.map((d) => d.name)).toEqual(["tool_error", "turn_stop", "queue_wait", "cost", "retry_loop"]);
+    expect(DETECTORS.map((d) => d.name)).toEqual(["tool_error", "turn_stop", "queue_wait", "cost", "cost_spike", "retry_loop"]);
   });
 });
