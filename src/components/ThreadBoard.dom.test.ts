@@ -68,6 +68,67 @@ describe("ThreadBoard", () => {
     expect(host.querySelector("#board-team")).toBeNull();
   });
 
+  describe("with every team shown", () => {
+    const teams = [{ key: "", name: "General" }, { key: "Design", name: "Design" }, { key: "Ops", name: "Ops" }];
+    const lane = (key: string) => host.querySelector(`[data-board-team="${key}"]`)!;
+    const lanesOf = () => [...host.querySelectorAll("[data-board-team]")].map((el) => el.getAttribute("data-board-team"));
+    const pick = (value: string) => {
+      const select = host.querySelector<HTMLSelectElement>("#board-team")!;
+      select.value = value;
+      flushSync(() => select.dispatchEvent(new Event("change", { bubbles: true })));
+    };
+
+    it("splits the board into one lane per team, each with its own columns", () => {
+      fixture.bots = [
+        bot("ada", [task("a-run", { busy: true }), task("a-calm")], { section: "Design" }),
+        bot("bob", [task("b-run", { busy: true })]),
+        bot("cy", [task("c-old", { archivedAt: now - 1000 })], { section: "Ops" }),
+      ];
+      render(createElement(ThreadBoard, { bots: fixture.bots, teams }));
+      expect(lanesOf()).toEqual(["", "Design", "Ops"]);
+      expect(lane("Design").querySelectorAll("[data-board-column]")).toHaveLength(6);
+      expect(lane("Design").querySelector('[data-board-column="working"]')!.textContent).toContain("Title a-run");
+      expect(lane("Design").querySelector('[data-board-column="working"]')!.textContent).not.toContain("Title b-run");
+      expect(lane("").querySelector('[data-board-column="working"]')!.textContent).toContain("Title b-run");
+      expect(lane("Design").textContent).toContain("Title a-calm");
+      expect(lane("").textContent).not.toContain("Title a-calm");
+      expect(lane("Ops").querySelector('[data-board-column="archived"]')!.textContent).toContain("Title c-old");
+      expect(lane("Design").querySelector("h2")!.textContent).toBe("Design2");
+    });
+
+    it("skips a team with no bots, and keeps a bot whose team is not listed", () => {
+      fixture.bots = [bot("ada", [task("a1")], { section: "Design" }), bot("zed", [task("z1")], { section: "Gone" })];
+      render(createElement(ThreadBoard, { bots: fixture.bots, teams }));
+      expect(lanesOf()).toEqual(["Design", "Gone"]);
+      expect(lane("Gone").textContent).toContain("Title z1");
+    });
+
+    it("goes back to one plain board once a single team is chosen", () => {
+      fixture.bots = [bot("ada", [task("a1")], { section: "Design" }), bot("bob", [task("b1")])];
+      render(createElement(ThreadBoard, { bots: fixture.bots, teams }));
+      pick("Design");
+      expect(lanesOf()).toEqual([]);
+      expect(host.querySelectorAll("[data-board-column]")).toHaveLength(6);
+      expect(host.textContent).toContain("Title a1");
+      expect(host.textContent).not.toContain("Title b1");
+      pick("");
+      expect(lanesOf()).toEqual(["", "Design"]);
+    });
+
+    it("opens the panel for a card in a lane, and deleting it moves the panel to the neighbour in the same lane", () => {
+      fixture.bots = [bot("ada", [task("a1", { updatedAt: now - 1000 }), task("a2", { updatedAt: now - 2000 })], { section: "Design" }), bot("bob", [task("b1")])];
+      render(createElement(ThreadBoard, { bots: fixture.bots, teams }));
+      flushSync(() => lane("Design").querySelector<HTMLButtonElement>('[data-board-card="a1"]')!.click());
+      expect(host.querySelector("[data-board-panel-open]")).not.toBeNull();
+      flushSync(() => host.querySelector<HTMLButtonElement>('[data-board-delete="a1"]')!.click());
+      const confirm = [...document.body.querySelectorAll("button")].find((button) => button.textContent === "Delete thread")!;
+      flushSync(() => confirm.click());
+      expect(fixture.dispatch).toHaveBeenCalledWith({ type: "deleteTask", botId: "ada", threadId: "a1", onError: expect.any(Function) });
+      expect(host.querySelector('[data-board-card="a2"]')!.getAttribute("aria-pressed")).toBe("true");
+      expect(host.querySelector('[data-board-card="b1"]')!.getAttribute("aria-pressed")).toBe("false");
+    });
+  });
+
   it("caps a long column and reveals the rest on request", () => {
     const many = Array.from({ length: BOARD_CARDS_SHOWN + 5 }, (_, index) => task(`t${index}`));
     fixture.bots = [bot("ada", many)];
