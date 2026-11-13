@@ -21,6 +21,7 @@ import { createSpeechTranscript } from "./speech-transcript.mjs";
 import {
   buildSpeechHelper,
   speechHelperBinary,
+  speechHelperBuildInputs,
   speechHelperBundle,
 } from "./build-speech-helper.mjs";
 
@@ -40,7 +41,8 @@ let child = null;
 function ensureBuilt() {
   if (app.isPackaged) return;
   const binaryMtime = existsSync(BIN) ? statSync(BIN).mtimeMs : 0;
-  const stale = binaryMtime < Math.max(statSync(SRC).mtimeMs, statSync(INFO).mtimeMs);
+  const inputs = [SRC, INFO, ...speechHelperBuildInputs];
+  const stale = binaryMtime < Math.max(...inputs.map((file) => statSync(file).mtimeMs));
   if (!stale) return;
   buildSpeechHelper();
 }
@@ -101,7 +103,8 @@ export function startSpeech(target, options = {}) {
 
   try {
     ensureBuilt();
-  } catch {
+  } catch (error) {
+    console.error(`[speech] helper build failed: ${error?.message ?? error}`);
     sink.end({ code: 1, reason: "helper-build-failed" });
     return;
   }
