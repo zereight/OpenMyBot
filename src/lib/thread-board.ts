@@ -17,6 +17,9 @@ export interface BoardCard {
   /** The engine stopped or went silent while the thread was meant to be working. */
   stalled: boolean;
   unread: boolean;
+  archived: boolean;
+  /** A running or queued turn: archiving or deleting the thread now would cut it off. A stalled thread is not locked, so it can still be cleared. */
+  locked: boolean;
 }
 
 export type ThreadBoard = Record<BoardColumn, BoardCard[]>;
@@ -52,7 +55,8 @@ export function buildThreadBoard(bots: readonly Bot[], now: number, queued: Queu
     for (const task of threadsOf(bot)) {
       const { activity, busy, teammates } = stateOf(bot, task);
       const stalled = activity === "dead" || activity === "no-signal";
-      const working = busy || activity === "working" || activity === "parked.computer" || (queued[task.threadId]?.length ?? 0) > 0 || stalled;
+      const hasQueued = (queued[task.threadId]?.length ?? 0) > 0;
+      const working = busy || activity === "working" || activity === "parked.computer" || hasQueued || stalled;
       const archived = task.archivedAt !== undefined;
       let column: BoardColumn | null;
       if (activity === "waiting-on-you" || (task.openAsks ?? 0) > 0) column = "attention";
@@ -68,6 +72,7 @@ export function buildThreadBoard(bots: readonly Bot[], now: number, queued: Queu
       board[column].push({
         botId: bot.id, botName: bot.name, threadId: task.threadId, title: task.title,
         at: recency(task), stalled, unread: task.unread === true,
+        archived, locked: busy || activity === "working" || hasQueued,
       });
     }
   }

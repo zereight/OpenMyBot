@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+import { nextCostHistory } from "./detectors/cost-spike.ts";
 import { DETECTORS } from "./detectors/index.ts";
 import { readQueueRecords, readThreadOwners, readToolRecords, readTurnRecords } from "./sources.ts";
 import { markCounted, pruneSeen, readIssues, readState, upsertIssues, writeSentinelFiles } from "./store.ts";
@@ -33,13 +34,14 @@ export interface ScanSummary {
 
 export function runScan(options: ScanOptions): ScanSummary {
   const now = options.now ?? Date.now();
+  const state = readState(options.out);
   const config: DetectorConfig = {
     queueWaitMs: options.queueWaitMs ?? DEFAULT_QUEUE_WAIT_MS,
     costUsd: options.costUsd ?? DEFAULT_COST_USD,
     retryLoopMin: options.retryLoopMin ?? 3,
+    costHistory: state.costs,
     now,
   };
-  const state = readState(options.out);
   const fingerprint = sourceFingerprint(options.dataDir, config);
   if (state.fingerprint === fingerprint && state.lastScanAt !== null && (state.queueDueAt === null || now <= state.queueDueAt)) {
     return { scanned: false, at: now, records: { tool: 0, turn: 0, queue: 0 }, added: 0, touched: [], totalIssues: readIssues(options.out).size };
@@ -57,6 +59,7 @@ export function runScan(options: ScanOptions): ScanSummary {
   markCounted(state, detected.filter((o) => o.at <= counted));
   const { touched, added } = upsertIssues(issues, state, detected.filter((o) => o.at > counted));
   state.logs = turns.offsets;
+  state.costs = nextCostHistory(state.costs, turns.records);
   state.lastScanAt = now;
   state.fingerprint = fingerprint;
   state.queueDueAt = nextQueueDue(queue, config.queueWaitMs);
@@ -82,7 +85,7 @@ function nextQueueDue(records: readonly SentinelRecord[], queueWaitMs: number): 
   return due;
 }
 
-export function sourceFingerprint(dataDir: string, config: Omit<DetectorConfig, "now">): string {
+export function sourceFingerprint(dataDir: string, config: Pick<DetectorConfig, "queueWaitMs" | "costUsd" | "retryLoopMin">): string {
   const parts: string[] = [JSON.stringify([config.queueWaitMs, config.costUsd, config.retryLoopMin])];
   const add = (path: string, label: string) => {
     try {

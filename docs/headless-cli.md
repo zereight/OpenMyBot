@@ -92,6 +92,7 @@ one of its conversations.
 |---|---|
 | `doctor [--wait 2m]` | Checks the server answers, is new enough, who you are to it (and when your session expires), that an engine is ready, and whether bots have a browser. On a shared server without a session (`docker compose exec omb openmausbot doctor`), it learns only how many engines are ready, not which (`GET /api/health/engines`). |
 | `doctor --host` | Checks this Linux machine can run the server and the bots' sandbox (below). |
+| `doctor --claude` | Checks what Claude bots on this machine take from files you and they can edit (below). |
 | `bots`, `channels`, `models` | Your bots and what each is doing, your rooms, the engines and the models each offers. |
 | `messages TARGET [--limit 30]` | The latest messages of a conversation. |
 | `send TARGET TEXT` | Sends one message and returns at once, to the conversation the bot or room has open. `--task new` starts a new conversation for it (`--title` names it, else the message's first line), and `--task ID` picks one. It says which conversation it went to. `--send-id ID` makes a retry safe: the same id never sends twice. |
@@ -155,6 +156,34 @@ A problem fails the check (exit 7) and says its fix on the next line; a
 warning does not. `--json` prints `{ ok, problems, warnings, checks: [{ id,
 status, message, fix }] }`. On macOS and Windows it says it checks Linux
 servers, and exits 7.
+
+## doctor --claude
+
+Claude bots run with `--setting-sources project`, so a turn does not read your
+own `~/.claude/settings.json`. Two things from this machine do reach it:
+
+- each bot's `.claude/settings.json` (in its working folder, else its own
+  folder): its hooks, permission rules, plugins and env. A turn that runs in
+  another folder carries only the fields of the right shape, and a wrong one
+  drops that field silently;
+- the skills in `~/.claude/skills`, when Settings shares them with bots.
+
+```text
+$ openmausbot doctor --claude
+ok    Bots load the 3 skills in /Users/me/.claude/skills, scripts included
+ok    Bot "Reviewer": /Users/me/.openmausbot/workspaces/b1/.claude/settings.json carries hooks for Stop, 4 permission rules into turns
+warn  Bot "Deploy": /Users/me/deploy/.claude/settings.json: `hooks` has the wrong shape, so turns in another folder carry none of it
+      fix: see https://docs.claude.com/en/docs/claude-code/settings
+1 warning.
+```
+
+It also warns about a settings file that is a link, too large or not JSON, a
+shared skill folder without a `SKILL.md`, and a `permissions.allow` rule that
+lets every shell command run without asking. It prints paths, key names and
+counts, never a hook command, an env value or a rule's text, and changes
+nothing. It reads `--data-dir`, else `OMB_DATA_DIR` or `~/.openmausbot`. A
+warning does not fail it: the exit code is 0. `--json` prints `{ ok, warnings,
+checks: [{ id, status, message, fix }] }`.
 
 ## run and wait
 
