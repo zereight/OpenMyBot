@@ -501,6 +501,16 @@ describe("archived threads", () => {
     expect(markup).toContain('text-ink-tertiary">Put away</span>');
     expect(render({ threadId: "1", title: "Put away", archivedAt: 5, busy: true })).toContain('title="Put away · Working · Archived"');
   });
+  it("marks an archived row with an icon badge that no title length can push out, and dims it", () => {
+    const longTitle = "A very long thread title that fills the whole sidebar row and truncates the byline away";
+    const markup = render({ threadId: "1", title: longTitle, archivedAt: 5 });
+    expect(markup).toContain("data-thread-archived");
+    expect(markup).toContain('aria-label="Archived"');
+    expect(markup).toContain("rounded-md opacity-70");
+    expect(render({ threadId: "1", title: longTitle, archivedAt: 5, closedBy: { botId: "pm", name: "Parker", at: 2 } })).toContain("data-thread-archived");
+    expect(render({ threadId: "1", title: "Live" })).not.toContain("data-thread-archived");
+    expect(render({ threadId: "1", title: "Live" })).not.toContain("rounded-md opacity-70");
+  });
   it("treats archivedAt: 0 as archived, because zero is a valid timestamp at the API boundary", () => {
     const rows = [
       { threadId: "0", title: "Current work" },
