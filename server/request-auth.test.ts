@@ -93,6 +93,14 @@ describe("request source for the lockout", () => {
 });
 
 describe("scopes", () => {
+  it("lets signed-in clients fork bot and room conversations without opening other task actions", () => {
+    for (const path of ["/api/bots/bot-1/tasks/thread-1/forks", "/api/groups/room-1/tasks/thread-1/forks"]) {
+      expect(requiredScope("POST", path), path).toBe("client");
+      for (const method of ["GET", "PATCH", "DELETE"]) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
+      expect(requiredScope("POST", `${path}/extra`)).toBe("admin");
+    }
+  });
+
   it("lets a member reach a connection card's authorize, whose handler decides who may sign in, and nothing past it", () => {
     for (const [method, path] of [
       ["POST", "/api/bots/bot-1/connector-cards/card-1/authorize"],
@@ -168,7 +176,7 @@ describe("scopes", () => {
       ["PATCH", "/api/bots/x/cards/m"], ["POST", "/api/groups/g/messages"], ["PATCH", "/api/groups/g"],
       ["PATCH", "/api/bots/x"], ["PATCH", "/api/bots/x/profile"], ["POST", "/api/attachments"], ["PUT", "/api/bots/order"],
       ["GET", "/api/attachments/a.png"], ["POST", "/api/routines"], ["POST", "/api/routines/r/run"],
-      ["POST", "/api/routine-runs/seen-all"],
+      ["POST", "/api/routine-runs/seen-all"], ["POST", "/api/inbox/read-all"],
       ["GET", "/api/bots"], ["GET", "/api/threads/t/messages"], ["GET", "/api/search"], ["GET", "/api/events"],
       ["GET", "/api/config"], ["GET", "/api/webhooks"], ["POST", "/api/tts/speak"],
       ["GET", "/api/auth/session"], ["POST", "/api/auth/stream-ticket"], ["POST", "/api/auth/logout"],
@@ -203,7 +211,7 @@ describe("scopes", () => {
       ["POST", "/api/bots/x/apps/m/rpc/extra"], ["DELETE", "/api/bots/x/apps/m/context"],
       ["PATCH", "/api/logins/1password/vaults/v1"], ["GET", "/api/bots/x/sign-in-cards/m/done"],
       ["GET", "/api/bots/x/queue/q/steer"], ["POST", "/api/bots/x/queue/q/steer/more"], ["POST", "/api/groups/g/queue/q/steer/more"],
-      ["POST", "/api/tts/voices/add"],
+      ["POST", "/api/tts/voices/add"], ["GET", "/api/inbox/read-all"], ["PUT", "/api/inbox/read-all"], ["POST", "/api/inbox/read-all/extra"],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
   });
 
