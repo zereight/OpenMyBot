@@ -49,6 +49,23 @@ describe("which computer select_computer picks", () => {
     expect(pickComputer([option("cloud", "off")], "auto", "off", false).option).toBeUndefined();
   });
 
+  it("on Auto leaves the person's own computer for last: another ready computer comes first, whatever order they are listed in", () => {
+    // select_computer lists cloud, vm, local, browser; the person's own screen is the one a bot uses only when nothing else works.
+    expect(pickComputer([option("vm", "off"), option("local", "ready"), option("browser", "ready")], "auto", "off", false).option?.surface).toBe("browser");
+    expect(pickComputer([option("vm", "missing"), option("local", "ready"), option("browser", "ready")], "auto", "off", false).option?.surface).toBe("browser");
+    expect(pickComputer([option("cloud", "ready"), option("vm", "off"), option("local", "ready")], "auto", "off", false).option?.surface).toBe("cloud");
+    expect(pickComputer([option("local", "ready"), option("browser", "ready")], "auto", "off", false).option?.surface).toBe("browser");
+    // Nothing else is up: the person's own computer is still better than none.
+    expect(pickComputer([option("vm", "off"), option("local", "ready"), option("browser", "off")], "auto", "off", false).option?.surface).toBe("local");
+  });
+
+  it("never moves off the person's own computer when it is the current one, was chosen, or is asked for by name", () => {
+    const options = [option("cloud", "ready"), option("vm", "off"), option("local", "ready"), option("browser", "ready")];
+    expect(pickComputer(options, "auto", "local", false)).toMatchObject({ option: { surface: "local" }, current: true });
+    expect(pickComputer(options, "auto", "off", false, "local")).toMatchObject({ option: { surface: "local" }, current: false });
+    expect(pickComputer(options, "local", "off", false).option?.surface).toBe("local");
+  });
+
   it("on Auto starts a stopped private desktop before waking or creating a cloud computer", () => {
     // A stopped or recreatable private desktop reads as canCreate; a sleeping cloud computer as canStart.
     expect(pickComputer([option("cloud", "asleep"), option("vm", "missing")], "auto", "off", false).option?.surface).toBe("vm");

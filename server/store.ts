@@ -35,7 +35,7 @@ import type {
   WireMessage, WireTask, BotProject as BotProjectRecord,
 } from "../shared/wire.ts";
 import { archivedByPerson, movesThreadToTop, nextOpenThread } from "../shared/thread-order.ts";
-import { fillTaskAskedAts, noteImportedActivity, noteThreadActivity, repairThreadUpdatedAts, restoreAutoArchived, restoreAutoArchivedThread } from "./thread-activity.ts";
+import { fillTaskAskedAts, noteImportedActivity, noteThreadActivity, repairThreadUpdatedAts, restoreArchivedForPerson, restoreAutoArchived, restoreAutoArchivedThread } from "./thread-activity.ts";
 import { parseConnectorTools } from "./connector-tools.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
 import { initialGreetingMessage } from "./initial-greeting.ts"; import { createDefaultBot, defaultBotRefusal, type DefaultBotIntro } from "./default-bot.ts";
@@ -1132,7 +1132,8 @@ export class Store {
       }
     }
     noteThreadActivity(this as any, threadId, full.at, movesThreadToTop(full), full.turnCompletedAt ?? full.at);
-    restoreAutoArchivedThread(this as any, threadId);
+    if (full.role === "user" && full.kind === "text" && !full.peerAsk) restoreArchivedForPerson(this as any, threadId);
+    else restoreAutoArchivedThread(this as any, threadId);
     this.emit({ type: "message", threadId, message: full });
     if (full.role === "user" && full.kind === "text") this.dismissOnboardingCard(threadId);
     return full;

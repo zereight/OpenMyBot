@@ -29,6 +29,9 @@ const COLUMN_TONE: Record<BoardColumn, string> = {
   archived: "bg-ink-secondary/15",
 };
 
+/** The threads of one team; `name` is null on the plain single board, which has no team heading. */
+interface BoardLane { key: string; name: string | null; bots: Bot[] }
+
 interface CardActions {
   selected: { botId: string; threadId: string } | null;
   onOpen: (card: BoardCard) => void;
@@ -71,7 +74,7 @@ function Card({ card, bot, now, actions }: { card: BoardCard; bot: Bot | undefin
   );
 }
 
-function Column({ column, cards, bots, now, actions }: { column: BoardColumn; cards: BoardCard[]; bots: Map<string, Bot>; now: number; actions: CardActions }) {
+function Column({ column, cards, bots, now, actions, capped }: { column: BoardColumn; cards: BoardCard[]; bots: Map<string, Bot>; now: number; actions: CardActions; capped?: boolean }) {
   const [all, setAll] = useState(false);
   const shown = all ? cards : cards.slice(0, BOARD_CARDS_SHOWN);
   return (
@@ -81,7 +84,7 @@ function Column({ column, cards, bots, now, actions }: { column: BoardColumn; ca
         <span className="flex-1 truncate">{t(`board.column.${column}`)}</span>
         <span className="text-ink-secondary">{cards.length}</span>
       </h2>
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+      <div className={cn("flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto", capped && "max-h-80")}>
         {shown.length === 0 && <p className="px-2 py-4 text-center text-[12px] text-ink-secondary">{t("board.empty")}</p>}
         {shown.map((card) => <Card key={cardKey(card)} card={card} bot={bots.get(card.botId)} now={now} actions={actions} />)}
         {!all && cards.length > shown.length && (
@@ -99,30 +102,41 @@ export function ThreadBoard({ bots, teams }: { bots: Bot[]; teams: Array<{ key: 
   const showThreads = useShowThreads();
   const now = useRelativeNow();
   const [team, setTeam] = useState<string | null>(null);
-  const scoped = useMemo(() => team === null ? bots : bots.filter((bot) => (bot.section?.trim() ?? "") === team), [bots, team]);
   const byId = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
   // A deleted thread leaves the board at once; the server's answer follows a moment later, and a refused delete brings it back.
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
-  const built = useMemo(() => buildThreadBoard(scoped, now, state.pendingQueued), [scoped, now, state.pendingQueued]);
-  const board = useMemo<ThreadBoardColumns>(() => {
+  // One team picked: a single board. "All teams": one lane per team, so the columns are never a mix of teams.
+  const lanes = useMemo<BoardLane[]>(() => {
+    const sectionOf = (bot: Bot) => bot.section?.trim() ?? "";
+    if (team !== null) return [{ key: team, name: null, bots: bots.filter((bot) => sectionOf(bot) === team) }];
+    if (teams.length <= 1) return [{ key: "", name: null, bots }];
+    const known = new Set(teams.map((entry) => entry.key));
+    const strays = [...new Set(bots.map(sectionOf).filter((key) => !known.has(key)))].map((key) => ({ key, name: key }));
+    return [...teams, ...strays]
+      .map((entry) => ({ key: entry.key, name: entry.name, bots: bots.filter((bot) => sectionOf(bot) === entry.key) }))
+      .filter((lane) => lane.bots.length > 0);
+  }, [bots, team, teams]);
+  const laneBoards = useMemo(() => lanes.map((lane) => {
+    const built = buildThreadBoard(lane.bots, now, state.pendingQueued);
     if (removed.size === 0) return built;
     return Object.fromEntries(BOARD_COLUMNS.map((column) => [column, built[column].filter((card) => !removed.has(cardKey(card)))])) as ThreadBoardColumns;
-  }, [built, removed]);
+  }), [lanes, now, state.pendingQueued, removed]);
+  const everyCard = laneBoards.flatMap((board) => BOARD_COLUMNS.map((column) => ({ column, cards: board[column] })).flatMap(({ column, cards }) => cards.map((card) => ({ card, column, siblings: cards }))));
   const [deleting, setDeleting] = useState<{ botId: string; threadId: string } | null>(null);
   // The open dialog follows the board, so a thread that started working or went away since it was asked about is not deleted.
-  const doomed = deleting ? BOARD_COLUMNS.flatMap((column) => board[column]).find((card) => card.botId === deleting.botId && card.threadId === deleting.threadId) : undefined;
+  const doomed = deleting ? everyCard.find(({ card }) => card.botId === deleting.botId && card.threadId === deleting.threadId)?.card : undefined;
   const wide = useMediaQuery(SIDEBAR_INLINE, true);
   const [selected, setSelected] = useState<{ botId: string; threadId: string } | null>(null);
   const open = (card: BoardCard) => openThread(dispatch, { botId: card.botId, threadId: card.threadId }, state, showThreads);
   // Looked up on every render: a thread that was deleted, snoozed or ended since closes the panel instead of leaving a stale copy.
   const chosen = wide && selected
-    ? BOARD_COLUMNS.flatMap((column) => board[column].map((card) => ({ card, column }))).find(({ card }) => card.botId === selected.botId && card.threadId === selected.threadId)
+    ? everyCard.find(({ card }) => card.botId === selected.botId && card.threadId === selected.threadId)
     : undefined;
   const remove = (card: BoardCard) => {
     const key = cardKey(card);
     // The panel moves to the card beside the deleted one, so deleting a run of threads does not keep closing it.
     if (chosen && cardKey(chosen.card) === key) {
-      const column = board[chosen.column];
+      const column = chosen.siblings;
       const index = column.findIndex((entry) => cardKey(entry) === key);
       const next = column[index + 1] ?? column[index - 1];
       setSelected(next ? { botId: next.botId, threadId: next.threadId } : null);
@@ -151,11 +165,33 @@ export function ThreadBoard({ bots, teams }: { bots: Bot[]; teams: Array<{ key: 
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-h-0 min-w-0 flex-1 gap-3 overflow-x-auto p-6">
-          {BOARD_COLUMNS.map((column) => (
-            <Column key={column} column={column} cards={board[column]} bots={byId} now={now} actions={actions} />
-          ))}
-        </div>
+        {lanes[0]?.name === null || lanes.length === 0 ? (
+          <div className="flex min-h-0 min-w-0 flex-1 gap-3 overflow-x-auto p-6">
+            {BOARD_COLUMNS.map((column) => (
+              <Column key={column} column={column} cards={laneBoards[0]?.[column] ?? []} bots={byId} now={now} actions={actions} />
+            ))}
+          </div>
+        ) : (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-auto p-6">
+            {lanes.map((lane, index) => {
+              const laneBoard = laneBoards[index]!;
+              const total = BOARD_COLUMNS.reduce((sum, column) => sum + laneBoard[column].length, 0);
+              return (
+                <section key={lane.key} data-board-team={lane.key} aria-label={lane.name!} className="flex w-max min-w-full flex-col gap-2">
+                  <h2 className="flex items-center gap-2 text-[13px] font-semibold text-ink">
+                    <span className="truncate">{lane.name}</span>
+                    <span className="text-[12px] font-normal text-ink-secondary">{total}</span>
+                  </h2>
+                  <div className="flex gap-3">
+                    {BOARD_COLUMNS.map((column) => (
+                      <Column key={column} column={column} cards={laneBoard[column]} bots={byId} now={now} actions={actions} capped />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        )}
         {chosen && <ThreadBoardPanel key={cardKey(chosen.card)} card={chosen.card} column={chosen.column} bot={byId.get(chosen.card.botId)}
           onOpen={() => open(chosen.card)} onClose={() => setSelected(null)} />}
       </div>

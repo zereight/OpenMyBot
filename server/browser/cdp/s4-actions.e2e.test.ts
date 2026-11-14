@@ -93,6 +93,37 @@ suite("S4 snapshot, refs and actions on real Chrome", () => {
     expect(await read(`document.querySelectorAll("li").length`)).toBe(5);
   });
 
+  it("lists the visible, enabled matches of an ambiguous selector, each clickable by ref, and still clicks none", async () => {
+    await open(repeatedRows);
+    const error = await page.click({ selector: 'button[data-testid="delete-row"]' }, { timeoutMs: 1_000 }).catch((e: unknown) => e as Error);
+    expect(error).toMatchObject({ code: "ambiguous" });
+    const message = (error as Error).message;
+    expect(message).toMatch(/strict mode violation: .* matches 5 elements/);
+    const lines = message.split("\n").filter((line) => line.startsWith("- e"));
+    expect(lines).toHaveLength(5);
+    expect(lines[2]).toMatch(/^- e\d+ button "delete" \(in "row 3"\)$/);
+    expect(await read(`document.querySelectorAll("li").length`)).toBe(5);
+    await page.click({ ref: /^- (e\d+) /.exec(lines[2]!)![1]! }, { timeoutMs: 1_000 });
+    expect(await read(`[...document.querySelectorAll("li")].map((li) => li.textContent)`)).toEqual(["row 1delete", "row 2delete", "row 4delete", "row 5delete"]);
+  });
+
+  it("leaves hidden and disabled matches out of the list, lifts text matches to their button, and puts exact names first", async () => {
+    await open(`<button><span>Save</span></button><button disabled><span>Save</span></button><button style="display:none"><span>Save</span></button>
+      <button aria-label="Save as draft">Save as draft</button><button>Save</button>`);
+    const error = await page.click({ selector: "role=button[name*='save']" }, { timeoutMs: 1_000 }).catch((e: unknown) => e as Error);
+    const lines = (error as Error).message.split("\n").filter((line) => line.startsWith("- e"));
+    expect(lines.map((line) => line.replace(/^- e\d+ /, ""))).toEqual(['button "Save"', 'button "Save"', 'button "Save as draft"']);
+    const text = await page.click({ selector: "text=Save" }, { timeoutMs: 1_000 }).catch((e: unknown) => e as Error);
+    expect((text as Error).message.split("\n").filter((line) => line.startsWith("- e")).every((line) => /^- e\d+ button "Save/.test(line))).toBe(true);
+  });
+
+  it("adds no list when every match is hidden", async () => {
+    await open(`<button style="display:none">Go</button><button style="display:none">Go</button>`);
+    const error = await page.click({ selector: "button" }, { timeoutMs: 1_000 }).catch((e: unknown) => e as Error);
+    expect(error).toMatchObject({ code: "ambiguous" });
+    expect((error as Error).message).not.toContain("- e");
+  });
+
   it("does not retarget a removed ref to a replacement node (t3)", async () => {
     await open(`<button onclick="this.textContent='clicked'">original</button>`);
     const ref = refOf((await page.snapshot()).tree, "button", "original");

@@ -10302,7 +10302,7 @@
   "board.column.teammates": "Waiting on teammates",
   "board.column.working": "Working",
   "board.empty": "Nothing here",
-  "board.panel.archived": "Archived. Unarchive it to keep talking here.",
+  "board.panel.archived": "Archived. Sending a message brings it back.",
   "board.panel.empty": "No messages yet",
   "board.panel.needsYou": "This thread is waiting for your answer. Answer it in the full chat.",
   "board.panel.openChat": "Open full chat",
