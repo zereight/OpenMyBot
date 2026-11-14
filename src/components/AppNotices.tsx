@@ -38,7 +38,8 @@ import { CLOUD_NOTICE_CARD, cloudNoticeStep, CloudNoticeCard } from "./CloudNoti
 function CloudTrialIntroCard(_props: { offer?: unknown; onStart?: () => void; onHowTo?: () => void; onSignIn?: () => void; onNotNow?: () => void; onDismiss?: () => void }) { return null; }
 import { useMoveQuiet } from "./CloudSendStrip";
 function CloudTrialNoticeCard(_props: { view?: unknown; failed?: boolean; onAction?: () => void; onClose?: () => void }) { return null; }
-function useCloudPlanSnapshot(_bridge: unknown): { trial?: { state: string; endsAt: number }; credit?: unknown; status?: string } | null { return null; }
+// Plan billing is removed from this fork, so there is never a trial to wait for. An empty snapshot, not null: null means "not loaded yet" to the notice queue, which then holds every card behind the trial notice (ModelGo, announcements, the star card) forever.
+function useCloudPlanSnapshot(_bridge: unknown): { trial?: { state: string; endsAt: number }; credit?: unknown; status?: string } | null { return {}; }
 import { GrokMovePopup, reportGrokMovePopup, type GrokMovePopupAction } from "./GrokMovePopup";
 import { GrokMoveDialog } from "./lazy-screens";
 import { LinkButton, NoticeCard, NoticeToast, NotNowButton } from "./NoticeCard";
