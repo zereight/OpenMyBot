@@ -31,7 +31,8 @@ export function useSettingsContext(): SettingsContext {
     client,
     admin,
     places: known > 1 || (!ogb?.environments && railShown(places)),
-    plan: desktop ? Boolean(ogb?.cloudAccount || (ogb?.cloudPlan && cloud)) : cloud && !team && admin,
+    // Plan billing is removed from this fork, so there is no Plan page to show. Upstream computes this from the cloud account and plan; keep false on merges.
+    plan: false,
     organization: Boolean(ogb?.organization) && !client,
     environments: Boolean(ogb?.environments),
     installations: workspacesAvailable(state.config),

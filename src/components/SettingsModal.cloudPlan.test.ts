@@ -32,18 +32,16 @@ describe.each(["Simple", "Advanced"] as const)("%s Settings → Plan & billing o
     const html = render();
     expect(html).not.toContain("CLOUD_PLAN_MARKER"); expect(html).not.toContain(reachable);
   });
-  it("shows the plan, read only, on the person's own Cloud", () => {
-    vi.stubGlobal("window", { ogb: { cloudPlan: plan } });
-    fixture.config = { cloudHome: true };
+  // Plan billing is removed from this fork (PR #2): there is no Plan page, whatever the account or the Cloud.
+  it.each([
+    ["the person's own Cloud", { ogb: { cloudPlan: plan } }, { cloudHome: true }],
+    ["the app on this computer", { ogb: { cloudAccount: {}, cloudPlan: plan } }, undefined],
+  ])("never offers the plan page on %s", (_where, win, config) => {
+    vi.stubGlobal("window", win);
+    fixture.config = config;
     const html = render();
-    expect(html).toContain("CLOUD_PLAN_MARKER home"); expect(html).toContain(reachable);
-    expect(html).toContain('data-settings-page-open="plan"');
-  });
-  it("is the full plan page in the app on this computer, with the offer in both modes", () => {
-    vi.stubGlobal("window", { ogb: { cloudAccount: {}, cloudPlan: plan } });
-    const html = render();
-    expect(html).toContain("CLOUD_PLAN_MARKER offer");
-    expect(html).not.toContain("CLOUD_PLAN_MARKER home");
-    expect(html).toContain(reachable);
+    // The Account page still holds the sign-in part, so only the plan's own marker and page must be absent.
+    expect(html).not.toContain("CLOUD_PLAN_MARKER home"); expect(html).not.toContain(reachable);
+    expect(html).not.toContain('data-settings-page-open="plan"');
   });
 });
