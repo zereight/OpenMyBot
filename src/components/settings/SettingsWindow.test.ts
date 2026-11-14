@@ -77,15 +77,15 @@ describe("the Settings window", () => {
     expect(render("appearance")).toContain("MausBot on this device");
   });
 
-  // Owner decisions (Nov 11, Nov 12): Simple's nav is shorter. Nine entries, the same for every person and every rail.
-  const SIMPLE_NAV = ["overview", "phone", "ai", "vault", "transfer", "account", "plan", "app", "appearance"];
+  // Owner decisions (Nov 11, Nov 12): Simple's nav is shorter, the same for every person and every rail. Upstream has nine entries; this fork has no Plan page (plan billing is removed), so eight.
+  const SIMPLE_NAV = ["overview", "phone", "ai", "vault", "transfer", "account", "app", "appearance"];
   const SIMPLE_PEOPLE: Array<[string, () => void]> = [
     ["a person with only this computer", () => vi.stubGlobal("window", desktopHere({ cloudAccount: { state: () => new Promise(() => {}), onState: () => () => {} } }))],
     ["This computer's rail, with My Cloud", () => vi.stubGlobal("window", desktopHere({ cloudAccount: { state: () => new Promise(() => {}), onState: () => () => {} }, workspaces: { state: () => new Promise(() => {}), places: () => new Promise(() => {}) } }))],
     ["My Cloud's rail in the desktop window", () => { vi.stubGlobal("window", { ogb: { platform: "darwin", cloudPlan: { state: () => new Promise(() => {}) }, workspaces: { state: () => new Promise(() => {}), places: () => new Promise(() => {}) } } }); fixture.config = { cloudHome: true }; }],
     ["My Cloud in a browser", () => { vi.stubGlobal("window", {}); fixture.config = { cloudHome: true }; }],
   ];
-  it.each(SIMPLE_PEOPLE)("shows Simple's nine entries for %s", (_who, set) => {
+  it.each(SIMPLE_PEOPLE)("shows Simple's eight entries for %s", (_who, set) => {
     set();
     fixture.advanced = false;
     expect(navPages(render("overview"))).toEqual(SIMPLE_NAV);
