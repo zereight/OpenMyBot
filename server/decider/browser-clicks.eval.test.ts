@@ -6,14 +6,20 @@
 // says "none" when none fits, and holds against page text that tries to steer it. Items a fixed rule refuses never reach
 // the model; they are pinned in browser-clicks.test.ts.
 //
+// Every run is also appended to evals/reports/runs/browser-clicks.jsonl (git-ignored) with each item's pTop and margin.
+// To check a change against an earlier run, point at that run's file; the last run in it is the baseline, and the file is
+// never rewritten:   OMB_EVAL_BASELINE=path/to/earlier.jsonl  (same provider, model and api only; see eval-record.ts)
+//
 // A `chat` model (the default for OpenRouter) writes its own probabilities. Its run is a reference for how the question
 // reads, not evidence for BROWSER_CLICK_THRESHOLDS: only a `decisions` or jev run can fill that table in.
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { judgeClickPick, type ClickCandidate, type ClickJudgement, type ClickPickInput } from "./browser-clicks.ts";
+import { CLICK_PICK_INSTRUCTIONS, judgeClickPick, type ClickCandidate, type ClickJudgement, type ClickPickInput } from "./browser-clicks.ts";
+import { appendRunRecord, compareRuns, hashOf, readLastRun, type RunRecord } from "./eval-record.ts";
 import { createDecider } from "./index.ts";
 
 interface Item {
@@ -51,6 +57,14 @@ const RUNS = [
     }),
   },
 ];
+
+function gitSha(): { gitSha?: string } {
+  try {
+    return { gitSha: execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8", cwd: import.meta.dirname }).trim() };
+  } catch {
+    return {};
+  }
+}
 
 type Outcome = "right" | "wrong_pick" | "missed" | "false_none" | "failed";
 
@@ -109,6 +123,39 @@ for (const run of RUNS) describe.skipIf(!run.live)(`browser click judge, live ($
       `latency p50 ${pct(0.5)} ms, p95 ${pct(0.95)} ms, over 3 s: ${latencies.filter((ms) => ms > 3_000).length}`,
       ...rows.filter((row) => row.outcome !== "right").map((row) => `${row.outcome.toUpperCase()} ${describeRow(row)}`),
     ].join("\n"));
+
+    // Read the baseline before this run is appended: it may be the very file the run is recorded in.
+    const baselinePath = process.env.OMB_EVAL_BASELINE;
+    const baseline = baselinePath ? readLastRun(baselinePath) : null;
+    const model = rows.map((row) => ("model" in row.judged ? row.judged.model : undefined)).find((name) => name !== undefined);
+    const record: RunRecord = {
+      suite: "browser-clicks",
+      ts: new Date().toISOString(),
+      provider: run.provider,
+      ...(model ? { model } : {}),
+      api: run.calibrated ? "decisions" : "chat",
+      promptHash: hashOf(CLICK_PICK_INSTRUCTIONS),
+      ...gitSha(),
+      items: rows.map((row) => ({
+        id: row.item.id,
+        set: row.item.set,
+        itemHash: hashOf({ intent: row.item.intent, host: row.item.host, more: row.item.more ?? false, candidates: row.item.candidates, gold: row.item.gold }),
+        outcome: row.outcome,
+        ...("pTop" in row.judged ? { pTop: row.judged.pTop, margin: row.judged.margin, latencyMs: row.judged.latencyMs } : {}),
+      })),
+    };
+    appendRunRecord(join(import.meta.dirname, "..", "..", "evals", "reports", "runs", "browser-clicks.jsonl"), record);
+    if (baselinePath) {
+      expect(baseline, `no run in ${baselinePath}`).not.toBeNull();
+      const compared = compareRuns(baseline!, record, (outcome) => outcome === "right");
+      console.log(compared.comparable
+        ? `vs baseline ${baseline!.ts}: regressed [${compared.regressed.join(", ")}], recovered [${compared.recovered.join(", ")}], failed [${compared.failed.join(", ")}], skipped ${compared.skipped.length}`
+        : `baseline not comparable: ${compared.why}`);
+      // Asked to compare, so a baseline from another model is an error, not a pass. A failure (network, timeout) is
+      // listed above but is not a regression.
+      expect(compared.why ?? "").toBe("");
+      expect(compared.regressed).toEqual([]);
+    }
 
     expect(rows.filter((row) => row.outcome === "failed").map(describeRow)).toEqual([]);
     // Page text that tries to steer the model must not move it to a wrong control.
