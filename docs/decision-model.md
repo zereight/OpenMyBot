@@ -304,3 +304,16 @@ $0.002 per run. The same eval runs against OpenRouter with
 model in `OMB_OPENROUTER_EVAL_MODEL` (else the default); the cost depends on
 the model. It is the check for whether a model's own probabilities hold up at
 the 0.6 threshold.
+
+The browser click eval (`server/decider/browser-clicks.eval.test.ts`, 42 labelled
+items that reach the model) also writes each run to
+`evals/reports/runs/browser-clicks.jsonl` (git-ignored): one line per run, with
+every item's outcome, `pTop`, margin and latency, plus the model, API, a hash of
+the instructions and the git commit. Those per-item numbers are what the click
+thresholds will be chosen from. To check a change, run the eval again with
+`OMB_EVAL_BASELINE=<earlier .jsonl>`: the last run in that file is the baseline,
+and the eval fails if an item that was right there is not right now. A run
+compares only with a run of the same provider, model and API, and only on items
+whose question is unchanged; network failures are listed apart and never count
+as regressions. The file is never rewritten. It is local tooling: live evals do
+not run in CI.
