@@ -181,6 +181,7 @@ describe("a person's hold on the shared Local VM", () => {
           APPDATA: join(home, "appdata"), LOCALAPPDATA: join(home, "localappdata"),
           TEMP: home, TMP: home, TMPDIR: home,
           OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1), OMB_STATIC_DIR: ui, OMB_TEST_VM_STATE: stateFile,
+          OMB_OWN_MCP_STDIO: "1",
           OMB_BOAT_API: `http://127.0.0.1:${(boatServer.address() as { port: number }).port}`,
           OMB_COMPUTER_CALL_WAIT_MS: String(CALL_WAIT_MS), OMB_TEST_LEASE_GRACE_MS: String(GRACE_MS),
           OMB_TEST_VIEWER_RECHECK_MS: String(RECHECK_MS),

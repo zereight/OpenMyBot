@@ -357,6 +357,7 @@ describe("routine comms e2e on the job runtime (fake ACP fleet)", () => {
       HOME: home,
       USERPROFILE: home,
       OMB_PORT: String(PORT),
+      OMB_OWN_MCP_STDIO: "1",
       OMB_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
     };
     if (process.env.PATH) env.PATH = process.env.PATH;

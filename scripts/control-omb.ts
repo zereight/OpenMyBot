@@ -164,6 +164,9 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
     OMB_TEST_SEALED_PATH: "1",
     // The project's live announcement cards would sit over the corner the UI tests click in.
     OMB_DISABLE_ANNOUNCEMENTS: "1",
+    // The scripted engines and the fixtures' tool helpers read the agents server's stdio launch config (command, env.OMB_COMMS_TOKEN);
+    // reached by URL it has neither, so fixture servers keep their own MCP servers on stdio proxies.
+    OMB_OWN_MCP_STDIO: "1",
   });
   // The fake engines' knobs are the one thing a caller may script into the child.
   for (const [key, value] of Object.entries(parentEnv)) {
