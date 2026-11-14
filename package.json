@@ -37,6 +37,7 @@
     "mcp": "node --experimental-strip-types scripts/mcp-server.ts",
     "control:omb": "node --experimental-strip-types scripts/control-omb.ts",
     "eval": "node --experimental-strip-types evals/runners/run-evals.ts",
+    "eval:analyze": "node --experimental-strip-types scripts/eval-analyze.ts",
     "dev:desktop": "node scripts/prepare-cloudflared.mjs --current && electron .",
     "dev:all": "pnpm dlx concurrently \"pnpm dev:server\" \"pnpm dev\" \"pnpm dev:desktop\"",
     "build": "tsc -b && tsc -p tsconfig.server.json && vite build",

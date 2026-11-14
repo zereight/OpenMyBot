@@ -9,6 +9,8 @@
 // Every run is also appended to evals/reports/runs/browser-clicks.jsonl (git-ignored) with each item's pTop and margin.
 // To check a change against an earlier run, point at that run's file; the last run in it is the baseline, and the file is
 // never rewritten:   OMB_EVAL_BASELINE=path/to/earlier.jsonl  (same provider, model and api only; see eval-record.ts)
+// If that file holds several runs of the baseline's own setup, an item that flipped between them is noise: a drop on it is
+// printed as `flaky`, not failed. Record a few runs of the unchanged setup first; `pnpm eval:analyze` shows which items flip.
 //
 // A `chat` model (the default for OpenRouter) writes its own probabilities. Its run is a reference for how the question
 // reads, not evidence for BROWSER_CLICK_THRESHOLDS: only a `decisions` or jev run can fill that table in.
@@ -19,7 +21,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { CLICK_PICK_INSTRUCTIONS, judgeClickPick, type ClickCandidate, type ClickJudgement, type ClickPickInput } from "./browser-clicks.ts";
-import { appendRunRecord, compareRuns, hashOf, readLastRun, type RunRecord } from "./eval-record.ts";
+import { groupBySetup, setupKey, stability } from "./eval-analysis.ts";
+import { appendRunRecord, compareRuns, hashOf, readRuns, type RunRecord } from "./eval-record.ts";
 import { createDecider } from "./index.ts";
 
 interface Item {
@@ -126,7 +129,9 @@ for (const run of RUNS) describe.skipIf(!run.live)(`browser click judge, live ($
 
     // Read the baseline before this run is appended: it may be the very file the run is recorded in.
     const baselinePath = process.env.OMB_EVAL_BASELINE;
-    const baseline = baselinePath ? readLastRun(baselinePath) : null;
+    const baselineRuns = baselinePath ? readRuns(baselinePath) : [];
+    const baseline = baselineRuns.at(-1) ?? null;
+    const flaky = baseline ? new Set(stability(groupBySetup(baselineRuns).get(setupKey(baseline)) ?? [], (outcome) => outcome === "right").flipped.map((entry) => entry.id)) : new Set<string>();
     const model = rows.map((row) => ("model" in row.judged ? row.judged.model : undefined)).find((name) => name !== undefined);
     const record: RunRecord = {
       suite: "browser-clicks",
@@ -141,15 +146,15 @@ for (const run of RUNS) describe.skipIf(!run.live)(`browser click judge, live ($
         set: row.item.set,
         itemHash: hashOf({ intent: row.item.intent, host: row.item.host, more: row.item.more ?? false, candidates: row.item.candidates, gold: row.item.gold }),
         outcome: row.outcome,
-        ...("pTop" in row.judged ? { pTop: row.judged.pTop, margin: row.judged.margin, latencyMs: row.judged.latencyMs } : {}),
+        ...("pTop" in row.judged ? { answer: row.judged.kind === "pick" ? ("pick" as const) : ("none" as const), pTop: row.judged.pTop, margin: row.judged.margin, latencyMs: row.judged.latencyMs } : {}),
       })),
     };
     appendRunRecord(join(import.meta.dirname, "..", "..", "evals", "reports", "runs", "browser-clicks.jsonl"), record);
     if (baselinePath) {
       expect(baseline, `no run in ${baselinePath}`).not.toBeNull();
-      const compared = compareRuns(baseline!, record, (outcome) => outcome === "right");
+      const compared = compareRuns(baseline!, record, (outcome) => outcome === "right", undefined, flaky);
       console.log(compared.comparable
-        ? `vs baseline ${baseline!.ts}: regressed [${compared.regressed.join(", ")}], recovered [${compared.recovered.join(", ")}], failed [${compared.failed.join(", ")}], skipped ${compared.skipped.length}`
+        ? `vs baseline ${baseline!.ts}: regressed [${compared.regressed.join(", ")}], recovered [${compared.recovered.join(", ")}], flaky [${compared.flaky.join(", ")}], failed [${compared.failed.join(", ")}], skipped ${compared.skipped.length}`
         : `baseline not comparable: ${compared.why}`);
       // Asked to compare, so a baseline from another model is an error, not a pass. A failure (network, timeout) is
       // listed above but is not a regression.

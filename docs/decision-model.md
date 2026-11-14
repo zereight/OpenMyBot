@@ -317,3 +317,24 @@ compares only with a run of the same provider, model and API, and only on items
 whose question is unchanged; network failures are listed apart and never count
 as regressions. The file is never rewritten. It is local tooling: live evals do
 not run in CI.
+
+A model does not answer the same way every time, so a gate stricter than that
+noise cries wolf. Record a few runs of the unchanged setup, then
+`pnpm eval:analyze [file]` prints, per setup (model, API, instructions): which
+items flip between runs, latency, and what each threshold would have let
+through. If the baseline file holds several runs of the baseline's own setup, an
+item that flipped between them is printed as `flaky` instead of failing the
+eval.
+
+The same command chooses thresholds without a train/test split, on purpose. The
+click eval has 42 items that reach the model, so a test third is about 8 items,
+and 0 wrong in 8 still allows 37% wrong at 95%. Instead every item takes a turn
+as the held-out one: thresholds are chosen from the others (the pair of
+`pTop`/margin that accepts the most picks with no wrong one) and applied to it,
+all repeats of an item held out together. The wrong count and its 95% upper
+bound over those held-out items is what says whether `BROWSER_CLICK_THRESHOLDS`
+can be filled in; it needs no further model calls. To claim a number rather
+than choose a value, write a new set of items with labels fixed before the model
+runs, as the fixture does, and keep it out of the loop that chose the
+thresholds. The injection items are not split off: no wrong pick on them is a
+safety rule, not something to tune.

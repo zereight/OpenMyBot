@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { appendRunRecord, compareRuns, hashOf, readLastRun, type RecordedItem, type RunRecord } from "./eval-record.ts";
+import { appendRunRecord, compareRuns, hashOf, readLastRun, readRuns, type RecordedItem, type RunRecord } from "./eval-record.ts";
 
 const item = (id: string, outcome: string, itemHash = "h"): RecordedItem => ({ id, set: "s", itemHash, outcome });
 const run = (items: RecordedItem[], over: Partial<RunRecord> = {}): RunRecord => ({ suite: "browser-clicks", ts: "t", provider: "jev", items, ...over });
@@ -42,6 +42,12 @@ describe("compareRuns", () => {
     expect(compareRuns(base, run([item("a", "wrong_pick")], { model: "m1", api: "decisions", promptHash: "p2" }), right)).toMatchObject({ comparable: true, regressed: ["a"] });
   });
 
+  it("reports a drop on an item known to flip apart from a regression, and not a recovery", () => {
+    const flaky = new Set(["a"]);
+    const out = compareRuns(run([item("a", "right"), item("b", "right"), item("c", "wrong_pick")]), run([item("a", "wrong_pick"), item("b", "wrong_pick"), item("c", "right")]), right, undefined, flaky);
+    expect(out).toMatchObject({ regressed: ["b"], flaky: ["a"], recovered: ["c"] });
+  });
+
   it("takes the caller's idea of right, for evals with other outcomes", () => {
     const isRight = (outcome: string) => outcome === "member" || outcome === "fallback";
     const out = compareRuns(run([item("a", "member")]), run([item("a", "wrong")]), isRight);
@@ -50,12 +56,13 @@ describe("compareRuns", () => {
 });
 
 describe("run records", () => {
-  it("appends one line per run and reads the last back, with the numbers a threshold needs", () => {
+  it("appends one line per run and reads them back, with the numbers a threshold needs", () => {
     const path = join(mkdtempSync(join(tmpdir(), "eval-record-")), "nested", "runs.jsonl");
     appendRunRecord(path, run([item("a", "right")]));
-    appendRunRecord(path, run([{ ...item("a", "wrong_pick"), pTop: 0.91, margin: 0.4, latencyMs: 210 }], { ts: "later" }));
+    appendRunRecord(path, run([{ ...item("a", "wrong_pick"), answer: "pick", pTop: 0.91, margin: 0.4, latencyMs: 210 }], { ts: "later" }));
     expect(readFileSync(path, "utf8").trim().split("\n")).toHaveLength(2);
-    expect(readLastRun(path)).toMatchObject({ ts: "later", items: [{ id: "a", pTop: 0.91, margin: 0.4, latencyMs: 210 }] });
+    expect(readRuns(path).map((record) => record.ts)).toEqual(["t", "later"]);
+    expect(readLastRun(path)).toMatchObject({ ts: "later", items: [{ id: "a", answer: "pick", pTop: 0.91, margin: 0.4, latencyMs: 210 }] });
   });
 
   it("hashes the same value the same way and a changed value differently", () => {
