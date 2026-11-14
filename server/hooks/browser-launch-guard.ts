@@ -7,15 +7,19 @@ interface Command {
 }
 
 const MAX_DEPTH = 4;
-const BROWSER_NAME = String.raw`(?:google[ -]?chrome(?: for testing| canary| beta)?|chromium|chrome|microsoft[ -]?edge|msedge|brave(?: browser)?|firefox|safari|vivaldi|opera|arc|orion)`;
+const BROWSER_NAME = String.raw`(?:google[ -]?chrome(?: for testing| canary| beta)?|chromium|chrome|microsoft[ -]?edge|msedge|brave(?: browser)?|firefox|safari|vivaldi|opera|arc|orion|zen(?: browser)?|dia)`;
 const BROWSER_APP = new RegExp(String.raw`(?:^|[^a-z0-9])${BROWSER_NAME}(?:\.app)?(?:$|[^a-z0-9])`, "i");
-const BROWSER_BUNDLE = /\b(?:com\.google\.chrome|com\.apple\.safari|com\.microsoft\.edgemac|org\.mozilla\.firefox|com\.brave\.browser|com\.vivaldi\.vivaldi|com\.operasoftware\.opera|company\.thebrowser\.browser)\b/i;
+const BROWSER_BUNDLE = /\b(?:com\.google\.chrome|com\.apple\.safari|com\.microsoft\.edgemac|org\.mozilla\.firefox|com\.brave\.browser|com\.vivaldi\.vivaldi|com\.operasoftware\.opera|company\.thebrowser\.browser|company\.thebrowser\.dia|app\.zen-browser\.zen)\b/i;
 const BROWSER_BINARY = /^(?:google[ -]chrome(?:-stable|-beta|-unstable| for testing| canary)?|chromium(?:-browser)?|chrome|msedge|microsoft[ -]edge(?:-stable|-beta|-dev)?|brave(?:-browser| browser)?|firefox|vivaldi|opera|safari)$/;
-const BROWSER_APP_BUNDLE = /(?:google chrome(?: for testing| canary)?|chromium|microsoft edge|brave browser|firefox|vivaldi|opera)\.app\b/i;
+const BROWSER_APP_BUNDLE = /(?:google chrome(?: for testing| canary)?|chromium|microsoft edge|brave browser|firefox|vivaldi|opera|(?<![a-z0-9])(?:zen|dia))\.app\b/i;
 const URL_ARGUMENT = /^(?:https?|file|ftp|about|chrome|chrome-extension):/i;
 const PAGE_FILE = /\.(?:html?|xhtml|mhtml)(?:[?#].*)?$/i;
 const WRAPPERS = new Set(["sudo", "nohup", "exec", "time", "command", "builtin", "nice", "setsid", "caffeinate", "stdbuf", "env", "arch", "then", "do", "else", "elif", "if", "while", "until", "!", "doas"]);
 const WRAPPER_VALUE_FLAGS = new Set(["-u", "-g", "-n", "-t"]);
+// `timeout [flags] DURATION command`: unlike the wrappers above it takes one positional argument before the command.
+const TIMEOUT_WRAPPERS = new Set(["timeout", "gtimeout"]);
+const TIMEOUT_VALUE_FLAGS = new Set(["-s", "-k", "--signal", "--kill-after"]);
+const TIMEOUT_DURATION = /^\d+(?:\.\d+)?[smhd]?$/;
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish"]);
 const INTERPRETERS = /^(?:python[0-9.]*|pypy[0-9.]*|node|nodejs|deno|bun|ruby|perl|php|tsx|ts-node|osascript|jxa|pwsh|powershell|swift|lua)$/;
 const RUNNERS = new Set(["npx", "pnpx", "bunx", "pnpm", "yarn", "npm", "dlx", "exec", "x"]);
@@ -119,6 +123,10 @@ function stripPrefix(words: string[]): string[] {
     if (first === undefined) return rest;
     if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(first) || /^\d*[<>]/.test(first)) {
       rest = rest.slice(/^\d*[<>]+$/.test(first) ? 2 : 1);
+    } else if (TIMEOUT_WRAPPERS.has(baseName(first))) {
+      rest = rest.slice(1);
+      while (rest.length && rest[0]!.startsWith("-")) rest = rest.slice(TIMEOUT_VALUE_FLAGS.has(rest[0]!) ? 2 : 1);
+      if (rest.length && TIMEOUT_DURATION.test(rest[0]!)) rest = rest.slice(1);
     } else if (WRAPPERS.has(baseName(first))) {
       rest = rest.slice(1);
       while (rest.length && (rest[0]!.startsWith("-") || /^[A-Za-z_][A-Za-z0-9_]*=/.test(rest[0]!))) {
@@ -131,14 +139,25 @@ function stripPrefix(words: string[]): string[] {
 }
 
 function openTargetsBrowser(args: string[]): boolean {
+  // `open -a <app> page.html` opens the page in <app>; `-R` reveals it in Finder and `-e`/`-t` edit it. None of those is a page viewer,
+  // so a .html file there is not a browser launch. A URL is still refused: which app a URL reaches is not something this can tell.
+  let pageIsNotShown = false;
+  let namesBrowser = false;
+  let pageFile = false;
+  let url = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     if (arg === "--args") break;
-    if (URL_ARGUMENT.test(arg) || PAGE_FILE.test(arg)) return true;
+    if (URL_ARGUMENT.test(arg)) url = true;
+    if (PAGE_FILE.test(arg)) pageFile = true;
     const app = /^-[a-zA-Z]*[ab][a-zA-Z]*$/.exec(arg) ? args[i + 1] : /^--(?:app|bundle)=(.*)$/.exec(arg)?.[1];
-    if (app !== undefined && (BROWSER_APP.test(app) || BROWSER_BUNDLE.test(app))) return true;
+    if (app !== undefined) {
+      if (BROWSER_APP.test(app) || BROWSER_BUNDLE.test(app)) namesBrowser = true;
+      else pageIsNotShown = true;
+    }
+    if (/^-[a-zA-Z]*[Reft][a-zA-Z]*$/.test(arg)) pageIsNotShown = true;
   }
-  return false;
+  return namesBrowser || url || (pageFile && !pageIsNotShown);
 }
 
 function scriptOpensBrowser(text: string): boolean {
@@ -150,9 +169,14 @@ function scriptOpensBrowser(text: string): boolean {
   return false;
 }
 
-/** Only a script that brings something to the front or opens a page; reading a browser's window names is fine. */
+/**
+ * Opening a location always reaches the default browser. Bringing an app to the front or opening a window only counts when the script
+ * names a browser, so `tell application "Xcode" to activate` and reading a browser's window names both pass.
+ */
 function osascriptDrivesBrowser(text: string): boolean {
-  return /\bactivate\b|\bopen location\b|\bmake new (?:window|document|tab)\b|\breopen\b|\bset frontmost\b|\bfrontmost\b[^\n;]*\bto true\b|\blaunch\b/i.test(text);
+  if (/\bopen location\b|\bopenLocation\b/i.test(text)) return true;
+  const bringsToFront = /\bactivate\b|\bmake new (?:window|document|tab)\b|\breopen\b|\bset frontmost\b|\bfrontmost\b[^\n;]*\bto true\b|\blaunch\b/i.test(text);
+  return bringsToFront && (BROWSER_APP.test(text) || BROWSER_BUNDLE.test(text));
 }
 
 function powershellOpensBrowser(text: string): boolean {

@@ -52,6 +52,28 @@ const BLOCKED = [
   "npx playwright codegen",
   "pnpm exec playwright test --headed",
   "agent-browser open https://example.com --headed",
+  "open -a Finder https://example.com",
+  "open -R https://example.com",
+  "open -a Safari -R page.html",
+  'osascript -e \'tell application id "com.google.Chrome" to activate\'',
+  'osascript -e \'tell application "Safari" to make new document\'',
+  "osascript -l JavaScript -e 'Application(\"Finder\").openLocation(\"https://example.com\")'",
+  "timeout 5 open https://example.com",
+  "timeout 5s open -a Safari",
+  "gtimeout -k 1 5 open https://example.com",
+  "timeout --foreground -s KILL 10 open https://example.com",
+  "timeout 5 chromium https://example.com",
+  // Browsers that are not in every list: Zen and Dia stay refused when the app is named, even for a page file.
+  `osascript -e 'tell application "Zen" to activate'`,
+  `osascript -e 'tell application "Dia" to activate'`,
+  `osascript -e 'tell application id "app.zen-browser.zen" to activate'`,
+  `osascript -e 'tell application id "company.thebrowser.dia" to activate'`,
+  "open -a Zen index.html",
+  "open -a Dia index.html",
+  "open -a 'Zen Browser' index.html",
+  "open -b app.zen-browser.zen index.html",
+  "timeout 5 open -a Dia index.html",
+  `python3 -c "import subprocess; subprocess.run(['/Applications/Zen.app/Contents/MacOS/zen'])"`,
 ];
 
 const ALLOWED = [
@@ -92,6 +114,25 @@ const ALLOWED = [
   "echo https://example.com # open https://example.com",
   "# open https://example.com\nls",
   "bash -c 'echo hi'",
+  // Not a browser: another app brought to the front, or a page file shown in an editor / Finder.
+  `osascript -e 'tell application "Xcode" to activate'`,
+  `osascript -e 'tell application "Simulator" to activate'`,
+  `osascript -e 'display dialog "Ready to launch"'`,
+  'open -a "Visual Studio Code" index.html',
+  "open -R report.html",
+  "open -e page.html",
+  "open -t page.html",
+  "open -a Slack slack://channel",
+  // Names that only contain a browser's name: Dialog, Media.app, Zenmap are not Dia, Zen.
+  `osascript -e 'display dialog "Dialog ready"; activate'`,
+  "open -a Media index.html",
+  "open -a Zenmap index.html",
+  `python3 -c "print('/Applications/Media.app')"`,
+  // timeout is unwrapped, but only the command it runs is judged.
+  "timeout 5 grep open file",
+  "timeout 5 curl -s https://example.com",
+  "gtimeout -k 1 5 sleep 1",
+  "timeout 5 chromium --headless --dump-dom https://example.com",
 ];
 
 describe("browserLaunchVerdict", () => {
