@@ -1,10 +1,10 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { appendRunRecord, compareRuns, hashOf, readLastRun, readRuns, type RecordedItem, type RunRecord } from "./eval-record.ts";
+import { appendRunRecord, assertBaselineIsNotRecord, compareRuns, hashOf, itemKey, readLastRun, readRuns, type RecordedItem, type RunRecord } from "./eval-record.ts";
 
 const item = (id: string, outcome: string, itemHash = "h"): RecordedItem => ({ id, set: "s", itemHash, outcome });
 const run = (items: RecordedItem[], over: Partial<RunRecord> = {}): RunRecord => ({ suite: "browser-clicks", ts: "t", provider: "jev", items, ...over });
@@ -43,15 +43,43 @@ describe("compareRuns", () => {
   });
 
   it("reports a drop on an item known to flip apart from a regression, and not a recovery", () => {
-    const flaky = new Set(["a"]);
+    const flaky = new Set([itemKey("a", "h")]);
     const out = compareRuns(run([item("a", "right"), item("b", "right"), item("c", "wrong_pick")]), run([item("a", "wrong_pick"), item("b", "wrong_pick"), item("c", "right")]), right, undefined, flaky);
     expect(out).toMatchObject({ regressed: ["b"], flaky: ["a"], recovered: ["c"] });
+  });
+
+  it("does not let a flip on an old version of a question excuse the current one", () => {
+    const flakyBefore = new Set([itemKey("a", "old")]);
+    const out = compareRuns(run([item("a", "right", "new")]), run([item("a", "wrong_pick", "new")]), right, undefined, flakyBefore);
+    expect(out).toMatchObject({ regressed: ["a"], flaky: [] });
   });
 
   it("takes the caller's idea of right, for evals with other outcomes", () => {
     const isRight = (outcome: string) => outcome === "member" || outcome === "fallback";
     const out = compareRuns(run([item("a", "member")]), run([item("a", "wrong")]), isRight);
     expect(out.regressed).toEqual(["a"]);
+  });
+});
+
+describe("assertBaselineIsNotRecord", () => {
+  it("refuses a baseline that is the file the run is recorded in, however the path is written", () => {
+    const dir = mkdtempSync(join(tmpdir(), "eval-baseline-"));
+    const record = join(dir, "runs.jsonl");
+    appendRunRecord(record, run([item("a", "right")]));
+    // Otherwise a run that regressed would be appended, and the next run would take that drop for a flip and excuse it.
+    expect(() => assertBaselineIsNotRecord(record, record)).toThrow(/copy/);
+    expect(() => assertBaselineIsNotRecord(join(dir, "..", basename(dir), "runs.jsonl"), record)).toThrow(/copy/);
+    symlinkSync(record, join(dir, "link.jsonl"));
+    expect(() => assertBaselineIsNotRecord(join(dir, "link.jsonl"), record)).toThrow(/copy/);
+  });
+
+  it("accepts a separate copy", () => {
+    const dir = mkdtempSync(join(tmpdir(), "eval-baseline-"));
+    const record = join(dir, "runs.jsonl");
+    appendRunRecord(record, run([item("a", "right")]));
+    copyFileSync(record, join(dir, "baseline.jsonl"));
+    expect(() => assertBaselineIsNotRecord(join(dir, "baseline.jsonl"), record)).not.toThrow();
+    expect(() => assertBaselineIsNotRecord(join(dir, "baseline.jsonl"), join(dir, "not-yet-written.jsonl"))).not.toThrow();
   });
 });
 

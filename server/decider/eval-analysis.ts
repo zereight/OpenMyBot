@@ -1,11 +1,12 @@
 // Reads the run records written by eval-record.ts and answers the two questions a single run cannot:
-//   1. How much does the same setup disagree with itself? (`stability`) A regression gate that is stricter than this noise
-//      cries wolf; its tolerance comes from here.
+//   1. How much does the same setup disagree with itself? (`stability`) A regression gate that fails on this noise cries wolf.
+//      `flakyItems` is the one place that turns it into an exemption: only an item seen not right at least twice, on the
+//      same question, is excused. A single drop in many runs is what a real regression looks like, so it is not.
 //   2. Would a (pTop, margin) threshold have held on items it was not fitted on? (`leaveOneOut`) With a few dozen items there
 //      is no honest train/test split (a test third of 42 items is 8 items, and 0 wrong in 8 still allows 37% wrong at 95%), so
 //      every item takes a turn as the held-out one and the thresholds are chosen from the rest. No extra model calls.
 // Pure functions; nothing here reads a file or calls a model.
-import type { RecordedItem, RunRecord } from "./eval-record.ts";
+import { itemKey, type RecordedItem, type RunRecord } from "./eval-record.ts";
 
 type Predicate = (outcome: string) => boolean;
 
@@ -22,8 +23,8 @@ export interface Stability {
   runs: number;
   /** Items seen right or wrong (not failed) in at least two of the runs, with the same content hash. */
   measured: number;
-  /** Right in some runs and not right in others, with the same question and the same setup. */
-  flipped: Array<{ id: string; right: number; notRight: number }>;
+  /** Right in some runs and not right in others, with the same question (`itemHash`) and the same setup. */
+  flipped: Array<{ id: string; itemHash: string; right: number; notRight: number }>;
   /** Not right in every run: a stable miss, not noise. */
   alwaysWrong: string[];
   /** Items that failed (network, timeout) at least once; left out of the counts above for that run. */
@@ -32,27 +33,37 @@ export interface Stability {
 
 /** Runs of ONE setup (see `groupBySetup`). An item compares only against runs with the same content hash. */
 export function stability(runs: RunRecord[], isRight: Predicate, isFailed: Predicate = (outcome) => outcome === "failed"): Stability {
-  const seen = new Map<string, { right: number; notRight: number; failed: boolean }>();
+  const seen = new Map<string, { id: string; itemHash: string; right: number; notRight: number; failed: boolean }>();
   for (const run of runs) {
     for (const item of run.items) {
-      const key = `${item.id}:${item.itemHash}`;
-      const entry = seen.get(key) ?? { right: 0, notRight: 0, failed: false };
+      const key = itemKey(item.id, item.itemHash);
+      const entry = seen.get(key) ?? { id: item.id, itemHash: item.itemHash, right: 0, notRight: 0, failed: false };
       if (isFailed(item.outcome)) entry.failed = true;
       else if (isRight(item.outcome)) entry.right += 1;
       else entry.notRight += 1;
       seen.set(key, entry);
     }
   }
-  const idOf = (key: string) => key.slice(0, key.lastIndexOf(":"));
   const out: Stability = { runs: runs.length, measured: 0, flipped: [], alwaysWrong: [], failedAtLeastOnce: [] };
-  for (const [key, entry] of seen) {
-    if (entry.failed) out.failedAtLeastOnce.push(idOf(key));
+  for (const entry of seen.values()) {
+    if (entry.failed && !out.failedAtLeastOnce.includes(entry.id)) out.failedAtLeastOnce.push(entry.id);
     if (entry.right + entry.notRight < 2) continue;
     out.measured += 1;
-    if (entry.right > 0 && entry.notRight > 0) out.flipped.push({ id: idOf(key), right: entry.right, notRight: entry.notRight });
-    else if (entry.notRight > 0) out.alwaysWrong.push(idOf(key));
+    if (entry.right > 0 && entry.notRight > 0) out.flipped.push({ id: entry.id, itemHash: entry.itemHash, right: entry.right, notRight: entry.notRight });
+    else if (entry.notRight > 0) out.alwaysWrong.push(entry.id);
   }
   return out;
+}
+
+/** Times an item must have been not right, in runs of one unchanged setup, before a drop on it stops counting as a regression. */
+export const FLAKY_MIN_NOT_RIGHT = 2;
+
+/**
+ * The questions (`itemKey`) a regression check may excuse: right in some runs and not right in at least `FLAKY_MIN_NOT_RIGHT`.
+ * Keyed by question, not id: a flip seen before a label was fixed says nothing about the fixed item.
+ */
+export function flakyItems(steady: Stability): Set<string> {
+  return new Set(steady.flipped.filter((entry) => entry.notRight >= FLAKY_MIN_NOT_RIGHT).map((entry) => itemKey(entry.id, entry.itemHash)));
 }
 
 /** One answer of the model that carries what a threshold looks at. */
@@ -97,12 +108,15 @@ export interface Tally {
  */
 export function upperBound95(wrong: number, n: number): number {
   if (n <= 0 || wrong >= n) return 1;
+  // In log space: for a large n, (1 - p) ** n underflows to 0 and the sum would be 0 for every p.
   const cdf = (p: number) => {
-    let term = (1 - p) ** n;
-    let sum = term;
+    const logP = Math.log(p);
+    const logQ = Math.log1p(-p);
+    let logTerm = n * logQ;
+    let sum = Math.exp(logTerm);
     for (let i = 0; i < wrong; i += 1) {
-      term *= ((n - i) / (i + 1)) * (p / (1 - p));
-      sum += term;
+      logTerm += Math.log((n - i) / (i + 1)) + logP - logQ;
+      sum += Math.exp(logTerm);
     }
     return sum;
   };
@@ -126,14 +140,15 @@ export function tally(observations: Observation[], t: Thresholds, isRight: Predi
 
 /**
  * The thresholds to use on these observations: of the grid points that accept no wrong pick, the one that accepts the most
- * picks; on a tie the stricter one. Null when no grid point is free of wrong picks (nothing is safe to accept).
+ * picks; on a tie the higher pTop, then the higher margin (pTop is the model's confidence, so it leads; a sum of the two would
+ * rank (0.5, 0.8) above (0.97, 0)). Null when no grid point is free of wrong picks (nothing is safe to accept).
  */
 export function chooseThresholds(observations: Observation[], isRight: Predicate, grid: Thresholds[] = DEFAULT_GRID): Thresholds | null {
   let best: { t: Thresholds; accepted: number } | null = null;
   for (const t of grid) {
     const result = tally(observations, t, isRight);
     if (result.wrong > 0) continue;
-    const stricter = best !== null && t.pMin + t.mMin > best.t.pMin + best.t.mMin;
+    const stricter = best !== null && (t.pMin > best.t.pMin || (t.pMin === best.t.pMin && t.mMin > best.t.mMin));
     if (!best || result.accepted > best.accepted || (result.accepted === best.accepted && stricter)) best = { t, accepted: result.accepted };
   }
   return best?.t ?? null;

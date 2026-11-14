@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { chooseThresholds, groupBySetup, leaveOneOut, pickObservations, setupKey, stability, tally, upperBound95, type Observation } from "./eval-analysis.ts";
-import type { RecordedItem, RunRecord } from "./eval-record.ts";
+import { chooseThresholds, flakyItems, groupBySetup, leaveOneOut, pickObservations, setupKey, stability, tally, upperBound95, type Observation } from "./eval-analysis.ts";
+import { itemKey, type RecordedItem, type RunRecord } from "./eval-record.ts";
 
 const right = (outcome: string) => outcome === "right";
 const item = (id: string, outcome: string, over: Partial<RecordedItem> = {}): RecordedItem => ({ id, set: "s", itemHash: `h-${id}`, outcome, ...over });
@@ -41,6 +41,28 @@ describe("stability", () => {
   });
 });
 
+describe("flakyItems", () => {
+  const runsOf = (outcomes: string[], itemHash = "h1") => outcomes.map((outcome) => run([item("a", outcome, { itemHash })]));
+
+  it("names a flipped item by its question, so a flip on an old label does not cover a fixed one", () => {
+    const steady = stability([...runsOf(["right", "wrong_pick", "wrong_pick"], "old"), ...runsOf(["right", "right"], "new")], right);
+    expect(steady.flipped).toEqual([{ id: "a", itemHash: "old", right: 1, notRight: 2 }]);
+    expect(flakyItems(steady)).toEqual(new Set([itemKey("a", "old")]));
+    expect(flakyItems(steady).has(itemKey("a", "new"))).toBe(false);
+  });
+
+  it("does not excuse an item that was not right only once", () => {
+    // One drop in 20 runs is what a real regression looks like in the next run, so it must not be waved through.
+    const steady = stability(runsOf(["right", ...Array.from({ length: 18 }, () => "right"), "false_none"]), right);
+    expect(steady.flipped).toEqual([{ id: "a", itemHash: "h1", right: 19, notRight: 1 }]);
+    expect(flakyItems(steady).size).toBe(0);
+  });
+
+  it("excuses an item that was not right in at least two runs of the setup", () => {
+    expect(flakyItems(stability(runsOf(["right", "false_none", "false_none", "right"]), right))).toEqual(new Set([itemKey("a", "h1")]));
+  });
+});
+
 describe("upperBound95", () => {
   it("is close to the rule of three for zero errors, and larger with errors", () => {
     expect(upperBound95(0, 42)).toBeCloseTo(1 - 0.05 ** (1 / 42), 6);
@@ -48,6 +70,13 @@ describe("upperBound95", () => {
     expect(upperBound95(1, 42)).toBeGreaterThan(upperBound95(0, 42));
     // Known value: 1 error in 20 trials, one-sided 95% Clopper-Pearson upper bound.
     expect(upperBound95(1, 20)).toBeCloseTo(0.2161, 3);
+  });
+
+  it("stays exact for many trials, where (1 - p) ** n underflows", () => {
+    // Clopper-Pearson one-sided 95% upper bounds; the plain-product form returned 0.525 for both of the last two.
+    expect(upperBound95(600, 1000)).toBeCloseTo(0.6257, 3);
+    expect(upperBound95(900, 1000)).toBeCloseTo(0.9152, 3);
+    expect(upperBound95(0, 1000)).toBeCloseTo(1 - 0.05 ** (1 / 1000), 6);
   });
 
   it("says nothing is known when nothing was accepted or everything was wrong", () => {
@@ -74,6 +103,16 @@ describe("tally and chooseThresholds", () => {
   it("takes the stricter point on a tie", () => {
     const same = [obs("a", "right", 0.99, 0.9), obs("b", "right", 0.98, 0.9)];
     expect(chooseThresholds(same, right, [{ pMin: 0.5, mMin: 0 }, { pMin: 0.9, mMin: 0.5 }, { pMin: 0.7, mMin: 0 }])).toEqual({ pMin: 0.9, mMin: 0.5 });
+  });
+
+  it("on a tie prefers the higher pTop, then the higher margin, whatever order the grid is in", () => {
+    const same = [obs("a", "right", 0.99, 0.9), obs("b", "right", 0.98, 0.9)];
+    const loose = { pMin: 0.5, mMin: 0.8 };
+    const tight = { pMin: 0.99 - 0.02, mMin: 0 };
+    // A sum of the two would rank (0.5, 0.8) above (0.97, 0); the confidence is what stops a wrong pick, so it leads.
+    expect(chooseThresholds(same, right, [tight, loose])).toEqual(tight);
+    expect(chooseThresholds(same, right, [loose, tight])).toEqual(tight);
+    expect(chooseThresholds(same, right, [{ pMin: 0.9, mMin: 0.1 }, { pMin: 0.9, mMin: 0.5 }])).toEqual({ pMin: 0.9, mMin: 0.5 });
   });
 
   it("returns null when every grid point lets a wrong pick through", () => {

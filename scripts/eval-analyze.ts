@@ -7,8 +7,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { chooseThresholds, groupBySetup, leaveOneOut, pickObservations, stability, tally, type Observation } from "../server/decider/eval-analysis.ts";
-import { readRuns, type RunRecord } from "../server/decider/eval-record.ts";
+import { chooseThresholds, FLAKY_MIN_NOT_RIGHT, flakyItems, groupBySetup, leaveOneOut, pickObservations, stability, tally, type Observation } from "../server/decider/eval-analysis.ts";
+import { itemKey, readRuns, type RunRecord } from "../server/decider/eval-record.ts";
 
 const path = process.argv[2] ?? join(import.meta.dirname, "..", "evals", "reports", "runs", "browser-clicks.jsonl");
 if (!existsSync(path)) {
@@ -28,6 +28,11 @@ for (const [setup, runs] of groupBySetup(readRuns(path))) {
   if (runs.length < 2) console.log("   stability: needs at least 2 runs of the same setup");
   else {
     console.log(`   stability: ${steady.flipped.length} of ${steady.measured} items flipped between runs${steady.flipped.length ? ` (${steady.flipped.map((entry) => `${entry.id} ${entry.right}/${entry.right + entry.notRight} right`).join(", ")})` : ""}`);
+    if (steady.flipped.length) {
+      const excused = flakyItems(steady);
+      const excusedIds = steady.flipped.filter((entry) => excused.has(itemKey(entry.id, entry.itemHash))).map((entry) => entry.id);
+      console.log(`   a regression check excuses a drop on: ${excusedIds.length ? excusedIds.join(", ") : "none"} (needs not right in at least ${FLAKY_MIN_NOT_RIGHT} runs)`);
+    }
     if (steady.alwaysWrong.length) console.log(`   never right: ${steady.alwaysWrong.join(", ")}`);
     if (steady.failedAtLeastOnce.length) console.log(`   failed at least once (network/timeout): ${steady.failedAtLeastOnce.join(", ")}`);
   }

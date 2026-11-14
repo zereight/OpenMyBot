@@ -10,10 +10,11 @@
 // - An item compares only when its content hash (intent, host, candidates, gold) is the same in both runs; a fixed label
 //   is a different question.
 // - `failed` (network, timeout) is counted apart from quality: it never counts as a regression.
-// - The baseline is whatever file you point at. Nothing here overwrites it.
+// - The baseline is whatever file you point at, but never the file the run is recorded in (`assertBaselineIsNotRecord`):
+//   a run that regressed would be appended there and the next run would take that drop for a flip. Nothing here overwrites it.
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 export interface RecordedItem {
   id: string;
@@ -45,7 +46,18 @@ export interface RunRecord extends RunMeta {
   items: RecordedItem[];
 }
 
+/** One question: the id says which item, the hash says which version of it (a fixed label or candidate is a new question). */
+export const itemKey = (id: string, itemHash: string): string => `${id}:${itemHash}`;
+
 export const hashOf = (value: unknown): string => createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 12);
+
+/** Throws when the baseline is the file the run is recorded in (same path, or a link to it): point at a copy instead. */
+export function assertBaselineIsNotRecord(baselinePath: string, recordPath: string): void {
+  const real = (path: string) => (existsSync(path) ? realpathSync(path) : resolve(path));
+  if (real(baselinePath) === real(recordPath)) {
+    throw new Error(`OMB_EVAL_BASELINE is the file this run is recorded in (${recordPath}). Point it at a copy, e.g. cp ${recordPath} <baseline>.jsonl, so a regression recorded now cannot count as noise next time.`);
+  }
+}
 
 /** Appends one run as one JSON line, creating the folder. */
 export function appendRunRecord(path: string, record: RunRecord): void {
@@ -73,7 +85,7 @@ export interface RunComparison {
   recovered: string[];
   /** Failed in either run: a transport problem, reported, never a regression. */
   failed: string[];
-  /** Right in the baseline and not now, but known to flip between identical runs (see eval-analysis.ts): noise, not a regression. */
+  /** Right in the baseline and not now, but known to flip between identical runs of this very question (see `flakyItems`): noise, not a regression. */
   flaky: string[];
   /** Items whose question changed between the runs, or that only one run has. */
   skipped: string[];
@@ -84,7 +96,7 @@ export function compareRuns(
   current: RunRecord,
   isRight: (outcome: string) => boolean,
   isFailed: (outcome: string) => boolean = (outcome) => outcome === "failed",
-  /** Items that flip between runs of one unchanged setup: a drop on one of these is reported as `flaky`, not `regressed`. */
+  /** `itemKey`s that flip between runs of one unchanged setup: a drop on one of these is reported as `flaky`, not `regressed`. */
   flaky: ReadonlySet<string> = new Set(),
 ): RunComparison {
   const empty = { regressed: [], recovered: [], failed: [], flaky: [], skipped: [] };
@@ -97,7 +109,7 @@ export function compareRuns(
     const was = before.get(item.id);
     if (!was || was.itemHash !== item.itemHash) { result.skipped.push(item.id); continue; }
     if (isFailed(item.outcome) || isFailed(was.outcome)) { result.failed.push(item.id); continue; }
-    if (isRight(was.outcome) && !isRight(item.outcome)) (flaky.has(item.id) ? result.flaky : result.regressed).push(item.id);
+    if (isRight(was.outcome) && !isRight(item.outcome)) (flaky.has(itemKey(item.id, item.itemHash)) ? result.flaky : result.regressed).push(item.id);
     else if (!isRight(was.outcome) && isRight(item.outcome)) result.recovered.push(item.id);
   }
   const now = new Set(current.items.map((item) => item.id));

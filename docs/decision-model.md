@@ -311,8 +311,12 @@ items that reach the model) also writes each run to
 every item's outcome, `pTop`, margin and latency, plus the model, API, a hash of
 the instructions and the git commit. Those per-item numbers are what the click
 thresholds will be chosen from. To check a change, run the eval again with
-`OMB_EVAL_BASELINE=<earlier .jsonl>`: the last run in that file is the baseline,
-and the eval fails if an item that was right there is not right now. A run
+`OMB_EVAL_BASELINE=<copy of an earlier .jsonl>`: the last run in that file is the
+baseline, and the eval fails if an item that was right there is not right now.
+Take the copy first (`cp evals/reports/runs/browser-clicks.jsonl
+evals/reports/runs/baseline.jsonl`); the run's own record file is refused as a
+baseline, because a regression appended there would count as noise next time.
+The check happens before any model call. A run
 compares only with a run of the same provider, model and API, and only on items
 whose question is unchanged; network failures are listed apart and never count
 as regressions. The file is never rewritten. It is local tooling: live evals do
@@ -322,9 +326,10 @@ A model does not answer the same way every time, so a gate stricter than that
 noise cries wolf. Record a few runs of the unchanged setup, then
 `pnpm eval:analyze [file]` prints, per setup (model, API, instructions): which
 items flip between runs, latency, and what each threshold would have let
-through. If the baseline file holds several runs of the baseline's own setup, an
-item that flipped between them is printed as `flaky` instead of failing the
-eval.
+through. If the baseline copy holds several runs of the baseline's own setup, an
+item that was right in some and not right in at least two of them, on the same
+question, is printed as `flaky` instead of failing the eval. One drop in many
+runs is not enough: that is what a real regression looks like on its next run.
 
 The same command chooses thresholds without a train/test split, on purpose. The
 click eval has 42 items that reach the model, so a test third is about 8 items,
