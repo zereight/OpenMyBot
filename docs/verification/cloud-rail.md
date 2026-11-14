@@ -31,7 +31,7 @@ Nothing here needs a real MausBot Cloud account, a payment or the Electron app.
   sidebar's top row, right after the macOS traffic lights (on the same spot
   either way: the app's preload tells the page how far it moved, in
   `--rail-beside`), or with the "Show your computers" switch in Settings
-  (Simple: General → Appearance; Advanced: Appearance). Both are there only
+  (Simple and Advanced: This app → Appearance → Layout). Both are there only
   while the window has a rail. The choice is this desktop's (`railHidden` in
   desktop-prefs.json), never a server's or a place's.
 - The page beside the rail offers that button through `window.ogb.rail`
@@ -103,7 +103,7 @@ would be more folders there), on the same address, one server at a time, as a
 local environment switch does. Nothing moves either way, the frozen copy keeps
 its marker and its bots, and the move's code never reaches the profile. A line
 on its page says the bots from before are on My Cloud and that an older copy
-comes in from Settings → Backups, until its ✕ closes it for good in that
+comes in from Settings → Import & export, until its ✕ closes it for good in that
 workspace, or by itself once it was shown on three days or a week went by. My
 Cloud on the rail goes back; the profile keeps running, so This Mac is one
 click again. A launch opens the place open when the app last closed (My Cloud,
@@ -169,7 +169,7 @@ server never starts.
 
 ```sh
 node --test electron/cloud-list.node-test.mjs electron/cloud-account-clouds.node-test.mjs electron/cloud-rail.node-test.mjs electron/chrome-rail.node-test.mjs electron/home-window.node-test.mjs electron/place-look.node-test.mjs electron/desktop-prefs.node-test.mjs
-pnpm exec vitest run src/components/PlacesRail.test.ts src/components/ChromeRail.test.ts src/components/ChromeRailToggle.test.ts src/components/Sidebar.header.test.ts src/components/cloud-buy/AddCloudFlow.test.ts src/components/PlaceLookCard.test.ts
+pnpm exec vitest run src/components/PlacesRail.test.ts src/components/ChromeRail.test.ts src/components/ChromeRailToggle.test.ts src/components/Sidebar.header.test.ts src/components/PlaceLookCard.test.ts
 pnpm exec vitest run server/workspace-banner.test.ts server/routes/workspace-banner.test.ts server/workspace-banner.e2e.test.ts src/lib/place-banner.test.ts src/components/PlacePicture.test.ts
 ```
 
