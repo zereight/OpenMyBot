@@ -14,7 +14,7 @@ import { brokerSocketPath, describeSpawnFailure, execCli, killCliTree, spawnCli 
 import { cliVersionProbe } from "../cli-version-probe.ts";
 import { claudeAuthStatus } from "./claude-auth-status.ts";
 import { projectMcpServers } from "./claude-project-mcp.ts";
-import { botSettingsFor, withBotSettings } from "./claude-bot-settings.ts"; import { withCarriedAttribution } from "./claude-attribution.ts";
+import { browserGuardHookSettings, claudeHookSettings } from "./claude-hook-settings.ts"; import { botSettingsFor, withBotSettings } from "./claude-bot-settings.ts"; import { withCarriedAttribution } from "./claude-attribution.ts";
 import { claudeBilling, claudeCallUsage } from "./claude-billing.ts";
 import { claudeAuthFailure, claudeAuthRecovery, claudeOAuthExpired } from "./claude-auth-recovery.ts"; import { AWS_CREDENTIAL_ENV_KEYS, bedrockResultError, withBedrockCredentialError } from "./claude-bedrock-aws.ts";
 import { CLAUDE_MODEL_ID, STATIC_CLAUDE_MODELS, claudeModelExtras, currentEngineCatalog, endpointModelCatalog, withCliVersionGate } from "./claude-model-extras.ts";
@@ -275,7 +275,7 @@ export interface ClaudeConfig {
   requireApiKey?: boolean; bedrock?: boolean;
 }
 
-export { STATIC_CLAUDE_MODELS };
+export { STATIC_CLAUDE_MODELS, browserGuardHookSettings, claudeHookSettings };
 
 /** Maps an API slug a local host serves to `host::model`, so the turn injects instead of asking
  *  for /login. */
@@ -317,6 +317,7 @@ export function readClaudeModelCatalog(env: Record<string, string | undefined> =
 const PERM_PROXY_PATH = SPAWNED_PROXIES.permission;
 const DWEB_PROXY_PATH = SPAWNED_PROXIES.dweb;
 const HOOK_HELPER_PATH = SPAWNED_PROXIES.hook;
+const BROWSER_GUARD_PATH = SPAWNED_PROXIES.browserGuard;
 // In the packaged app process.execPath is the Electron binary; this makes it run as plain node.
 const NODE_ENV_FLAG = { ELECTRON_RUN_AS_NODE: "1" };
 
@@ -408,19 +409,6 @@ const steerSilenceScale = () => fakeTimerScale("FAKE_CLAUDE_STEER_SILENCE_SCALE"
 export function hookTokenFile(threadId: string, botId?: string): string {
   const digest = createHash("sha256").update(`${botId ?? ""}\0${threadId}`).digest("hex").slice(0, 24);
   return join(DATA_DIR, "hook-tokens", digest, "token");
-}
-
-/** Hooks for the private --settings file. Claude Code runs each command with the event JSON on
- * stdin and applies any hookSpecificOutput it prints. */
-export function claudeHookSettings(helperPath: string, platform: NodeJS.Platform = process.platform): Record<string, unknown> {
-  // Claude Code runs `command` as a shell line: sh on macOS and Linux; on Windows Git Bash, or PowerShell
-  // when Git Bash is missing, and the two quote differently. Given `args` (2.1.139), it starts `command` itself.
-  // JSON quoting is not shell quoting: $(), backticks and $names expand inside double quotes.
-  const hook = platform === "win32"
-    ? { type: "command", command: process.execPath, args: [helperPath], timeout: 5 }
-    : { type: "command", command: [process.execPath, helperPath].map(path => `'${path.replace(/'/g, "'\\''")}'`).join(" "), timeout: 5 };
-  const entry = [{ matcher: "", hooks: [hook] }];
-  return { PostToolUse: entry, PostToolUseFailure: entry, PreCompact: entry, SessionStart: entry, Stop: entry };
 }
 
 export function permissionSocketPath(threadId: string, botId?: string) {
@@ -1146,22 +1134,27 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // The hook helper reads its bearer from a per-thread file refreshed every turn, so a
       // long-lived CLI process never presents a stale token.
       const hooks = turn.integrations?.hooks;
+      // Decided here, from the server's own environment: a hook process also inherits the bot's project settings env, which a bot can write.
+      const browserGuard = !turn.guestConfined && process.env.OMB_ALLOW_EXTERNAL_BROWSER !== "1";
       const hookTokenPath = hooks ? hookTokenFile(threadId, botId) : null;
       if (hooks && hookTokenPath) {
         mkdirSync(dirname(hookTokenPath), { recursive: true, mode: 0o700 });
         writeFileAtomicIfChanged(hookTokenPath, hooks.token, { mode: 0o600, durable: false });
         env.OMB_HOOK_URL = hooks.url;
         env.OMB_HOOK_TOKEN_FILE = hookTokenPath;
-        // in the packaged app process.execPath is Electron — run the helper as node
-        if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = "1";
       }
+      // in the packaged app process.execPath is Electron — run the helpers as node
+      if ((hooks && hookTokenPath || browserGuard) && process.versions.electron) env.ELECTRON_RUN_AS_NODE = "1";
       const cwd = turn.cwd ?? homedir();
       // Every MCP server without alwaysLoad loads on demand behind ToolSearch (claude-tool-search.ts).
       const toolSearch = claudeToolSearchSetting(cwd, env);
       const own: Record<string, unknown> = { ...authSettings, env: { ...authSettings.env, ENABLE_TOOL_SEARCH: toolSearch, ...(isolated ? CLAUDE_OWN_MEMORY_OFF : {}) } };
       // Project-only settings still find the personal memory via ancestors when the bot lives under HOME.
       if (isolated) own.claudeMdExcludes = [join(homedir(), ".claude", "CLAUDE.md")];
-      if (hooks) own.hooks = claudeHookSettings(HOOK_HELPER_PATH);
+      const ownHooks = { ...(hooks ? claudeHookSettings(HOOK_HELPER_PATH) : {}), ...(browserGuard ? browserGuardHookSettings(BROWSER_GUARD_PATH) : {}) };
+      if (Object.keys(ownHooks).length) own.hooks = ownHooks;
+      // A project's `disableAllHooks: true` would switch the guard off; this later source wins.
+      if (browserGuard) own.disableAllHooks = false;
       if (turn.guestConfined) own.permissions = GUEST_CLAUDE_PERMISSIONS;
       // Approvals and browser credentials expire at the turn boundary; native background workers must not outlive it.
       env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "1";

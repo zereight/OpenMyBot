@@ -474,7 +474,7 @@ export class BrowserService {
     try {
       run = await this.running(profile);
     } catch (error) {
-      return errorResult(`The browser could not start: ${error instanceof Error ? error.message : String(error)}`);
+      return errorResult(`The browser could not start: ${error instanceof Error ? error.message : String(error)}. Retry once; if it fails again, tell the person and stop. Do not open Chrome or any other browser on their desktop instead.`);
     }
     beforeDispatch?.();
     if (control.owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);

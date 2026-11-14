@@ -15,6 +15,7 @@ import {
   brokerSocketCandidates,
   claudeCliSupports,
   claudeCliUpdate,
+  browserGuardHookSettings,
   claudeHookSettings,
   ClaudeDriver,
   createPermissionBroker,
@@ -100,6 +101,12 @@ describe("ClaudeDriver.decodeConfig", () => {
     const helper = "C:\\Users\\it's $OMB_HOOK_TEST `literal`\\helper.ts";
     const settings = claudeHookSettings(helper, "win32") as { PostToolUse: Array<{ hooks: unknown[] }> };
     expect(settings.PostToolUse[0]!.hooks).toEqual([{ type: "command", command: process.execPath, args: [helper], timeout: 5 }]);
+  });
+
+  it("keeps the browser guard to shell tools and starts it as hook data on both platforms", () => {
+    const helper = "/tmp/it's/omb-browser-guard.ts";
+    expect(browserGuardHookSettings(helper, "linux")).toEqual({ PreToolUse: [{ matcher: "Bash|PowerShell|Monitor", hooks: [{ type: "command", command: `'${process.execPath}' '/tmp/it'\\''s/omb-browser-guard.ts'`, timeout: 5 }] }] });
+    expect(browserGuardHookSettings(helper, "win32")).toEqual({ PreToolUse: [{ matcher: "Bash|PowerShell|Monitor", hooks: [{ type: "command", command: process.execPath, args: [helper], timeout: 5 }] }] });
   });
 
   it("hooks failed tool calls too, so a timed-out command can be given a hint", () => {
@@ -1655,7 +1662,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       await recorder.until((e) => e.type === "turn.completed");
       const seen = JSON.parse(readFileSync(dump, "utf8"));
       expect(realpathSync(seen.cwd)).toBe(realpathSync(thread));
-      expect(seen.settings.hooks.PreToolUse).toEqual([guard]);
+      expect(seen.settings.hooks.PreToolUse).toEqual([guard, expect.objectContaining({ matcher: "Bash|PowerShell|Monitor" })]);
       expect(seen.settings.hooks.Stop).toHaveLength(2);
       expect(seen.settings.hooks.Stop[0]).toEqual({ hooks: [{ type: "command", command: "/opt/guards/notify.sh" }] });
       expect(Object.keys(seen.settings.hooks)).toEqual(expect.arrayContaining(Object.keys(claudeHookSettings("/helper.ts"))));
@@ -1675,7 +1682,38 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       await recorder.until((e) => e.type === "turn.completed");
       const seen = JSON.parse(readFileSync(dump, "utf8"));
       expect(seen.settings).not.toHaveProperty("enabledPlugins");
-      expect(seen.settings).not.toHaveProperty("hooks");
+      expect(Object.keys(seen.settings.hooks)).toEqual(["PreToolUse"]);
+      expect(seen.settings.hooks.PreToolUse).toEqual([expect.objectContaining({ matcher: "Bash|PowerShell|Monitor" })]);
+    });
+
+    it("registers no browser guard when the server's own environment opts out", async () => {
+      const dump = join(scratch, "browser-guard-opt-out.json");
+      process.env.FAKE_CLAUDE_DUMP = dump;
+      process.env.OMB_ALLOW_EXTERNAL_BROWSER = "1";
+      try {
+        await create();
+        await instance.adapter.sendTurn({ threadId: "t-browser-guard-opt-out", text: "hi", approvalMode: "full" });
+        await recorder.until((e) => e.type === "turn.completed");
+      } finally {
+        delete process.env.OMB_ALLOW_EXTERNAL_BROWSER;
+      }
+      const seen = JSON.parse(readFileSync(dump, "utf8"));
+      expect(seen.settings.hooks).toBeUndefined();
+      expect(seen.settings).not.toHaveProperty("disableAllHooks");
+    });
+
+    it("guards every non-guest turn against a shell command that opens a browser window, with or without the hook integration", async () => {
+      const dump = join(scratch, "browser-guard.json");
+      process.env.FAKE_CLAUDE_DUMP = dump;
+      await create();
+      await instance.adapter.sendTurn({ threadId: "t-browser-guard", text: "hi", approvalMode: "full" });
+      await recorder.until((e) => e.type === "turn.completed");
+      const seen = JSON.parse(readFileSync(dump, "utf8"));
+      expect(Object.keys(seen.settings.hooks)).toEqual(["PreToolUse"]);
+      const [entry] = seen.settings.hooks.PreToolUse;
+      expect(entry.matcher).toBe("Bash|PowerShell|Monitor");
+      expect(seen.settings.disableAllHooks).toBe(false);
+      expect(entry.hooks[0].command).toContain("omb-browser-guard");
     });
 
     it("never reaches a guest's turn", async () => {
@@ -1857,7 +1895,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await instance.adapter.sendTurn({ threadId: "t-auth-settings", text: "hi" });
     await recorder.until((e) => e.type === "turn.completed");
     const seen = JSON.parse(readFileSync(dump, "utf8"));
-    expect(seen.settings).toEqual({ claudeMdExcludes: [join(homedir(), ".claude", "CLAUDE.md")], apiKeyHelper: settings.apiKeyHelper, env: { ANTHROPIC_BASE_URL: settings.env.ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN: "synthetic-token", ENABLE_TOOL_SEARCH: "true", CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" } });
+    expect(seen.settings).toEqual({ claudeMdExcludes: [join(homedir(), ".claude", "CLAUDE.md")], apiKeyHelper: settings.apiKeyHelper, env: { ANTHROPIC_BASE_URL: settings.env.ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN: "synthetic-token", ENABLE_TOOL_SEARCH: "true", CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" }, hooks: { PreToolUse: [expect.objectContaining({ matcher: "Bash|PowerShell|Monitor" })] }, disableAllHooks: false });
     expect(seen.argv[seen.argv.indexOf("--setting-sources") + 1]).toBe("project");
     expect(JSON.stringify(seen.argv)).not.toContain("synthetic");
     const settingsPath = seen.argv[seen.argv.indexOf("--settings") + 1];
@@ -1987,7 +2025,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await instance.adapter.sendTurn({ threadId: "t-auth-explicit", text: "hi" });
     await recorder.until((e) => e.type === "turn.completed");
     const seen = JSON.parse(readFileSync(dump, "utf8"));
-    expect(seen.settings).toEqual({ claudeMdExcludes: [join(homedir(), ".claude", "CLAUDE.md")], env: { ENABLE_TOOL_SEARCH: "true", CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" } });
+    expect(seen.settings).toEqual({ claudeMdExcludes: [join(homedir(), ".claude", "CLAUDE.md")], env: { ENABLE_TOOL_SEARCH: "true", CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" }, hooks: { PreToolUse: [expect.objectContaining({ matcher: "Bash|PowerShell|Monitor" })] }, disableAllHooks: false });
     expect(seen.env.ANTHROPIC_API_KEY).toBe("workspace-key");
     expect(seen.env.ANTHROPIC_BASE_URL).toBeUndefined();
     expect(readClaudeAuthSettings({ HOME: scratch, CLAUDE_CONFIG_DIR: join(scratch, "other-account") })).toEqual({});
