@@ -7,7 +7,11 @@ export type CloudPlanView = { kind: "unknown" | "signed-out" | "paid" | "free" |
 const PLAN_LABEL: Record<string, string> = { starter: "Starter", personal: "Personal", pro: "Pro", max: "Max" };
 
 export function cloudPlanLabel(tier?: string): string { return tier === undefined ? "Pro" : PLAN_LABEL[tier] ?? "Cloud"; }
-export function cloudPlanView(_account: unknown): CloudPlanView { return { kind: "signed-out", label: "" }; }
+// Only the sign-in states exist here; upstream's paid, free and purchase views are plan billing. "removed" (a saved sign-in that could not be read) is upstream's own sign-in state, so keep it.
+export function cloudPlanView(account: unknown): CloudPlanView {
+  const { status, message } = (account ?? {}) as { status?: string; message?: string };
+  return { kind: status === "signed-out" && message === "restore-removed" ? "removed" : "signed-out", label: "" };
+}
 export function cloudPlanLine(_view: CloudPlanView): string | null { return null; }
 export function buyOfferAllowed(_view: CloudPlanView): boolean { return false; }
 export function cloudTrialView(_trial: unknown, _credit?: unknown): { title: string; body: string; action: { label: string } } { return { title: "", body: "", action: { label: "" } }; }
