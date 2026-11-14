@@ -7,11 +7,11 @@ interface Command {
 }
 
 const MAX_DEPTH = 4;
-const BROWSER_NAME = String.raw`(?:google[ -]?chrome(?: for testing| canary| beta)?|chromium|chrome|microsoft[ -]?edge|msedge|brave(?: browser)?|firefox|safari|vivaldi|opera|arc|orion)`;
+const BROWSER_NAME = String.raw`(?:google[ -]?chrome(?: for testing| canary| beta)?|chromium|chrome|microsoft[ -]?edge|msedge|brave(?: browser)?|firefox|safari|vivaldi|opera|arc|orion|zen(?: browser)?|dia)`;
 const BROWSER_APP = new RegExp(String.raw`(?:^|[^a-z0-9])${BROWSER_NAME}(?:\.app)?(?:$|[^a-z0-9])`, "i");
-const BROWSER_BUNDLE = /\b(?:com\.google\.chrome|com\.apple\.safari|com\.microsoft\.edgemac|org\.mozilla\.firefox|com\.brave\.browser|com\.vivaldi\.vivaldi|com\.operasoftware\.opera|company\.thebrowser\.browser)\b/i;
+const BROWSER_BUNDLE = /\b(?:com\.google\.chrome|com\.apple\.safari|com\.microsoft\.edgemac|org\.mozilla\.firefox|com\.brave\.browser|com\.vivaldi\.vivaldi|com\.operasoftware\.opera|company\.thebrowser\.browser|company\.thebrowser\.dia|app\.zen-browser\.zen)\b/i;
 const BROWSER_BINARY = /^(?:google[ -]chrome(?:-stable|-beta|-unstable| for testing| canary)?|chromium(?:-browser)?|chrome|msedge|microsoft[ -]edge(?:-stable|-beta|-dev)?|brave(?:-browser| browser)?|firefox|vivaldi|opera|safari)$/;
-const BROWSER_APP_BUNDLE = /(?:google chrome(?: for testing| canary)?|chromium|microsoft edge|brave browser|firefox|vivaldi|opera)\.app\b/i;
+const BROWSER_APP_BUNDLE = /(?:google chrome(?: for testing| canary)?|chromium|microsoft edge|brave browser|firefox|vivaldi|opera|(?<![a-z0-9])(?:zen|dia))\.app\b/i;
 const URL_ARGUMENT = /^(?:https?|file|ftp|about|chrome|chrome-extension):/i;
 const PAGE_FILE = /\.(?:html?|xhtml|mhtml)(?:[?#].*)?$/i;
 const WRAPPERS = new Set(["sudo", "nohup", "exec", "time", "command", "builtin", "nice", "setsid", "caffeinate", "stdbuf", "env", "arch", "then", "do", "else", "elif", "if", "while", "until", "!", "doas"]);
