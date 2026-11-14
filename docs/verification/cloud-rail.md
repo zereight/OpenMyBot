@@ -169,7 +169,7 @@ server never starts.
 
 ```sh
 node --test electron/cloud-list.node-test.mjs electron/cloud-account-clouds.node-test.mjs electron/cloud-rail.node-test.mjs electron/chrome-rail.node-test.mjs electron/home-window.node-test.mjs electron/place-look.node-test.mjs electron/desktop-prefs.node-test.mjs
-pnpm exec vitest run src/components/PlacesRail.test.ts src/components/ChromeRail.test.ts src/components/ChromeRailToggle.test.ts src/components/Sidebar.header.test.ts src/components/cloud-buy/AddCloudFlow.test.ts src/components/PlaceLookCard.test.ts
+pnpm exec vitest run src/components/PlacesRail.test.ts src/components/ChromeRail.test.ts src/components/ChromeRailToggle.test.ts src/components/Sidebar.header.test.ts src/components/PlaceLookCard.test.ts
 pnpm exec vitest run server/workspace-banner.test.ts server/routes/workspace-banner.test.ts server/workspace-banner.e2e.test.ts src/lib/place-banner.test.ts src/components/PlacePicture.test.ts
 ```
 
