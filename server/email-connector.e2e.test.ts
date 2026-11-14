@@ -80,7 +80,7 @@ await import(${JSON.stringify(pathToFileURL(join(SERVER_DIR, "testing", "fake-cl
     const port = await freePortBlock([0, 1]);
     base = `http://127.0.0.1:${port}`;
     child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], { cwd: join(SERVER_DIR, ".."), stdio: ["ignore", "pipe", "pipe"], env: {
-      PATH: process.env.PATH, HOME: home, OMB_DATA_DIR: dataDir, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1), NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS,
+      PATH: process.env.PATH, HOME: home, OMB_DATA_DIR: dataDir, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1), OMB_OWN_MCP_STDIO: "1", NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS,
     } });
     child.stdout?.on("data", (chunk) => { log += chunk; });
     child.stderr?.on("data", (chunk) => { log += chunk; });

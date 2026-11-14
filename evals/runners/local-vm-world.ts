@@ -62,6 +62,7 @@ export class LocalVmWorld extends BaseWorld {
       OMB_WEBHOOK_PORT: String(port + 1),
       OMB_STATIC_DIR: ui,
       OMB_TEST_VM_STATE: this.stateFile,
+      OMB_OWN_MCP_STDIO: "1",
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
     };
     const child = this.child = spawn(process.execPath, ["--import", hooks, join(ROOT, "server", "index.ts")], {

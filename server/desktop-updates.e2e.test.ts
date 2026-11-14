@@ -115,6 +115,7 @@ describe.skipIf(process.platform === "win32")("a bot's old desktop after an app 
         APPDATA: join(home, "appdata"), LOCALAPPDATA: join(home, "localappdata"),
         TEMP: home, TMP: home, TMPDIR: home,
         OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1), OMB_STATIC_DIR: join(home, "static"), OMB_TEST_VM_STATE: stateFile,
+        OMB_OWN_MCP_STDIO: "1",
         OMB_TEST_DESKTOP_CUA_CONNECTION: join(home, "user-data", "cua-connection.json"), OMB_EXTRA_PATH: fakeBin,
         FAKE_DOCKER_DIR: fakeBin, FAKE_DOCKER_LOG: join(fakeBin, "docker.log"), OMB_TEST_SEALED_PATH: "1",
       }, stdio: ["ignore", "pipe", "pipe"],
