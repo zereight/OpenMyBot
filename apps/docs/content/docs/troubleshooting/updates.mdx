@@ -14,7 +14,7 @@ MausBot checks for updates in the background and offers the download in a card a
 Ubuntu packages are installed from the releases repository by hand, so the app hands you the exact line rather than guessing at a package handler:
 
 ```bash
-sudo apt-get install -y '/home/you/.cache/openmausbot-updater/pending/OpenMausBot-<version>-amd64.deb'
+sudo apt-get install -y '/home/you/.cache/openmausbot-updater/pending/OpenMyBot-<version>-amd64.deb'
 ```
 
 Reopen MausBot once it finishes to be running the new version.
@@ -52,5 +52,5 @@ Use `apt-get`, not `dpkg -i` — only `apt-get` resolves dependencies, and on Ub
 Open **App settings** and check the displayed version. A commit merged to `main` is not in the desktop app until a release workflow publishes a new version.
 
 <Callout type="warn" title="Use official artifacts">
-  Do not install update files forwarded through chat or uploaded to an unrelated repository. Use the OpenMausBot releases repository and its checksums.
+  Do not install update files forwarded through chat or uploaded to an unrelated repository. Use the OpenMyBot releases repository and its checksums.
 </Callout>

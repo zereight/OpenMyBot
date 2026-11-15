@@ -21,7 +21,7 @@ if (process.platform !== "win32" || process.env.GITHUB_ACTIONS !== "true") {
   process.exit(2);
 }
 if (!options.installer || !existsSync(options.installer) || !options.out) {
-  console.error("usage: node scripts/defender-check-win.mjs --installer <OpenMausBot-<version>-setup.exe> --out <folder> [--wait 120]");
+  console.error("usage: node scripts/defender-check-win.mjs --installer <OpenMyBot-<version>-setup.exe> --out <folder> [--wait 120]");
   process.exit(2);
 }
 
@@ -515,9 +515,9 @@ function judge(r) {
   const ourEvents = (r.findings?.events ?? []).filter((event) => OURS.test(`${event.path} ${event.process}`));
   const ourDetections = (r.findings?.detections ?? []).filter((detection) => detection.resources.some((resource) => OURS.test(resource)));
   for (const event of ourEvents) {
-    problems.push(`Windows Security flagged ${event.path || "an OpenMausBot file"}: ${event.threat || `event ${event.id}`}${event.action ? ` (${event.action})` : ""}`);
+    problems.push(`Windows Security flagged ${event.path || "an OpenMyBot file"}: ${event.threat || `event ${event.id}`}${event.action ? ` (${event.action})` : ""}`);
   }
-  if (!ourEvents.length && ourDetections.length) problems.push(`Windows Security recorded ${ourDetections.length} detection(s) in OpenMausBot's files`);
+  if (!ourEvents.length && ourDetections.length) problems.push(`Windows Security recorded ${ourDetections.length} detection(s) in OpenMyBot's files`);
   if (r.download?.error) problems.push(`the installer couldn't be saved to Downloads: ${r.download.error}`);
   else if (r.download && !r.download.stillThere) problems.push("the installer was gone 15 s after it was saved to Downloads");
   if (r.installerScan?.ran && !r.installerScan.clean) problems.push(`Defender's scan of the installer found ${r.installerScan.threats.join(", ") || "a threat"}`);
@@ -555,9 +555,9 @@ function render(r, verdict) {
   const before = r.asFound ?? {};
   const after = r.protection ?? {};
 
-  add("## Windows Security and the OpenMausBot installer");
+  add("## Windows Security and the OpenMyBot installer");
   add();
-  add(`OpenMausBot ${r.version}, commit \`${String(r.commit).slice(0, 12)}\`, on ${r.machine?.os ?? "Windows"} ${r.machine?.version ?? ""} (GitHub's ${r.machine?.image || "windows-latest"}).`);
+  add(`OpenMyBot ${r.version}, commit \`${String(r.commit).slice(0, 12)}\`, on ${r.machine?.os ?? "Windows"} ${r.machine?.version ?? ""} (GitHub's ${r.machine?.image || "windows-latest"}).`);
   add();
   if (verdict.problems.length) {
     add("**Verdict: something went wrong for a person installing the app.**");
@@ -670,7 +670,7 @@ function render(r, verdict) {
     }
     add(`- Defender Operational events ${DEFENDER_EVENTS.join(", ")}: ${findings.events.length ? "" : "none."}`);
     for (const event of findings.events) {
-      add(`  - ${event.time}, event ${event.id}: ${event.threat || "(no name)"}${event.path ? ` in ${event.path}` : ""}${event.source ? `, by ${event.source}` : ""}${event.action ? `, action ${event.action}` : ""}${OURS.test(`${event.path} ${event.process}`) ? "" : " (not OpenMausBot's)"}.`);
+      add(`  - ${event.time}, event ${event.id}: ${event.threat || "(no name)"}${event.path ? ` in ${event.path}` : ""}${event.source ? `, by ${event.source}` : ""}${event.action ? `, action ${event.action}` : ""}${OURS.test(`${event.path} ${event.process}`) ? "" : " (not OpenMyBot's)"}.`);
     }
   }
   add();

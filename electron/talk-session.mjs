@@ -32,7 +32,7 @@ const SERVER_NOTICES = new Map([
   ["moved", TALK_TEXT.moved],
 ]);
 
-const SERVER_NOTICE_KEYS = new Map([["server-down", "native.talk.openMausBot"], ["starting", "native.talk.starting"], ["no-mausbot", "native.talk.setUpFirst"], ["moved", "native.talk.movedToCloud"]]);
+const SERVER_NOTICE_KEYS = new Map([["server-down", "native.talk.openMyBot"], ["starting", "native.talk.starting"], ["no-mausbot", "native.talk.setUpFirst"], ["moved", "native.talk.movedToCloud"]]);
 const SPEECH_KEYS = new Map([["speech-not-authorized", "native.talk.permissions"], ["mic-failed", "native.talk.unavailable"], ["recognizer-unavailable", "native.talk.unavailable"], ["dictation-disabled", "native.talk.dictationOff"], ["helper-build-failed", "native.talk.unavailable"], ["helper-start-failed", "native.talk.unavailable"], ["unsupported-platform", "native.talk.unavailable"]]);
 
 const UNDER_WAY = new Set(["listening", "sending", "thinking"]);

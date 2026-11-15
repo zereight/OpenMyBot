@@ -51,7 +51,7 @@ or taller than the card shows a box the app never draws.
 ## Setup
 
 - A packaged build of the branch installed beside, never over, the installed
-  OpenMausBot (maintainers: the OMB2 side-by-side build). Never touch
+  OpenMyBot (maintainers: the OMB2 side-by-side build). Never touch
   `/Applications/OpenMausBot.app` or `~/.openmausbot`.
 - Launch with `OMB_DATA_DIR=$HOME/.openmausbot-test` unless the check needs real
   bots. Only one running app may hold the key: quit any other MausBot first.

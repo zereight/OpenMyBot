@@ -166,7 +166,7 @@ describe("openmausbot command line", () => {
   it("serve: starts the server, prints the pairing link, and stops on SIGTERM", async () => {
     const home = mkdtempSync(join(tmpdir(), "omb-cli-serve-"));
     const port = workerPort(21000, 9000);
-    const child = spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmausbot.ts"), "serve", "--port", String(port), "--data-dir", join(home, "data"), "--label", "cli test", "--public-url", "https://mini.example"], {
+    const child = spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmybot.ts"), "serve", "--port", String(port), "--data-dir", join(home, "data"), "--label", "cli test", "--public-url", "https://mini.example"], {
       cwd: join(SERVER_DIR, ".."),
       env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, OMB_WEBHOOK_PORT: String(port + 1), OMB_BROWSER_CONNECTION: join(home, "browser-connection.json") },
       stdio: ["ignore", "pipe", "pipe"],
@@ -182,7 +182,7 @@ describe("openmausbot command line", () => {
       expect(out, "not a terminal: no code goes into a log").not.toMatch(/Pairing code {3}[A-Z2-9]{4}-/);
       expect(out).toContain("Get a pairing code: openmausbot pair");
       expect(out).not.toContain("Ctrl+C");
-      const paired = spawnSync(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmausbot.ts"), "pair", "--port", String(port)], { cwd: join(SERVER_DIR, ".."), env: { PATH: process.env.PATH ?? "", HOME: home }, encoding: "utf8" });
+      const paired = spawnSync(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmybot.ts"), "pair", "--port", String(port)], { cwd: join(SERVER_DIR, ".."), env: { PATH: process.env.PATH ?? "", HOME: home }, encoding: "utf8" });
       expect(paired.stdout).toMatch(/Pairing code {3}[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4} {3}works once, until .+ · everything/);
       expect(paired.stdout).toContain("Link           https://mini.example/pair#code=");
       expect(paired.stdout).toMatch(/[▀▄█]/);
@@ -211,7 +211,7 @@ describe("serve --lan", () => {
     const lan = reachableAddresses().lan[0];
     const home = mkdtempSync(join(tmpdir(), "omb-cli-lan-"));
     const port = workerPort(21000, 9000);
-    const child = spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmausbot.ts"), "serve", "--lan", "--port", String(port), "--data-dir", join(home, "data")], {
+    const child = spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmybot.ts"), "serve", "--lan", "--port", String(port), "--data-dir", join(home, "data")], {
       cwd: join(SERVER_DIR, ".."),
       env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, OMB_WEBHOOK_PORT: String(port + 1), OMB_BROWSER_CONNECTION: join(home, "browser-connection.json") },
       stdio: ["ignore", "pipe", "pipe"],
@@ -447,7 +447,7 @@ const exited = (child: ChildProcess) => (child.exitCode !== null ? Promise.resol
 
 describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
   const cli = (args: string[], env: NodeJS.ProcessEnv) =>
-    spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmausbot.ts"), ...args], {
+    spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmybot.ts"), ...args], {
       cwd: join(SERVER_DIR, ".."),
       env: { PATH: process.env.PATH ?? "", ...env },
       stdio: ["ignore", "pipe", "pipe"],
@@ -566,7 +566,7 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
       while (!out.includes("Get a pairing code:") && Date.now() < deadline && child.exitCode === null) await new Promise((r) => setTimeout(r, 200));
       expect(out).toContain('server "tunnel test"');
       expect(out).toMatch(new RegExp(`^Reach .*${stub.endpointUrl.replace(/[.]/g, "\\.")}`, "m"));
-      const pairOut = spawnSync(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmausbot.ts"), "pair", "--port", String(port), "--data-dir", dataDir], { cwd: join(SERVER_DIR, ".."), env: { PATH: process.env.PATH ?? "", HOME: home }, encoding: "utf8" }).stdout;
+      const pairOut = spawnSync(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmybot.ts"), "pair", "--port", String(port), "--data-dir", dataDir], { cwd: join(SERVER_DIR, ".."), env: { PATH: process.env.PATH ?? "", HOME: home }, encoding: "utf8" }).stdout;
       expect(pairOut).toContain(`Link           ${stub.endpointUrl}/pair#code=`);
       expect(stub.calls).toContain("POST /v1/installations/self/endpoint");
 
@@ -662,7 +662,7 @@ describe.skipIf(process.platform === "win32")("serve --domain", () => {
     const fake = join(home, "fake-caddy");
     writeFileSync(fake, `#!/bin/sh\necho "$@" > "${join(home, "caddy-args.txt")}"\necho $$ > "${join(home, "caddy.pid")}"\nexec sleep 300\n`, { mode: 0o755 });
     const port = workerPort(21000, 9000);
-    const child = spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmausbot.ts"), "serve", "--domain", "omb.example.test", "--port", String(port), "--data-dir", dataDir], {
+    const child = spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmybot.ts"), "serve", "--domain", "omb.example.test", "--port", String(port), "--data-dir", dataDir], {
       cwd: join(SERVER_DIR, ".."),
       env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, OMB_WEBHOOK_PORT: String(port + 1), OMB_BROWSER_CONNECTION: join(home, "browser-connection.json"), OMB_CADDY_PATH: fake },
       stdio: ["ignore", "pipe", "pipe"],
@@ -675,7 +675,7 @@ describe.skipIf(process.platform === "win32")("serve --domain", () => {
       while (!out.includes("Get a pairing code:") && Date.now() < deadline && child.exitCode === null) await new Promise((r) => setTimeout(r, 200));
       expect(out).toContain("https: Caddy serves https://omb.example.test");
       expect(out).toMatch(/^Reach {4}… https:\/\/omb\.example\.test doesn't answer yet/m);
-      const pairOut = spawnSync(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmausbot.ts"), "pair", "--port", String(port), "--data-dir", dataDir], { cwd: join(SERVER_DIR, ".."), env: { PATH: process.env.PATH ?? "", HOME: home }, encoding: "utf8" }).stdout;
+      const pairOut = spawnSync(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmybot.ts"), "pair", "--port", String(port), "--data-dir", dataDir], { cwd: join(SERVER_DIR, ".."), env: { PATH: process.env.PATH ?? "", HOME: home }, encoding: "utf8" }).stdout;
       expect(pairOut).toContain("Link           https://omb.example.test/pair#code=");
       const args = readFileSync(join(home, "caddy-args.txt"), "utf8").trim();
       expect(args).toMatch(/^run --config .*Caddyfile --adapter caddyfile$/);

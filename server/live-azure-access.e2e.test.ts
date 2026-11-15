@@ -41,7 +41,7 @@ async function boot(env: NodeJS.ProcessEnv, config: Record<string, unknown> = {}
   const fetches = join(home, "fetches.log");
   mkdirSync(dataDir, { recursive: true });
   mkdirSync(join(home, "web"));
-  writeFileSync(join(home, "web", "index.html"), "<!doctype html><title>OpenMausBot</title>");
+  writeFileSync(join(home, "web", "index.html"), "<!doctype html><title>OpenMyBot</title>");
   writeFileSync(join(dataDir, "config.json"), JSON.stringify({
     instances: {
       ...Object.fromEntries(["codex", "cursor", "githubCopilot", "openaiCompat", "qwen", "hermes", "pi"].map((id) => [id, { driver: "not-a-real-driver" }])),
@@ -90,7 +90,7 @@ async function boot(env: NodeJS.ProcessEnv, config: Record<string, unknown> = {}
   };
   /** A pairing the Admin signs, for a Cloud's owner or a team's member. */
   const signedSession = async (claim: Record<string, unknown> = {}): Promise<Headers> => {
-    const body = JSON.stringify({ label: "OpenMausBot app (Cloud)", ttlSeconds: 300, ...claim });
+    const body = JSON.stringify({ label: "OpenMyBot app (Cloud)", ttlSeconds: 300, ...claim });
     const timestamp = String(Math.floor(Date.now() / 1000)), nonce = randomBytes(16).toString("base64url");
     const response = await fetch(`${base}/api/cloud/pairing`, { method: "POST", headers: {
       ...REMOTE, "content-type": "application/json", "x-omb-cloud-timestamp": timestamp, "x-omb-cloud-nonce": nonce, "x-omb-cloud-signature": `v1=${cloudPairingSignature(secret, timestamp, nonce, body)}`,

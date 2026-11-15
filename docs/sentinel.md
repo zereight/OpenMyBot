@@ -1,6 +1,6 @@
 # Sentinel
 
-Sentinel is an opt-in health scanner for an OpenMausBot data dir. It reads the
+Sentinel is an opt-in health scanner for an OpenMyBot data dir. It reads the
 data dir's databases and logs without modifying them, groups failures into
 issues, and writes those issues to its own folder outside the data dir (see
 [Privacy model](#privacy-model)). An `--out` inside the data dir is refused.
@@ -118,7 +118,7 @@ in its `index.ts`. A detector may see the same record on several scans. The
 
 | Kind | Fires on | Origin |
 |---|---|---|
-| `tool_error` | A failed tool call, grouped by tool and normalized error | `harness` for OpenMausBot's own MCP servers (`mcp__agents__*`, `computer`, `browser`, …) and harness notices; `shell` for Bash and exec; `external` for other MCP servers and the engine's built-in tools |
+| `tool_error` | A failed tool call, grouped by tool and normalized error | `harness` for OpenMyBot's own MCP servers (`mcp__agents__*`, `computer`, `browser`, …) and harness notices; `shell` for Bash and exec; `external` for other MCP servers and the engine's built-in tools |
 | `injection_scan` | A successful tool call whose output holds a steering phrase (`ignore previous instructions`, `you are now`, `system prompt`, …). It records the sighting and changes nothing: the call still ran. Output that holds a credential is skipped, because that is a secret, not instructions | `external` |
 | `turn_timeout` / `turn_stop` | A `turn.completed` that is not ok (stops the person chose are excluded), a turn stopped on budget (`max_tokens`, `max_turns`), or a room turn the harness stopped for running too long | `external` for account stops (`auth_required`, `quota`, …), otherwise `harness` |
 | `queue_wait` | Delegated work that waited longer than `--queue-wait` (default 300 s) before starting, or is still waiting | `harness` |
@@ -126,7 +126,7 @@ in its `index.ts`. A detector may see the same record on several scans. The
 | `cost_spike` | A turn that costs more than 5× the median of that bot's recent turns and more than $1, after at least 8 earlier turns. Those recent costs are kept in `state.json` (a spike is not counted into them), because event logs are read from a byte offset and a scan does not see them again | `harness` |
 | `retry_loop` | The same tool failing with the same signature 3 or more times in one turn | That of the tool |
 
-Harness failures are ranked `high`, because they are bugs in OpenMausBot
+Harness failures are ranked `high`, because they are bugs in OpenMyBot
 itself.
 
 ## Installing it
@@ -157,8 +157,8 @@ ships, whichever command you ran it from:
 
 | Platform | Node | Script |
 |---|---|---|
-| macOS | `/Applications/OpenMausBot.app/Contents/MacOS/OpenMausBot` (or under `~/Applications`) | `…/Contents/Resources/server/openmausbot.js` |
-| Ubuntu `.deb` | `/opt/OpenMausBot/openmausbot` | `/opt/OpenMausBot/resources/server/openmausbot.js` |
+| macOS | `/Applications/OpenMausBot.app/Contents/MacOS/OpenMausBot` (or under `~/Applications`) | `…/Contents/Resources/server/openmybot.js` |
+| Ubuntu `.deb` | `/opt/OpenMausBot/openmausbot` | `/opt/OpenMausBot/resources/server/openmybot.js` |
 
 The app's own executable runs as Node with `ELECTRON_RUN_AS_NODE=1`, just as
 the [MCP server](mcp-server.md#from-the-installed-desktop-app) does. App

@@ -25,7 +25,7 @@ export interface CloudListEntry {
   setup?: { step?: import("./cloud-home.mjs").CloudSetupStep; progress?: number };
   /** When the Admin last heard from it (ms). */
   lastSeenAt?: number;
-  /** The OpenMausBot version it runs, for an update reminder. */
+  /** The OpenMyBot version it runs, for an update reminder. */
   version?: string;
   /** Ended, stopped or with a payment problem, its files still kept: when they are deleted (ms). */
   deleteAfter?: number;

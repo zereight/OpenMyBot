@@ -88,7 +88,7 @@ openmausbot doctor --claude [--data-dir DIR]
   Get a token for a workspace you reach over the network, saved to FILE (only you can read it).
   On this computer's own server the code is made for you; elsewhere, get one from Settings → Phone.
   Then use it: --url URL --token-file FILE (or OPENMAUSBOT_URL and OPENMAUSBOT_TOKEN).`,
-  mcp: "openmausbot mcp\n  Serve the OpenMausBot MCP tools on stdin and stdout, for an agent (docs/mcp-server.md).",
+  mcp: "openmausbot mcp\n  Serve the OpenMyBot MCP tools on stdin and stdout, for an agent (docs/mcp-server.md).",
   token: "openmausbot token create NAME --out FILE … | token list | token revoke ID   (see help token create)",
   "token create": `openmausbot token create NAME --out FILE [--scope client|admin] [--expires 90d] [--force]
   An access token for CI and scripts, saved to FILE (only you can read it) and never printed.

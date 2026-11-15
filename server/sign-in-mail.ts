@@ -1,4 +1,4 @@
-// Email sign-in codes sent through the server's own mail server (OMB_SIGNIN_SMTP_URL) instead of the OpenMausBot account
+// Email sign-in codes sent through the server's own mail server (OMB_SIGNIN_SMTP_URL) instead of the OpenMyBot account
 // service. A code is 8 digits, works once for ten minutes and for five tries, and only its hash is kept, in memory.
 import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 

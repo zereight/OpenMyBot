@@ -1,5 +1,5 @@
 export const EXTERNAL_BROWSER_DENIAL =
-  "OpenMausBot blocked this command: it opens a browser window on the person's desktop and takes their focus. Use your own browser tools (agent_browser_*) instead. If they fail, retry once, then stop and tell the person what failed and what you needed. Do not open Chrome, Safari, Firefox, Edge or any URL through the shell, AppleScript or a script. A headless browser (--headless) is allowed.";
+  "OpenMyBot blocked this command: it opens a browser window on the person's desktop and takes their focus. Use your own browser tools (agent_browser_*) instead. If they fail, retry once, then stop and tell the person what failed and what you needed. Do not open Chrome, Safari, Firefox, Edge or any URL through the shell, AppleScript or a script. A headless browser (--headless) is allowed.";
 
 interface Command {
   words: string[];

@@ -56,7 +56,7 @@ jobs:
           OMB_PORT=18799 node cli.js sessions | grep -q "no paired devices yet"
           # the bundles also run directly by path (the image and docs do that), not only through cli.js:
           # a bundled module with a "run when executed directly" block would fire here
-          node dist-server/openmausbot.js --help | grep -q "openmausbot serve"
+          node dist-server/openmybot.js --help | grep -q "openmausbot serve"
           OMB_PORT=1 node dist-server/pair-cli.js > pair.out 2>&1 || true
           cat pair.out
           grep -q "No MausBot server is running here" pair.out

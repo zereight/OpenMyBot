@@ -4,7 +4,7 @@ import type { LiveFishRelayCommand, LiveFishRelayEvent, LiveFishSessionToken, Li
 
 /** The client tool the Fish agent calls to delegate; set up on the agent as a client tool with `expects_response`. */
 export const FISH_DELEGATE_TOOL = "delegate";
-export const FISH_UPDATE_PREFIX = "[OpenMausBot]";
+export const FISH_UPDATE_PREFIX = "[OpenMyBot]";
 /** How long a delegate call waits for the harness's first word on it; later words arrive as updates. */
 export const DELEGATE_ANSWER_MS = 8_000;
 const CLIENT_TOOL_TIMEOUT_MS = 12_000;

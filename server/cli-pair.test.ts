@@ -145,7 +145,7 @@ describe("openmausbot pair", () => {
     const failure = await runPair(options).then(() => null, (error: unknown) => error);
     expect(failure).toBeInstanceOf(Error);
     const message = (failure as Error).message;
-    expect(message).toContain("The OpenMausBot desktop app runs this server");
+    expect(message).toContain("The OpenMyBot desktop app runs this server");
     expect(message).toContain("Settings → Remote access");
     // A terminal `serve` would not get the keys the app keeps in its own credential store, so it is not offered.
     expect(message).not.toContain("openmausbot serve");

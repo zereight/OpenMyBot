@@ -72,13 +72,13 @@ export function teamPage(environment: EnvironmentDescriptor | null, remembered: 
 export function pairTitle(environment: EnvironmentDescriptor | null, mode: "email" | "code" | null): string {
   if (environment?.capabilities.cloudTeam) return environment.label;
   if (environment?.capabilities.cloudHome) return t("pair.myCloud");
-  return t(mode === "email" ? "pair.signInTo" : "pair.connectTo", { name: environment?.label ?? t("pair.thisOpenMausBot", { app: productName() }) });
+  return t(mode === "email" ? "pair.signInTo" : "pair.connectTo", { name: environment?.label ?? t("pair.thisOpenMyBot", { app: productName() }) });
 }
 
 /** A team's page whose session ended because its person is no longer in the team: one sentence, nothing that can't work. */
 export function TeamLeftPage({ team }: { team: string | null }) {
   return <main data-team-left className="flex min-h-screen items-center justify-center bg-app px-6 text-ink">
-    <p role="status" className="max-w-[420px] text-[16px]">{t("homeLine.left", { name: team ?? t("pair.thisOpenMausBot", { app: productName() }) })}</p>
+    <p role="status" className="max-w-[420px] text-[16px]">{t("homeLine.left", { name: team ?? t("pair.thisOpenMyBot", { app: productName() }) })}</p>
   </main>;
 }
 
@@ -169,7 +169,7 @@ export function PairPage({ initialCode, initialEmail = null, reason }: { initial
       <div className="w-full max-w-[420px]">
         {where && unencryptedPublic(where) ? <p role="alert" className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-[13px] text-warning">{t("pair.notEncrypted")}</p> : null}
         {opening ? (
-          <p role="status" className="text-[20px] font-semibold">{cloudHome ? t("pair.openingCloud") : t("pair.connectingTo", { name: environment?.label ?? t("pair.thisOpenMausBot") })}</p>
+          <p role="status" className="text-[20px] font-semibold">{cloudHome ? t("pair.openingCloud") : t("pair.connectingTo", { name: environment?.label ?? t("pair.thisOpenMyBot") })}</p>
         ) : <>
         <h1 className="text-[20px] font-semibold">{pairTitle(environment, mode)}</h1>
         <p className="mt-1.5 text-[14px] leading-relaxed text-ink-secondary">

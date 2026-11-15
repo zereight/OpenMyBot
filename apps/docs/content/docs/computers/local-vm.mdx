@@ -12,7 +12,7 @@ To put the desktop container on your own Linux server instead of this host, foll
 
 - Docker Desktop, Docker Engine, or a supported Podman setup
 - Enough local memory and disk for the desktop image
-- A healthy container runtime available to the OpenMausBot process
+- A healthy container runtime available to the OpenMyBot process
 
 The runtime must be reachable from the MausBot server itself. The published server image (the Docker install from [Deploy on a VPS](/docs/self-hosting/deploy-vps)) has no Docker or Podman inside its container, so private desktops stay at **Install the app that runs private desktops** there even when the host has Docker. On that kind of install, use [Cloud desktops](/docs/computers/cloud-and-vps) instead. [Your own VPS (BYO)](/docs/computers/byo-vps) does not help there either: it also needs the Docker client on the computer that runs MausBot.
 
@@ -40,7 +40,7 @@ The equivalent source configuration is:
 }
 ```
 
-Local VMs always run on the same physical host as the OpenMausBot desktop process. `maxInstances: 2` does not pool one VM from a Mac and another from a Windows PC. To use Windows capacity today, run MausBot on Windows with its supported Podman lane and create both per-bot desktops there. The BYO-VPS backend is limited to an x86_64 Linux Docker host; do not point it at Windows as a substitute remote Local VM. Cross-host Mac and Windows pooling is tracked in [issue #508](https://github.com/milind-soni/OpenMausBot/issues/508).
+Local VMs always run on the same physical host as the OpenMyBot desktop process. `maxInstances: 2` does not pool one VM from a Mac and another from a Windows PC. To use Windows capacity today, run MausBot on Windows with its supported Podman lane and create both per-bot desktops there. The BYO-VPS backend is limited to an x86_64 Linux Docker host; do not point it at Windows as a substitute remote Local VM. Cross-host Mac and Windows pooling is tracked in [issue #508](https://github.com/milind-soni/OpenMausBot/issues/508).
 
 ## Memory and CPU
 

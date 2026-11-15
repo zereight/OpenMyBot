@@ -1,4 +1,4 @@
-# Edge for one OpenMausBot tenant: automatic HTTPS in front of a server that
+# Edge for one OpenMyBot tenant: automatic HTTPS in front of a server that
 # only listens on loopback, reached over the Unix sockets it makes in the
 # `edge` volume (docker-compose.yml). A request on a socket is always a remote
 # one to the server, never a local one. Login is pairing (docs/self-hosting.md "Using it

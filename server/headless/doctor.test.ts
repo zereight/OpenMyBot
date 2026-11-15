@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { HeadlessIo } from "./output.ts";
 import { runHeadless } from "./main.ts";
 
-const refused = (status: number) => Object.assign(new Error(`OpenMausBot API error (${status}): {"error":"forbidden"}`), { status });
+const refused = (status: number) => Object.assign(new Error(`OpenMyBot API error (${status}): {"error":"forbidden"}`), { status });
 
 /** `openmausbot doctor` on a server whose local callers without a session get the service routes only: a shared server,
  * or one in the hardened profile, as in the server's container, where deploy/update.sh runs it. */

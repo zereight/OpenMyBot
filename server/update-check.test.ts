@@ -16,7 +16,7 @@ const github = (newest: string, stable: string | null) => vi.fn(async (url: stri
 describe("server update check", () => {
   it("tells how this server was installed", () => {
     const none = () => false;
-    const root = ["", "srv", "OpenMausBot", "server"].join(sep);
+    const root = ["", "srv", "OpenMyBot", "server"].join(sep);
     expect(installKind({ desktopManaged: true, managed: false, serverRoot: root, exists: () => true })).toBe("desktop");
     expect(installKind({ desktopManaged: false, managed: true, serverRoot: root, exists: () => true })).toBe("managed");
     expect(installKind({ desktopManaged: false, managed: false, serverRoot: root, exists: (path) => path === "/.dockerenv" })).toBe("docker");

@@ -21,25 +21,25 @@ describe("browser unread indicator", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("prefixes the title with the count, replaces an older count, and drops it at zero", () => {
-    expect(titleWithUnread("OpenMausBot", 3)).toBe("(3) OpenMausBot");
-    expect(titleWithUnread("(3) OpenMausBot", 5)).toBe("(5) OpenMausBot");
+    expect(titleWithUnread("OpenMyBot", 3)).toBe("(3) OpenMyBot");
+    expect(titleWithUnread("(3) OpenMyBot", 5)).toBe("(5) OpenMyBot");
     expect(titleWithUnread("(5) Acme", 0)).toBe("Acme");
     expect(titleWithUnread("Acme", 0)).toBe("Acme");
   });
 
   it("sets the title and the app badge, and clears both", () => {
-    const doc = { title: "OpenMausBot" };
+    const doc = { title: "OpenMyBot" };
     const setAppBadge = vi.fn(async () => {});
     const clearAppBadge = vi.fn(async () => {});
     vi.stubGlobal("document", doc);
     vi.stubGlobal("navigator", { setAppBadge, clearAppBadge });
 
     showBrowserUnread(2);
-    expect(doc.title).toBe("(2) OpenMausBot");
+    expect(doc.title).toBe("(2) OpenMyBot");
     expect(setAppBadge).toHaveBeenCalledWith(2);
 
     showBrowserUnread(0);
-    expect(doc.title).toBe("OpenMausBot");
+    expect(doc.title).toBe("OpenMyBot");
     expect(clearAppBadge).toHaveBeenCalled();
   });
 
@@ -54,14 +54,14 @@ describe("browser unread indicator", () => {
   });
 
   it("still sets the title where the Badging API is missing or refuses", () => {
-    const doc = { title: "OpenMausBot" };
+    const doc = { title: "OpenMyBot" };
     vi.stubGlobal("document", doc);
     vi.stubGlobal("navigator", {});
     showBrowserUnread(1);
-    expect(doc.title).toBe("(1) OpenMausBot");
+    expect(doc.title).toBe("(1) OpenMyBot");
 
     vi.stubGlobal("navigator", { setAppBadge: () => Promise.reject(new Error("NotAllowedError")) });
     showBrowserUnread(4);
-    expect(doc.title).toBe("(4) OpenMausBot");
+    expect(doc.title).toBe("(4) OpenMyBot");
   });
 });

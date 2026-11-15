@@ -1,4 +1,4 @@
-# One OpenMausBot tenant: the harness server plus Caddy for TLS + login.
+# One OpenMyBot tenant: the harness server plus Caddy for TLS + login.
 #
 # The server only listens on loopback inside its container, and on two Unix
 # sockets in the `edge` volume; Caddy, in its own container, reaches it through

@@ -3,7 +3,7 @@
   { "id": "my-own-computer", "tools": ["ask_for_computer", "list_shared_computers", "select_computer", "shared_computer"], "text": "Mach das bitte über meinen Mac mini.", "why": "Asked for a named computer in two words." },
   { "id": "what-did-we-decide", "tools": ["session_search"], "text": "Was hatten wir letzte Woche mit dem Lieferanten vereinbart?", "why": "Asked about an earlier conversation." },
   { "id": "is-it-still-running", "tools": ["assignment_status", "list_threads", "list_bots"], "text": "Is anything you handed to a teammate still running? Check, don't guess.", "why": "Asked for the state of hand-offs." },
-  { "id": "tell-the-team", "tools": ["report_bug"], "text": "Please report this to the OpenMausBot team: the password card never showed up on my desktop.", "why": "Filed a bug with the people who make the app." },
+  { "id": "tell-the-team", "tools": ["report_bug"], "text": "Please report this to the OpenMyBot team: the password card never showed up on my desktop.", "why": "Filed a bug with the people who make the app." },
   { "id": "which-triggers", "tools": ["trigger_info", "trigger"], "text": "Which automations do you have set up right now?", "why": "Asked what runs on its own." },
   { "id": "how-close-to-my-limit", "tools": ["usage_limits"], "text": "How close am I to my Claude limit right now?", "why": "Worried about spending his window." },
   { "id": "show-a-chart", "tools": ["show_widget", "show_html"], "text": "Show me a tiny bar chart right here in the chat: Monday 3, Tuesday 5, Wednesday 2.", "why": "Asked for something drawn in the chat." },

@@ -113,7 +113,7 @@ function pinnedCopy(input: ServiceInstallInput, io: ServiceIo): string | null {
   const command = `npm install --prefix ${prefix} openmausbot@${version ?? "latest"}`;
   io.log(`this run comes from npx's cache, which npm prunes: installing openmausbot ${version ?? ""} into ${prefix} for the service`.replace("  ", " "));
   const installed = (input.installCopy ?? installWithNpm)(prefix, version ?? "latest");
-  const script = join(prefix, "node_modules", "openmausbot", "dist-server", "openmausbot.js");
+  const script = join(prefix, "node_modules", "openmausbot", "dist-server", "openmybot.js");
   if (installed && (input.exists ?? existsSync)(script)) return script;
   io.error(`could not install that copy. Run this, then the same service install command again from it:\n  ${command}\n  node ${script} service install …`);
   return null;
@@ -141,7 +141,7 @@ function runSentinelService(input: ServiceInstallInput, platform: NodeJS.Platfor
     // command line as one argument, with its own quotes escaped
     const command = sentinelCommand({ ...input, out }).map((arg) => `\\"${arg}\\"`).join(" ");
     io.error("services are written for Linux (systemd) and macOS (launchd); on Windows, use Task Scheduler to run Sentinel every two minutes:");
-    io.error(`  schtasks /Create /SC MINUTE /MO 2 /TN "OpenMausBot Sentinel" /TR "${command}"`);
+    io.error(`  schtasks /Create /SC MINUTE /MO 2 /TN "OpenMyBot Sentinel" /TR "${command}"`);
     return 1;
   }
   if (input.action === "uninstall") {

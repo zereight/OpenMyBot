@@ -1,4 +1,4 @@
-# OpenMausBot harness server — hosted/self-hosted tenant image, and the
+# OpenMyBot harness server — hosted/self-hosted tenant image, and the
 # OMB Cloud Pro home machine (docs/cloud-pro.md).
 #
 # Build the renderer + the self-contained server bundle, then ship only those
@@ -17,7 +17,7 @@
 #   docker buildx build --platform linux/arm64 -t openmausbot .   # Raspberry Pi 4/5, ARM servers
 #
 # HOME is the /data volume, so engine CLI logins (~/.claude, ~/.codex, ~/.grok,
-# ...) and OpenMausBot's own state (~/.openmausbot) persist across container
+# ...) and OpenMyBot's own state (~/.openmausbot) persist across container
 # restarts.
 #
 # A plain `docker run` of either image wants `--init --shm-size=512m`, as the
@@ -228,7 +228,7 @@ COPY --from=build --chown=maus:maus /src/dist-server ./dist-server
 COPY --from=build --chown=maus:maus /src/dist ./dist
 COPY --from=build --chown=maus:maus /src/skills ./skills
 # `docker compose exec omb openmausbot pair`: the commands the CLI prints start the same way.
-RUN printf '#!/bin/sh\nexec node /app/dist-server/openmausbot.js "$@"\n' > /usr/local/bin/openmausbot && chmod 0755 /usr/local/bin/openmausbot
+RUN printf '#!/bin/sh\nexec node /app/dist-server/openmybot.js "$@"\n' > /usr/local/bin/openmausbot && chmod 0755 /usr/local/bin/openmausbot
 ENV HOME=/data \
     OMB_CLI_PREFIX="docker compose exec omb openmausbot"
 VOLUME ["/data"]

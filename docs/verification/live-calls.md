@@ -157,7 +157,7 @@ same route for the bot's answers. `FishRelay` (`server/live-fish.ts`) turns the
 reports into the GPT-Live sideband events `LiveCallController` already reads
 and the controller's appends into commands the client hands the agent: the
 answer to a pending `delegate` call as its tool result, anything later as a
-user message prefixed `[OpenMausBot]`. Every report is a strict, bounded zod
+user message prefixed `[OpenMyBot]`. Every report is a strict, bounded zod
 shape; a wrong token or session answers `404`; the route needs the admin scope.
 The `delegate` tool's arguments are ignored: the request is what the client
 heard, as on GPT-Live.

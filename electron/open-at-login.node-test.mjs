@@ -9,13 +9,13 @@ import { autostartEntry, createOpenAtLogin, installOpenAtLogin } from "./open-at
 
 /** Electron's login item API on macOS and Windows: one item per name, as Windows keeps one Run entry per name. */
 function fakeApp({ openAtLogin = false, isPackaged = true } = {}) {
-  const items = new Map(openAtLogin ? [["OpenMausBot", { args: [] }]] : []);
+  const items = new Map(openAtLogin ? [["OpenMyBot", { args: [] }]] : []);
   return {
     isPackaged, items, wasOpenedAtLogin: false,
     getLoginItemSettings() {
       return { openAtLogin: items.size > 0, wasOpenedAtLogin: this.wasOpenedAtLogin, launchItems: [...items].map(([name, item]) => ({ name, args: item.args, enabled: true })) };
     },
-    setLoginItemSettings({ openAtLogin: on, args = [], name = "OpenMausBot" }) { if (on) items.set(name, { args }); else items.delete(name); },
+    setLoginItemSettings({ openAtLogin: on, args = [], name = "OpenMyBot" }) { if (on) items.set(name, { args }); else items.delete(name); },
   };
 }
 
@@ -75,7 +75,7 @@ function windowsApp(entries = []) {
       const own = items.get(DEFAULT);
       return {
         openAtLogin: Boolean(own) && JSON.stringify(own.args) === JSON.stringify(args),
-        launchItems: [...items].map(([name, item]) => ({ name, path: "C:\\OpenMausBot\\OpenMausBot.exe", args: item.args, scope: "user", enabled: item.enabled })),
+        launchItems: [...items].map(([name, item]) => ({ name, path: "C:\\OpenMyBot\\OpenMausBot.exe", args: item.args, scope: "user", enabled: item.enabled })),
       };
     },
     setLoginItemSettings({ openAtLogin: on, args = [], name = DEFAULT }) { if (on) items.set(name, { args, enabled: true }); else items.delete(name); },

@@ -1,4 +1,4 @@
-# OpenMausBot threat model
+# OpenMyBot threat model
 
 Guidance for automated security scanning (Anthropic OSS Scanner). The scope
 notes in `/src/SECURITY.md` and the documents named below describe the same
@@ -8,7 +8,7 @@ product decisions.
 
 ## What this project is
 
-OpenMausBot runs AI agents, called **bots**, on a person's own computer or
+OpenMyBot runs AI agents, called **bots**, on a person's own computer or
 server. A bot is a conversation plus settings that drives an **engine**: a
 real agent CLI (Claude Code, Codex, Grok, Gemini, Cursor, OpenCode, ACP
 agents) or an API-key chat-completions provider. Engines run as child
@@ -97,7 +97,7 @@ Bots have tools:
    - Every connection a bot's Chrome makes goes through a SOCKS5 gate on
      loopback. The gate resolves names itself and checks every address before
      it connects.
-   - These are always refused, on every host: OpenMausBot's own ports,
+   - These are always refused, on every host: OpenMyBot's own ports,
      link-local addresses, cloud metadata (`169.254.169.254`,
      `fd00:ec2::254`, `100.100.100.200`) and reserved ranges.
    - The local network (including `fc00::/7`, which holds Fly's private
@@ -157,7 +157,7 @@ These are deliberate product decisions. Do not report them.
   `shared/approval-mode.ts`). At Full access each engine runs in its own most
   permissive mode. Where an engine has no such mode, the harness answers the
   permission requests it leaves.
-- **OpenMausBot adds no approval prompts of its own.** Approvals belong to
+- **OpenMyBot adds no approval prompts of its own.** Approvals belong to
   each engine's native permission system, at the level the person picked.
   When a bot changes its own routines, skills, webhooks, profile or model,
   the change applies at once and the conversation gets a receipt with Undo,
@@ -287,7 +287,7 @@ These are deliberate product decisions. Do not report them.
 - **Out of scope:**
   - `apps/docs/` (the documentation site), `evals/`, and test fixtures under
     `server/testing/`;
-  - `third_party/` (vendored upstream code), unless OpenMausBot's own use of
+  - `third_party/` (vendored upstream code), unless OpenMyBot's own use of
     it creates the issue;
   - the mobile apps and the Cloud Admin, which live in other repositories;
   - CI workflows under `.github/`.
@@ -322,7 +322,7 @@ directory. It prints a pairing code:
 
 ```sh
 D=$(mktemp -d)
-node --experimental-strip-types server/openmausbot.ts serve --data-dir "$D" --port 8799 --no-open &
+node --experimental-strip-types server/openmybot.ts serve --data-dir "$D" --port 8799 --no-open &
 curl -s http://127.0.0.1:8799/api/health
 ```
 
@@ -332,7 +332,7 @@ Set `OMB_LOOPBACK_TRUST=service` to act as a shared workspace. Send a
 ## Reports and patches
 
 - Give a minimal reproducer against the server
-  (`server/openmausbot.ts serve --data-dir <tmp>`), as a script or a few
+  (`server/openmybot.ts serve --data-dir <tmp>`), as a script or a few
   `curl` commands, and say which host type it needs: desktop, self-hosted,
   `service` trust, or Cloud.
 - State the boundary crossed (from the list above), the attacker's starting

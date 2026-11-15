@@ -1,7 +1,7 @@
 # The bot box
 
 On a MausBot Cloud home every bot turn runs in a box: the engine (Claude Code, Codex, Grok, OpenCode, the ACP agents),
-every shell command it runs, the MCP servers it starts and OpenMausBot's own helper proxies all live inside one
+every shell command it runs, the MCP servers it starts and OpenMyBot's own helper proxies all live inside one
 unprivileged [bubblewrap](https://github.com/containers/bubblewrap) sandbox for that process's lifetime. The server,
 its database, its settings, other bots' folders and other turns' processes are not in it. Code: `server/bot-box/`.
 
@@ -19,7 +19,7 @@ its database, its settings, other bots' folders and other turns' processes are n
 | a network namespace with loopback only | Two loopback ports are bridged to unix sockets from outside (below); nothing else on the machine's loopback is reachable, and there is no route out |
 
 The environment is an allow-list (`server/bot-box/env.ts`): the engine's own settings and keys, the harness capability
-tokens and a few names a shell expects. Of OpenMausBot's own `OMB_*` variables only those a bot's engine, hooks and MCP
+tokens and a few names a shell expects. Of OpenMyBot's own `OMB_*` variables only those a bot's engine, hooks and MCP
 proxies read pass (`BOX_ENV_OMB_NAMES`); every other one an operator sets on the server, such as `OMB_SIGNIN_SMTP_URL`,
 stays out. Every `OMB_CLOUD_*` setting, the server's own placement (`OMB_DATA_DIR`, `OMB_PORT`), the CLI's session
 token and server address (`OPENMAUSBOT_TOKEN`, `OPENMAUSBOT_URL`) and the workspace credentials are refused whatever

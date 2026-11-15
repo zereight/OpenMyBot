@@ -309,7 +309,7 @@ Every server-proxied bridge method goes through one route: `POST /api/bots/:botI
    - The tool exists in the server's current catalog, and its visibility includes `"app"` (default `["model","app"]`). Otherwise `-32602`.
    - Tool selection: a tool whose visibility includes `"model"` needs `allowsTool(scope, {kind:"mcp", server, name})`. An app-only tool needs only `canUseMcpServer`. The Access settings list hides app-only tools.
    - Arguments must be ≤ 64 KB and pass `lenientToolValidator(inputSchema)`.
-   - Approval follows the bot's own level (`approvalModeFor({...bot, threadId})`), and OpenMausBot draws no card of its own:
+   - Approval follows the bot's own level (`approvalModeFor({...bot, threadId})`), and OpenMyBot draws no card of its own:
      - `readOnlyHint: true` → run.
      - App-only, without `destructiveHint: true` → run.
      - Mode `full` → run.
@@ -598,7 +598,7 @@ Server:
 
 Build order: **S1 → S2 → (S3 ∥ S4) → (I1 ∥ A1)**. Each task is sized for one builder. File ownership is listed so the parallel tasks do not collide.
 
-### S1. Shared core (OpenMausBot)
+### S1. Shared core (OpenMyBot)
 
 Pure TypeScript, no UI. Files:
 
@@ -618,7 +618,7 @@ Tests:
 - `bridge.test.ts`: handshake order, the method table, engagement, rate limits, size clamp, teardown, malformed and oversized messages, the wrong `source`.
 - A compatibility test that drives the bridge with the SDK's `App` class (`@modelcontextprotocol/ext-apps` as a devDependency for tests only) over a fake window pair: `connect()` resolves, and `callServerTool`, `sendMessage`, `openLink`, `updateModelContext` and `requestDisplayMode` reach the adapters.
 
-### S2. Server: bot HTML, documents, routes, send path (OpenMausBot)
+### S2. Server: bot HTML, documents, routes, send path (OpenMyBot)
 
 Owns:
 
@@ -636,7 +636,7 @@ Tests:
 - the companion allowlist test;
 - the route scope tests.
 
-### S3. Desktop renderer and Electron (OpenMausBot)
+### S3. Desktop renderer and Electron (OpenMyBot)
 
 Owns:
 
@@ -657,7 +657,7 @@ Tests:
 - an Electron security test that ports the probe in this spec (rules 1 to 6 and 8) against a real `AppDocument` from S2;
 - an isolated fixture run (`docs/verification/README.md`): a fake engine's `show_html` renders, `mausbot.send` lands as a "Sent from" message and starts a turn, and `update_html` reloads in place.
 
-### S4. Server: MCP Apps plumbing (OpenMausBot)
+### S4. Server: MCP Apps plumbing (OpenMyBot)
 
 Owns:
 

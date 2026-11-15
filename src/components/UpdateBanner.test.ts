@@ -8,7 +8,7 @@ import type { UpdaterState } from "@/lib/updater";
 const fixture = vi.hoisted(() => ({ state: { status: "idle" } as UpdaterState }));
 // As the real hook: no state without the desktop app's updater bridge.
 vi.mock("@/lib/updater", async (original) => ({ ...(await original<typeof import("@/lib/updater")>()), useUpdaterState: () => (window.ogb?.updater ? fixture.state : null) }));
-vi.mock("../lib/brand", () => ({ brand: () => ({ name: "OpenMausBot" }), productName: () => "MausBot" }));
+vi.mock("../lib/brand", () => ({ brand: () => ({ name: "OpenMyBot" }), productName: () => "MausBot" }));
 import { UpdateBanner } from "./UpdateBanner";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -124,7 +124,7 @@ describe("UpdateBanner", () => {
 
   it("shows the failure cause as well as the required restart without offering a retry", () => {
     const html = render({ status: "error", retryable: false,
-      message: "Not enough disk space to prepare the update. Free some space, then try again. Quit and reopen OpenMausBot before trying the update again.",
+      message: "Not enough disk space to prepare the update. Free some space, then try again. Quit and reopen OpenMyBot before trying the update again.",
     });
     expect(html).toContain("Free some space");
     expect(html).toContain("Quit and reopen MausBot");

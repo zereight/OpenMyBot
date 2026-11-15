@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { launchVerificationServer, type VerificationServer } from "../scripts/control-omb.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
 
-const ENTRY = join(import.meta.dirname, "openmausbot.ts");
+const ENTRY = join(import.meta.dirname, "openmybot.ts");
 
 interface Ran { code: number | null; stdout: string; stderr: string }
 

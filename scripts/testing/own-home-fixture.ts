@@ -137,7 +137,7 @@ await import(${JSON.stringify(pathToFileURL(join(SERVER_DIR, "testing", "fake-cl
     // `openmausbot pair` on that server, then the link opened in this app: a session of the admin scope.
     const minted = await fetch(`${base}/api/auth/pairing`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ label: "My desktop" }) });
     const code = (await minted.json() as { code: string }).code;
-    const paired = await fetch(`${base}/api/auth/pair`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, label: "OpenMausBot app" }) });
+    const paired = await fetch(`${base}/api/auth/pair`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, label: "OpenMyBot app" }) });
     const token = (await paired.json() as { token: string }).token;
     if (typeof token !== "string") throw new Error(`could not pair with ${name}`);
     const as: Side = async (method, path, body) => {
