@@ -1,4 +1,4 @@
-import type { LoginBots, LoginSummary, OnePasswordStatus } from "../../shared/logins";
+import type { BitwardenStatus, LoginBots, LoginSummary, OnePasswordStatus } from "../../shared/logins";
 import type { ComputerHelpRef } from "../../shared/wire";
 import { api } from "@/state/store";
 
@@ -60,6 +60,29 @@ export async function grantOnePasswordItem(item: string, bots: LoginBots | null)
     method: "PATCH",
     body: JSON.stringify({ bots }),
   });
+}
+
+const BITWARDEN = "/api/logins/bitwarden";
+
+/** The master password goes to the server once, which hands it to the bw CLI on stdin and keeps neither it nor the key. */
+export async function unlockBitwarden(password: string): Promise<BitwardenStatus> {
+  return (await api<{ bitwarden: BitwardenStatus }>(`${BITWARDEN}/unlock`, { method: "POST", body: JSON.stringify({ password }) })).bitwarden;
+}
+
+export async function lockBitwarden(): Promise<BitwardenStatus> {
+  return (await api<{ bitwarden: BitwardenStatus }>(`${BITWARDEN}/lock`, { method: "POST", body: "{}" })).bitwarden;
+}
+
+export async function chooseBitwardenFolder(folderId: string): Promise<BitwardenStatus> {
+  return (await api<{ bitwarden: BitwardenStatus }>(`${BITWARDEN}/folder`, { method: "PUT", body: JSON.stringify({ folderId }) })).bitwarden;
+}
+
+export async function grantBitwarden(bots: LoginBots): Promise<BitwardenStatus> {
+  return (await api<{ bitwarden: BitwardenStatus }>(`${BITWARDEN}/bots`, { method: "PATCH", body: JSON.stringify({ bots }) })).bitwarden;
+}
+
+export async function forgetBitwarden(): Promise<BitwardenStatus> {
+  return (await api<{ bitwarden: BitwardenStatus }>(BITWARDEN, { method: "DELETE" })).bitwarden;
 }
 
 export async function deleteLogin(id: string): Promise<void> {
