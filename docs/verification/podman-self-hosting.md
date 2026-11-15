@@ -14,11 +14,11 @@ shared control surface. Stop that fixture with Ctrl-C.
 Build the candidate Podman image from the same checkout. On Windows, enter the
 selected machine with `podman machine ssh MACHINE`, then run the Linux commands
 below. `repo` must be the candidate checkout's absolute Linux path, for example
-`/mnt/c/Projects/OpenMausBot`:
+`/mnt/c/Projects/OpenMyBot`:
 
 ```sh
 cd "$repo"
-podman build -f deploy/podman/Containerfile -t localhost/openmausbot-podman:verify .
+podman build -f deploy/podman/Containerfile -t localhost/openmybot-podman:verify .
 fixture=$(mktemp -d /tmp/omb-podman-verify-XXXXXXXX)
 mkdir -m 700 "$fixture/.openmausbot"
 cp server/testing/fake-claude-cli.ts "$fixture/fake-claude-cli.ts"

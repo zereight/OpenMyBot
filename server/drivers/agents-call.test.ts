@@ -368,7 +368,7 @@ describe("memory_update", () => {
     const ctx = context({ botId: bot, client: harness(bot) });
     expect((await callTool("memory_update", { action: "append", text: "The person prefers short answers" }, ctx)).isError).toBeFalsy();
     await callTool("memory_update", { action: "append", text: "The person is in India (IST)" }, ctx);
-    writeMemoryTopic(bot, "work.md", "---\ntitle: work\naliases: [job, short answers]\n---\n- 2026-10-27 · from chat \"Remember: short answers\" (noticed) · The person wants short answers at work\n- 2026-10-27 · The person works on OpenMausBot\n");
+    writeMemoryTopic(bot, "work.md", "---\ntitle: work\naliases: [job, short answers]\n---\n- 2026-10-27 · from chat \"Remember: short answers\" (noticed) · The person wants short answers at work\n- 2026-10-27 · The person works on OpenMyBot\n");
     profile.aboutMe = "I live in Pune.\n- 2026-10-27 · learned by Scout · The person prefers short answers";
 
     const forgot = await callTool("memory_update", { action: "forget", old_text: "short answers" }, ctx);
@@ -380,7 +380,7 @@ describe("memory_update", () => {
     const work = readMemoryTopic(bot, "work.md")!;
     expect(work).toContain("aliases: [job, short answers]");
     expect(work).not.toContain("wants short answers");
-    expect(work).toContain("The person works on OpenMausBot");
+    expect(work).toContain("The person works on OpenMyBot");
     expect(profile.aboutMe).toBe("I live in Pune.");
     expect(isForgotten("The person likes short answers")).toBe(true);
 

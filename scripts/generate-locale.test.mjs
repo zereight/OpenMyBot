@@ -160,7 +160,7 @@ describe("locale draft validation", () => {
     expect(portuguese).not.toContain("and AI unchanged");
 
     expect(translationPrompt({ first: "One" }, "German", "de")).toContain(
-      "Keep placeholders such as {name} exactly, including duplicates. Keep OpenMausBot, MausBot Cloud, CLI, and AI unchanged.",
+      "Keep placeholders such as {name} exactly, including duplicates. Keep OpenMyBot, MausBot Cloud, CLI, and AI unchanged.",
     );
   });
 });

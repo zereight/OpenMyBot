@@ -1,6 +1,6 @@
-# OpenMausBot design rules
+# OpenMyBot design rules
 
-These are the rules for how OpenMausBot looks, reads and behaves. They cover
+These are the rules for how OpenMyBot looks, reads and behaves. They cover
 the desktop and web app in `src/`. Every UI change follows them, whoever
 writes it: a maintainer, a first-time contributor or a coding agent.
 

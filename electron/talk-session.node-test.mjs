@@ -181,7 +181,7 @@ test("permission and setup problems say what to fix, in the composer's words: on
 
 test("a server that can't take asks says why and stops listening: down, still starting, no MausBot, or moved to My Cloud", async () => {
   const notices = [
-    ["server-down", "Open MausBot to talk", "native.talk.openMausBot"],
+    ["server-down", "Open MausBot to talk", "native.talk.openMyBot"],
     ["starting", TALK_TEXT.starting, "native.talk.starting"],
     ["no-mausbot", TALK_TEXT.noMausbot, "native.talk.setUpFirst"],
     ["moved", "MausBot lives on My Cloud now — talk to it there", "native.talk.movedToCloud"],
@@ -207,12 +207,12 @@ test("a server that goes away as the words are sent says Open MausBot to talk", 
   fail(new TalkServerError("server-down")); await flush();
   assert.deepEqual(late.stops, []);
   assert.equal(late.asks.length, 0);
-  assert.deepEqual(late.views.at(-1), { state: "error", text: TALK_TEXT.serverDown, textCode: "native.talk.openMausBot" });
+  assert.deepEqual(late.views.at(-1), { state: "error", text: TALK_TEXT.serverDown, textCode: "native.talk.openMyBot" });
   mock.timers.tick(TALK_TIMING.noticeHideMs); assert.equal(late.closed, 1);
 
   const gone = harness({ ask: async () => { throw new TalkServerError("server-down"); } });
   gone.session.press(); say(gone, "hello"); release(gone); await flush();
-  assert.deepEqual(gone.views.at(-1), { state: "error", text: TALK_TEXT.serverDown, textCode: "native.talk.openMausBot" });
+  assert.deepEqual(gone.views.at(-1), { state: "error", text: TALK_TEXT.serverDown, textCode: "native.talk.openMyBot" });
   mock.timers.tick(TALK_TIMING.noticeHideMs); assert.equal(gone.closed, 1);
 
   const moved = harness({ ask: async () => { throw new TalkServerError("moved"); } });

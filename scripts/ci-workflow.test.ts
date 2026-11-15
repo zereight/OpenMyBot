@@ -354,8 +354,8 @@ describe("CI on Boat", () => {
   it.each([
     ["while BOAT_CI is not set", { boat: null }, 15],
     ["while BOAT_CI is off", { boat: "off" }, 15],
-    ["for a fork's pull request", { head: "someone/OpenMausBot", author: "someone", actor: "someone" }, 45],
-    ["for a fork's pull request the owner started", { head: "someone/OpenMausBot", author: "someone" }, 45],
+    ["for a fork's pull request", { head: "someone/OpenMyBot", author: "someone", actor: "someone" }, 45],
+    ["for a fork's pull request the owner started", { head: "someone/OpenMyBot", author: "someone" }, 45],
     ["for a deleted fork's pull request", { head: null }, 45],
     ["for a teammate's pull request on this repository", { author: "teammate", actor: "teammate" }, 45],
     ["for the owner's pull request that a teammate pushed to", { actor: "teammate" }, 45],

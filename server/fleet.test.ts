@@ -57,7 +57,7 @@ describe("rendered files", () => {
   });
 
   it("requires the loopback fence to start successfully before every tenant instance", () => {
-    const unit = templateUnit({ node: "/usr/bin/node", script: "/src/server/openmausbot.ts", layout });
+    const unit = templateUnit({ node: "/usr/bin/node", script: "/src/server/openmybot.ts", layout });
     const header = unit.split("[Service]")[0];
     expect(header).toContain("After=network-online.target openmausbot-fence.service\n");
     expect(header).toContain("Requires=openmausbot-fence.service\n");

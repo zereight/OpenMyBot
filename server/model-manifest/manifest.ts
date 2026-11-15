@@ -168,7 +168,7 @@ export class ModelManifestStore {
     const timer = setTimeout(() => controller.abort(), this.options.timeoutMs ?? MANIFEST_FETCH_TIMEOUT_MS);
     try {
       const response = await (this.options.fetch ?? fetch)(MODEL_MANIFEST_URL, {
-        headers: { accept: "application/json", "user-agent": "OpenMausBot" },
+        headers: { accept: "application/json", "user-agent": "OpenMyBot" },
         // raw.githubusercontent.com answers directly; anywhere else is not the file we meant to read.
         redirect: "error",
         signal: controller.signal,

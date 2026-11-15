@@ -2,7 +2,7 @@
 
 An organization's Admin can share packages (whole teams, or skills on their
 own) with the desktops that belong to it, and with its Customers. In
-OpenMausBot they appear under **Templates → From {Organization}**, the first
+OpenMyBot they appear under **Templates → From {Organization}**, the first
 tab. One click on **Add** adds a package. There is no confirmation step,
 because the person's click is the decision. **Details** opens the same
 preview a shared file gets.

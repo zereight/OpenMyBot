@@ -1,10 +1,10 @@
-# Deploy OpenMausBot on a VPS
+# Deploy OpenMyBot on a VPS
 
 To keep MausBot and its agents on your current computer and use a VPS only as a
 bot’s remote desktop, see [Bring Your Own VPS](byo-vps.md) and the
 [published setup guide](https://docs.openmausbot.com/docs/computers/byo-vps).
 
-From a blank Linux server to OpenMausBot running on it around the clock, reachable from your laptop, the desktop app and your phone, with your bots working while every laptop is closed. It assumes nothing beyond being able to open a terminal and paste commands. About twenty minutes, most of it waiting.
+From a blank Linux server to OpenMyBot running on it around the clock, reachable from your laptop, the desktop app and your phone, with your bots working while every laptop is closed. It assumes nothing beyond being able to open a terminal and paste commands. About twenty minutes, most of it waiting.
 
 ## Quick start: one command on your own domain
 
@@ -83,7 +83,7 @@ Three ways to make the server reachable are covered. Pick one; the rest of the g
 
 | | You need | Who can reach it | Best for |
 |---|---|---|---|
-| **A. Public address, no domain** (`serve --tunnel`) | an OpenMausBot account (email code) | anyone with a pairing code, over HTTPS | the fastest path; a phone on cellular |
+| **A. Public address, no domain** (`serve --tunnel`) | an OpenMyBot account (email code) | anyone with a pairing code, over HTTPS | the fastest path; a phone on cellular |
 | **B. Your own domain** (Docker + Caddy) | a domain name, ports 80/443 | anyone with a pairing code, over HTTPS | a permanent address you own |
 | **C. Your Tailscale network** (`serve --tailscale`) | Tailscale on the server and your devices | only your tailnet | the most private; nothing public at all |
 
@@ -157,7 +157,7 @@ npx openmausbot login          # once: an emailed code signs this machine in and
 npx openmausbot serve --tunnel # runs the server there and prints the pairing link with a QR code
 ```
 
-`setup` connects an AI provider; it is separate from the OpenMausBot account.
+`setup` connects an AI provider; it is separate from the OpenMyBot account.
 Use Codex's device-code option over SSH, or enter a hidden API key for a
 chat-only connection. More engines can be added later. See [CLI setup](cli-onboarding.md).
 
@@ -184,7 +184,7 @@ The [installer](#quick-start-one-command-on-your-own-domain) does these steps fo
 3. **Get the deploy files and set the name:**
 
    ```sh
-   git clone https://github.com/milind-soni/OpenMausBot && cd OpenMausBot/deploy
+   git clone https://github.com/milind-soni/OpenMausBot && cd OpenMyBot/deploy
    cp .env.example .env
    nano .env                # DOMAIN=maus.example.com ; ENGINES=@anthropic-ai/claude-code @openai/codex
    ```
@@ -244,7 +244,7 @@ gets its own isolated session whose logins persist across restarts.
 
 ## Install and sign the engines in
 
-The npm OpenMausBot package does not install model engine CLIs. For paths A and C,
+The npm OpenMyBot package does not install model engine CLIs. For paths A and C,
 install the engine you use in the service account, then sign it in. For example,
 from the `maus` shell, for Claude:
 
@@ -260,7 +260,7 @@ engines you use. For path B, run the installed CLI inside the container, for
 example `docker compose exec omb claude`.
 
 Engine logins belong to the service user's home (for example `~/.codex` and
-`~/.claude`), separately from OpenMausBot's `~/.openmausbot`. Keep that home when
+`~/.claude`), separately from OpenMyBot's `~/.openmausbot`. Keep that home when
 restarting or upgrading. The systemd example below includes `~/.local/bin` in PATH.
 
 ## Pair your first device
@@ -311,7 +311,7 @@ administrator shell, save this as `/etc/systemd/system/openmausbot.service`:
 ```ini
 # /etc/systemd/system/openmausbot.service
 [Unit]
-Description=OpenMausBot server
+Description=OpenMyBot server
 After=network-online.target
 
 [Service]
@@ -368,7 +368,7 @@ the app says so, with `sudo ./update.sh`, which moves it to the stable version
 once that is newer than the build.
 
 The installer sets this up, and every run of the installer refreshes it. In a
-checkout of this repository, add it from `OpenMausBot/deploy` (it needs
+checkout of this repository, add it from `OpenMyBot/deploy` (it needs
 systemd, and restarts the server once), and run the same command again after
 each `git pull`: until you do, the button runs nothing and the app shows this
 command.
@@ -460,7 +460,7 @@ command to run on the server instead.
 
 ### Path B (Docker): one command, with a way back
 
-From `OpenMausBot/deploy`:
+From `OpenMyBot/deploy`:
 
 ```sh
 git pull && ./update.sh
@@ -642,7 +642,7 @@ any configured home/data-directory overrides, and workspaces outside the app
 directory. These are not included in the command above.
 
 For path B, the whole `/data` volume includes the container's CLI homes. From
-`OpenMausBot/deploy`, stop the whole project before archiving, and start it
+`OpenMyBot/deploy`, stop the whole project before archiving, and start it
 again after; `deploy_data` is the default volume name, so use your actual
 volume name if you changed the Compose project:
 
@@ -711,7 +711,7 @@ Read this before putting anything else in front of the server.
 
 **`serve --tunnel` says "no account on this machine yet".** Run `npx openmausbot login` on this machine first; the credentials are per machine.
 
-**The server does not start and says its data "was written by a newer OpenMausBot".** An older version was started on data a newer one had already changed, which happens when a version is put back without its data. Nothing was changed. Install the version the message names (or a newer one), or put back the copy of the data from before that update.
+**The server does not start and says its data "was written by a newer OpenMyBot".** An older version was started on data a newer one had already changed, which happens when a version is put back without its data. Nothing was changed. Install the version the message names (or a newer one), or put back the copy of the data from before that update.
 
 **The tunnel stays on "retrying".** The server is running and usable locally; the public hop is not verified yet. Wait a minute (Cloudflare needs a moment on a fresh address), then check `journalctl`/the terminal for the reason. If it never comes up, `npx openmausbot logout && npx openmausbot login` issues a fresh address.
 

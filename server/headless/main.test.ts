@@ -55,7 +55,7 @@ describe("the headless command line", () => {
   });
 
   it("is reachable through the published entry, which keeps every other command as it was", () => {
-    const entry = join(import.meta.dirname, "..", "openmausbot.ts");
+    const entry = join(import.meta.dirname, "..", "openmybot.ts");
     const help = spawnSync(process.execPath, ["--experimental-strip-types", entry, "help", "export"], { encoding: "utf8" });
     expect(help.status).toBe(0);
     expect(help.stdout).toContain("openmausbot export TARGET --out DIR");
@@ -68,7 +68,7 @@ describe("the headless command line", () => {
   });
 
   it("serves MCP through the published entry, and Ctrl-C ends it like any command", async () => {
-    const entry = join(import.meta.dirname, "..", "openmausbot.ts");
+    const entry = join(import.meta.dirname, "..", "openmybot.ts");
     const child = spawn(process.execPath, ["--experimental-strip-types", entry, "mcp"], {
       env: { ...process.env, OPENMAUSBOT_URL: "http://127.0.0.1:19998", OPENMAUSBOT_TOKEN: "" }, stdio: ["pipe", "pipe", "pipe"],
     });

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({
-  app: { name: "OpenMausBot" },
+  app: { name: "OpenMyBot" },
   Menu: { buildFromTemplate: (template) => template },
 }));
 
@@ -50,7 +50,7 @@ describe("buildApplicationMenu", () => {
     const onToggle = vi.fn();
     const template = build(platform, { openAtLogin: { checked: false, onToggle } });
     const item = template[0].submenu.find((entry) => entry.id === "open-at-login");
-    expect(template[0].label).toBe(platform === "darwin" ? "OpenMausBot" : "File");
+    expect(template[0].label).toBe(platform === "darwin" ? "OpenMyBot" : "File");
     expect(item).toMatchObject({ label: "Open at Login", type: "checkbox", checked: false });
     item.click();
     expect(onToggle).toHaveBeenCalledWith(true);
@@ -72,7 +72,7 @@ describe("buildApplicationMenu", () => {
     const template = build(platform);
     expect(template[0].role).toBe("fileMenu");
     for (const item of template) {
-      expect(item.label).not.toBe("OpenMausBot");
+      expect(item.label).not.toBe("OpenMyBot");
     }
   });
 
@@ -123,9 +123,9 @@ describe("buildApplicationMenu", () => {
     expect(server.submenu[0].label).toBe(pt["place.local"]);
     expect(server.submenu.find((entry) => entry.id === "add-cloud").label).toBe("Adicionar um Cloud…");
     expect(template[0].submenu.find((entry) => entry.accelerator === "CmdOrCtrl+,").label).toBe("Configurações…");
-    expect(template[0].submenu.at(-1)).toEqual({ role: "quit", label: "Sair do app OpenMausBot" });
-    expect(template.map((entry) => entry.label)).toEqual(["OpenMausBot", "Arquivo", "Editar", "Servidor", "Visualizar", "Janela"]);
-    for (const platform of ["win32", "linux"]) expect(build(platform, { t })[0].submenu[0].label).toBe("Sair do OpenMausBot");
+    expect(template[0].submenu.at(-1)).toEqual({ role: "quit", label: "Sair do app OpenMyBot" });
+    expect(template.map((entry) => entry.label)).toEqual(["OpenMyBot", "Arquivo", "Editar", "Servidor", "Visualizar", "Janela"]);
+    for (const platform of ["win32", "linux"]) expect(build(platform, { t })[0].submenu[0].label).toBe("Sair do OpenMyBot");
   });
 
   // Electron 43.7.9 lib/browser/api/menu-item-roles.ts: each role menu's default items, in order.
@@ -164,8 +164,8 @@ describe("buildApplicationMenu", () => {
       delete: "Delete", selectAll: "Select All", showSubstitutions: "Show Substitutions", toggleSmartQuotes: "Smart Quotes", toggleSmartDashes: "Smart Dashes",
       toggleTextReplacement: "Text Replacement", startSpeaking: "Start Speaking", stopSpeaking: "Stop Speaking", reload: "Reload", forceReload: "Force Reload",
       toggleDevTools: "Toggle Developer Tools", resetZoom: "Actual Size", zoomIn: "Zoom In", zoomOut: "Zoom Out", togglefullscreen: "Toggle Full Screen",
-      minimize: "Minimize", zoom: "Zoom", front: "Bring All to Front", about: "About OpenMausBot", hide: "Hide OpenMausBot", hideOthers: "Hide Others",
-      unhide: "Show All", quit: "Quit OpenMausBot" };
+      minimize: "Minimize", zoom: "Zoom", front: "Bring All to Front", about: "About OpenMyBot", hide: "Hide OpenMyBot", hideOthers: "Hide Others",
+      unhide: "Show All", quit: "Quit OpenMyBot" };
     for (const item of labelled(build("darwin")).filter((entry) => entry.role && !entry.role.endsWith("Menu"))) expect(item.label, item.role).toBe(english[item.role]);
     expect(build("win32")[0].submenu[0].label).toBe("Exit");
     expect(build("linux")[0].submenu[0].label).toBe("Quit");

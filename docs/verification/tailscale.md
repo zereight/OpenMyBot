@@ -81,7 +81,7 @@ Type the address on the Connect sheet each time.
 | Disconnect Tailscale on the client | Tailscale isn't connected on this computer |
 | Type a name from another tailnet | it isn't on this computer's tailnet |
 | Quit the app on the host, or put the host to sleep | it's on your tailnet but didn't answer |
-| On a Mac client, turn off OpenMausBot in System Settings → Privacy & Security → Local Network | macOS blocked the connection |
+| On a Mac client, turn off OpenMyBot in System Settings → Privacy & Security → Local Network | macOS blocked the connection |
 
 Turn Local Network back on and connect again without restarting the app. The Local Network row is what a packaged build
 needs: `NSLocalNetworkUsageDescription` is only in packaged builds.

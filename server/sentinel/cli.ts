@@ -20,7 +20,7 @@ export const SENTINEL_USAGE = `openmausbot sentinel [--data-dir DIR] [--out DIR]
                      [--queue-wait SECONDS] [--cost USD]
 openmausbot sentinel --check-install [--json]
 
-Scans an OpenMausBot data dir, read-only, for failed tool calls, tool output
+Scans an OpenMyBot data dir, read-only, for failed tool calls, tool output
 holding a steering phrase, stopped or timed-out turns, long queue waits,
 expensive turns and retry loops, and keeps
 them as issues in issues.jsonl, outside the data dir: on macOS in
@@ -115,7 +115,7 @@ export function runSentinelCli(argv: string[], io: { log(line: string): void; er
   try {
     isDir = statSync(args.dataDir).isDirectory();
   } catch {}
-  if (!isDir) return fail(`no OpenMausBot data dir at ${args.dataDir}; pass --data-dir with the folder that holds messages.db`, args.json);
+  if (!isDir) return fail(`no OpenMyBot data dir at ${args.dataDir}; pass --data-dir with the folder that holds messages.db`, args.json);
   const refusal = outRefusal(args.out, args.dataDir);
   if (refusal) return fail(refusal, args.json);
   let summary: ScanSummary;

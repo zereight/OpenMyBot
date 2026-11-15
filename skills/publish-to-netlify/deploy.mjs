@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 
 const NETLIFY_API = "https://api.netlify.com/api/v1";
 export const SITE_FILE = ".netlify-site.json";
-const USER_AGENT = "OpenMausBot publish-to-netlify skill";
+const USER_AGENT = "OpenMyBot publish-to-netlify skill";
 const REQUEST_TIMEOUT_MS = 60_000;
 const UPLOADS_AT_ONCE = 4;
 const UPLOAD_TRIES = 3;

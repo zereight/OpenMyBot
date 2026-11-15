@@ -185,7 +185,7 @@ describe("PhoneSecretBridge", () => {
     });
 
     const desktop = new PhoneSecretBridge(() => true, 50);
-    await expect(desktop.provide(context)).rejects.toMatchObject({ message: expect.stringContaining("Reopen OpenMausBot") });
+    await expect(desktop.provide(context)).rejects.toMatchObject({ message: expect.stringContaining("Reopen OpenMyBot") });
     const material = await keyMaterial();
     desktop.receive(material.message);
     await vi.waitFor(() => expect(desktop.ready).toBe(true));
@@ -295,7 +295,7 @@ describe("phoneSecretAAD", () => {
   it("refuses an AI provider key from a phone, which only the computer's own app saves where Settings does", () => {
     const context = { deviceId: "paired-device-1", target: "anthropicApiKey", requestKey: "credential-request-1" };
     expect(() => assertPhoneSecretRequestMatches(context, "paired-device-1", { target: "anthropicApiKey", requestKey: "credential-request-1" }))
-      .toThrow("Paste this key in OpenMausBot on your computer, or in My Cloud: a phone cannot save it yet.");
+      .toThrow("Paste this key in OpenMyBot on your computer, or in My Cloud: a phone cannot save it yet.");
     for (const target of ["composioApiKey", "customSecret"]) {
       expect(() => assertPhoneSecretRequestMatches({ ...context, target }, "paired-device-1", { target, requestKey: "credential-request-1" })).not.toThrow();
     }
@@ -305,7 +305,7 @@ describe("phoneSecretAAD", () => {
   it("refuses a 1Password token from a phone, saying where to paste it", () => {
     const context = { ...baseContext("AAAAAAAAAAAAAAAAAAAAAA"), target: "onePasswordToken" };
     expect(() => assertPhoneSecretRequestMatches(context, "paired-device-1", { target: "onePasswordToken", requestKey: "credential-request-1" }))
-      .toThrow(expect.objectContaining({ status: 409, message: expect.stringMatching(/^Paste the 1Password token in OpenMausBot on your computer, or in My Cloud/u) }));
+      .toThrow(expect.objectContaining({ status: 409, message: expect.stringMatching(/^Paste the 1Password token in OpenMyBot on your computer, or in My Cloud/u) }));
   });
 
   it("gives an exact encrypted retry one stable desktop operation id", async () => {

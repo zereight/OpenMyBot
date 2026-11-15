@@ -1,6 +1,6 @@
 # Brazilian Portuguese (pt-BR) style guide and glossary
 
-This guide sets the voice, mechanics and terminology for OpenMausBot in
+This guide sets the voice, mechanics and terminology for OpenMyBot in
 Brazilian Portuguese. It extends [`localization.md`](localization.md), which
 covers the catalog workflow and checks. When this guide and the English source
 disagree about meaning, English wins. When they disagree about wording, this
@@ -115,7 +115,7 @@ logs, developer or CLI errors, emails sent by the control plane, the docs site
   “as habilidades de {name}”, not “ao {name}” or “do {name}”. A bot can have
   any name, and `o Ana` is wrong.
 - **Products with a fixed gender take their article:** “o Claude”, “o
-  Codex”, “o OpenMausBot”, “o Cloud”. Use an article before `{engine}`,
+  Codex”, “o OpenMyBot”, “o Cloud”. Use an article before `{engine}`,
   `{app}` or `{provider}` only when every possible value takes it.
   Otherwise, rephrase with `de`: “a conta de {provider}”, “o limite de
   {engine}”.
@@ -183,8 +183,8 @@ These stay unchanged in every pt-BR string.
 
 | Name | Why |
 |---|---|
-| OpenMausBot, MausBot | Product names. Never write `OMB` or `T3` (`vocabulary.test.ts`). |
-| MausBot Cloud | Product name. `vocabulary.test.ts` requires it verbatim in every translation whose English contains it. Never write `OpenMausBot Cloud` or `MausBot Pro`. Treat it as masculine: “o MausBot Cloud”. |
+| OpenMyBot, MausBot | Product names. Never write `OMB` or `T3` (`vocabulary.test.ts`). |
+| MausBot Cloud | Product name. `vocabulary.test.ts` requires it verbatim in every translation whose English contains it. Never write `OpenMyBot Cloud` or `MausBot Pro`. Treat it as masculine: “o MausBot Cloud”. |
 | Cloud (short for MausBot Cloud) | Product name, masculine: “o Cloud”, “no Cloud”. The generic sky-and-servers cloud is `nuvem`: “desktop na nuvem”. |
 | Boat | Name of a third-party provider. Write it only where the English says Boat; the test fails otherwise. |
 | Jev, Maus, Grok Bot | Names of product features or characters. |
@@ -258,7 +258,7 @@ the whole catalog in the same change.
 | preset | predefinição | “preset bot” → “bot predefinido”. Never `modelo`. |
 | preview | prévia | “View” as a button → `Ver`. |
 | private desktop | desktop privado | |
-| Quit (app menu, tray) | Sair do OpenMausBot | The same label on every platform. Menus use sentence case, like the rest of the app. |
+| Quit (app menu, tray) | Sair do OpenMyBot | The same label on every platform. Menus use sentence case, like the rest of the app. |
 | remove | remover | Takes something out without destroying it. |
 | retry, try again | Tentar novamente | Use “novamente” in labels and prose. If it would repeat in one sentence, use “de novo” for the first occurrence. |
 | room | grupo | “group chat” → “chat em grupo”. Not `sala`. |

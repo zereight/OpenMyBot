@@ -436,7 +436,7 @@ export function createProxyHandler(options: ProxyOptions) {
     // session; the owner enables this per device, off by default.
     if (isCloudDesktopAccess(method, path) && !device?.cloudDesktopAccess) {
       return sendJson(res, 403, {
-        error: "computer access is off for this device — enable it in OpenMausBot → Settings → Remote access",
+        error: "computer access is off for this device — enable it in OpenMyBot → Settings → Remote access",
       });
     }
 
@@ -525,7 +525,7 @@ export function createProxyHandler(options: ProxyOptions) {
           const fail = () => {
             if (finished) return;
             finished = true;
-            sendJson(res, 502, { error: "OpenMausBot is not ready on this computer" });
+            sendJson(res, 502, { error: "OpenMyBot is not ready on this computer" });
           };
           harness.on("data", (chunk: Buffer) => {
             size += chunk.length;
@@ -698,7 +698,7 @@ export function createProxyHandler(options: ProxyOptions) {
           // These two are rewritten or withdrawn whole, so neither can start before its end.
           if (browserRequest || viewers.rewritesJoin(path)) {
             harness.destroy();
-            sendJson(res, 502, { error: "the response from OpenMausBot was too large" });
+            sendJson(res, 502, { error: "the response from OpenMyBot was too large" });
             return;
           }
           streamScrubbedJson(harness, res, chunks);
@@ -784,8 +784,8 @@ export function createProxyHandler(options: ProxyOptions) {
         res,
         timedOut ? 504 : 502,
         timedOut
-          ? { error: "OpenMausBot did not respond" }
-          : { error: "OpenMausBot is not running on this computer" },
+          ? { error: "OpenMyBot did not respond" }
+          : { error: "OpenMyBot is not running on this computer" },
       );
     });
     req.pipe(upstream);

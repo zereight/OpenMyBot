@@ -110,7 +110,7 @@ test("a failed open is contained and a later link still opens", async () => {
 });
 
 test("a consumed launch link is not replayed by the companion or updater relaunch", () => {
-  const argv = ["/fixture/OpenMausBot", "--fixture", "openmausbot://cloud", "openmausbot://cloud?ignored"];
+  const argv = ["/fixture/OpenMyBot", "--fixture", "openmausbot://cloud", "openmausbot://cloud?ignored"];
   takeCloudDeepLink(argv);
   const calls = [];
   runInNewContext(`${between("function relaunchAfterDesktopRemoteChange()", 'ipcMain.handle("desktop-remote:state"')}\nrelaunchAfterDesktopRemoteChange();`, {

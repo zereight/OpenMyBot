@@ -241,7 +241,7 @@ if (listening) {
 let headlessReport = null;
 if (listening) {
   const runCli = (args) => new Promise((resolve) => {
-    const cli = spawn(process.execPath, [join(staging, "server", "openmausbot.js"), ...args], {
+    const cli = spawn(process.execPath, [join(staging, "server", "openmybot.js"), ...args], {
       cwd: staging, env: { ...fixtureEnv, OPENMAUSBOT_URL: `http://127.0.0.1:${port}` }, stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";

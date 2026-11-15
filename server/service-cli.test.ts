@@ -34,14 +34,14 @@ describe("openmausbot service", () => {
     expect(out.join("\n")).toContain("no setcap is needed");
 
     out.length = 0;
-    const npx = { action: "install" as const, dataDir: join(dir, "x"), port: 8799, publicUrl: "https://maus.example.com", script: "/home/maus/.npm/_npx/deadbeef/node_modules/openmausbot/dist-server/openmausbot.js", node: "/usr/bin/node", platform: "linux" as const, home: "/home/maus", user: "maus" };
+    const npx = { action: "install" as const, dataDir: join(dir, "x"), port: 8799, publicUrl: "https://maus.example.com", script: "/home/maus/.npm/_npx/deadbeef/node_modules/openmausbot/dist-server/openmybot.js", node: "/usr/bin/node", platform: "linux" as const, home: "/home/maus", user: "maus" };
     const installs: string[] = [];
     expect(runServiceCommand({ ...npx, installCopy: (prefix) => { installs.push(prefix); return false; } }, io)).toBe(1);
     expect(err.join("\n")).toContain(`npm install --prefix ${join(dir, "x", "app", "latest")} openmausbot@latest`);
     expect(existsSync(join(dir, "x", "openmausbot.service"))).toBe(false);
     expect(runServiceCommand({ ...npx, installCopy: (prefix) => { installs.push(prefix); return true; }, exists: () => true }, io)).toBe(0);
     const pinned = readFileSync(join(dir, "x", "openmausbot.service"), "utf8");
-    const script = join(dir, "x", "app", "latest", "node_modules", "openmausbot", "dist-server", "openmausbot.js");
+    const script = join(dir, "x", "app", "latest", "node_modules", "openmausbot", "dist-server", "openmybot.js");
     expect(pinned).toContain(`ExecStart=/usr/bin/node ${/[\s"\\]/.test(script) ? `"${script.replace(/[\\"]/g, "\\$&")}"` : script} serve`);
     expect(pinned).toContain("--public-url https://maus.example.com");
     expect(pinned).not.toContain("--no-pair");
@@ -87,7 +87,7 @@ describe("openmausbot service", () => {
 
     // Windows gets a schtasks line, with the platform's own folder as --out
     expect(runServiceCommand({ ...base, sentinelOut: undefined, platform: "win32", dataDir: "C:\\Users\\maus\\.openmausbot", home: "C:\\Users\\maus", env: {} }, io)).toBe(1);
-    expect(err.join("\n")).toContain('schtasks /Create /SC MINUTE /MO 2 /TN "OpenMausBot Sentinel" /TR "\\"/usr/bin/node\\" \\"/usr/lib/node_modules/openmausbot/cli.js\\" \\"sentinel\\"');
+    expect(err.join("\n")).toContain('schtasks /Create /SC MINUTE /MO 2 /TN "OpenMyBot Sentinel" /TR "\\"/usr/bin/node\\" \\"/usr/lib/node_modules/openmausbot/cli.js\\" \\"sentinel\\"');
     expect(err.join("\n")).toContain("\\\"--out\\\" \\\"C:\\Users\\maus\\AppData\\Local\\openmausbot-sentinel\\\"");
   });
 
@@ -110,13 +110,13 @@ describe("openmausbot service", () => {
   it("--sentinel prefers the installed app's own CLI over a checkout, which an update or Node upgrade would strand", () => {
     const sentinelOut = join(dir, "sentinel-state");
     const app = "/Applications/OpenMausBot.app/Contents";
-    const checkout = { action: "install" as const, dataDir: join(dir, "data"), port: 8799, sentinel: true, sentinelOut, script: "/src/OpenMausBot/server/openmausbot.ts", node: "/home/maus/.nvm/versions/node/v24.0.0/bin/node", platform: "darwin" as const, home: "/Users/maus" };
+    const checkout = { action: "install" as const, dataDir: join(dir, "data"), port: 8799, sentinel: true, sentinelOut, script: "/src/OpenMyBot/server/openmybot.ts", node: "/home/maus/.nvm/versions/node/v24.0.0/bin/node", platform: "darwin" as const, home: "/Users/maus" };
     expect(runServiceCommand({ ...checkout, exists: (path) => path.startsWith(app), hasSentinel: () => true }, io)).toBe(0);
     const plist = readFileSync(join(sentinelOut, "com.openmausbot.sentinel.plist"), "utf8");
     expect(plist).toContain(`<string>${app}/MacOS/OpenMausBot</string>`);
-    expect(plist).toContain(`<string>${app}/Resources/server/openmausbot.js</string>`);
+    expect(plist).toContain(`<string>${app}/Resources/server/openmybot.js</string>`);
     expect(plist).toContain("<key>ELECTRON_RUN_AS_NODE</key>");
-    expect(plist).not.toContain("openmausbot.ts");
+    expect(plist).not.toContain("openmybot.ts");
     expect(out.join("\n")).toContain("runs the desktop app's own CLI");
 
     // an installed app from before Sentinel, or none: the checkout it was run

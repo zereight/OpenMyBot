@@ -1,6 +1,6 @@
-# Computer use & browser use in OpenMausBot
+# Computer use & browser use in OpenMyBot
 
-Decision doc, 2026-08-12. How bots in OpenMausBot get local computer use and
+Decision doc, 2026-08-12. How bots in OpenMyBot get local computer use and
 browser use. macOS, Windows x64 and packaged Ubuntu x64 builds use an out-of-the-box,
 release-pinned provider; source/dev Ubuntu may use a separately installed provider. Based
 on a survey of OSS chat-app MCP hosts, macOS control servers,
@@ -78,8 +78,8 @@ GNOME/Wayland additionally requires WinRects v8 plus the exact Cua health-report
 
 1. **Spawn from the Electron main process, never from the server/gateway
    layer.** macOS TCC attributes a spawned child to its "responsible process".
-   Spawned from Electron main → the grant is OpenMausBot's, users see ONE
-   prompt named OpenMausBot, and the bundled driver inherits it. Spawned from
+   Spawned from Electron main → the grant is OpenMyBot's, users see ONE
+   prompt named OpenMyBot, and the bundled driver inherits it. Spawned from
    a Node gateway/daemon → the identity silently becomes the gateway's and
    `check_permissions` cannot detect the misattribution. The harness must ask
    Electron main for the driver socket path over IPC, not spawn the driver.
@@ -139,7 +139,7 @@ Electron main keeps that descriptor in `<userData>/cua-connection.json` (see
 one server it launched over that child's private utility-process port
 (`electron/local-computer-grant.mjs` → `server/desktop-computer.ts`), and sends
 it again on every change. Only that server injects the block, so a second
-OpenMausBot server on the same computer (a copy run from source, a demo) never
+OpenMyBot server on the same computer (a copy run from source, a demo) never
 finds this computer. Before a bot's first action on the person's own computer
 in a request, unless the person picked this computer as the place, the person
 is asked once in plain words (`server/your-computer-consent.ts`), at every
