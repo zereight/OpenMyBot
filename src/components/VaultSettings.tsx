@@ -11,6 +11,7 @@ import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { deleteSecret, listVault } from "@/lib/vault";
 import { useStore } from "@/state/store";
 import { Segmented } from "./bot-panel/rows";
+import { Select } from "./Select";
 import { LoginBotPicker, LoginForm } from "./LoginForm";
 import { Card, LearnMore, SETTINGS_INPUT, SettingsEmptyRow, SettingsField, SettingsGroup, SettingsLinkRow, SettingsRows } from "./SettingsPrimitives";
 import { SettingsDialog } from "./settings/SettingsDialog";
@@ -500,11 +501,11 @@ function BitwardenConnection({ status, disabled, bots, botNames, onChange }: {
       {status.error && <p role="alert" className="text-[12px] leading-4 text-danger">{status.error}</p>}
       {choosing && (
         <SettingsField label={t("settings.logins.bitwarden.folder")} hint={t("settings.logins.bitwarden.folderHint")}>
-          <select name="bitwardenFolder" className={SETTINGS_INPUT} disabled={disabled || busy !== null} value={folder?.id ?? ""}
+          <Select name="bitwardenFolder" variant="field" size="md" className="w-full" disabled={disabled || busy !== null} value={folder?.id ?? ""}
             onChange={(event) => { const id = event.target.value; if (id) void run("folder", () => chooseBitwardenFolder(id)); }}>
             <option value="" disabled>{t("settings.logins.bitwarden.chooseFolder")}</option>
             {status.folders!.map((one) => <option key={one.id} value={one.id}>{one.name}</option>)}
-          </select>
+          </Select>
         </SettingsField>
       )}
       {folder && !editingBots && (
