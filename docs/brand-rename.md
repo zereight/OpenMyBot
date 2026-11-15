@@ -13,8 +13,10 @@ node scripts/brand-rename.mjs --apply   # rewrites files in place and `git mv`s 
 
 1. `git merge upstream/main`
 2. On conflicts, take **upstream's side** (the rename is replayed in step 3).
-3. `node scripts/brand-rename.mjs --apply`
-4. `npx vitest run src/lib/brand-name.test.ts`, then commit.
+3. `node scripts/brand-rename.mjs --apply` (it also moves the locale source hashes, so `pnpm i18n:check` does not call the renamed translations stale)
+4. `npx vitest run src/lib/brand-name.test.ts server/drivers/agents-catalog-wire.test.ts`; if the tool-list golden differs, regenerate it with `UPDATE_AGENTS_CATALOG_GOLDENS=1`. Then commit.
+
+Things the script cannot do: lowercase patterns that match the product name in running text (`HEADER_WORDS` in `server/peer-provenance.ts`, `FORGED_START` in `server/records-block.ts` accept both `openmybot` and `openmausbot`). If upstream adds one, add the new name to it by hand.
 
 ## What is renamed
 
