@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import { HELD_SECRET_MASK } from "../shared/redact.ts";
-import { LOGIN_FIELD_MAX, LOGIN_HOSTS_MAX, loginMatchesHost, loginSite, loginUsableBy, type LoginBots, type LoginPlace, type LoginSummary } from "../shared/logins.ts";
+import { BITWARDEN_ID, LOGIN_FIELD_MAX, LOGIN_HOSTS_MAX, loginMatchesHost, loginSite, loginUsableBy, type BitwardenChoice, type LoginBots, type LoginPlace, type LoginSummary } from "../shared/logins.ts";
 import { SECRET_VALUE_MAX_BYTES, VAULT_SECRET_NAME_MAX, vaultNameKey, type VaultSecret } from "../shared/vault.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import { decryptBrowserState, encryptBrowserState } from "./browser-sites.ts";
@@ -69,6 +69,8 @@ const fileSchema = z.object({
   onePasswordGrants: z.record(z.string(), botsSchema).optional(),
   /** 1Password item (`<vault id>:<item id>`) → the bots that may use it, ahead of its vault's choice. Kept across reconnects. */
   onePasswordItemGrants: z.record(z.string(), botsSchema).optional(),
+  /** The one Bitwarden folder bots may read and who may use it. No password or session key is ever kept. */
+  bitwarden: z.object({ folderId: z.string().regex(BITWARDEN_ID), folderName: z.string().max(512), bots: botsSchema }).optional(),
   /** Security: MCP server name → the items whose `vault:<id>` that server may read. Written only when a bot's secretRef
    * is redeemed into the server (or a move carries the server), so a pointer planted in config.json reads nothing. */
   mcpKeys: z.record(z.string(), z.array(z.string().min(1))).optional(),
@@ -511,6 +513,16 @@ export class VaultStore {
   setOnePasswordItemGrants(grants: Record<string, LoginBots>): void {
     const { onePasswordItemGrants: _grants, ...rest } = this.read();
     this.write(Object.keys(grants).length ? { ...rest, onePasswordItemGrants: grants } : rest);
+  }
+
+  /** The Bitwarden folder bots may read, and which bots; never a password or a session key. */
+  bitwarden(): BitwardenChoice | null {
+    return this.read().bitwarden ?? null;
+  }
+
+  setBitwarden(choice: BitwardenChoice | null): void {
+    const { bitwarden: _previous, ...rest } = this.read();
+    this.write(choice ? { ...rest, bitwarden: choice } : rest);
   }
 
   secretValues(): string[] {

@@ -61,6 +61,8 @@ export interface FillLoginInput {
   available(): Promise<Array<LoginPlace & { username: string }>>;
   /** Why 1Password's logins may be missing just now. */
   trouble?(): string | undefined;
+  /** A whole sentence on another manager whose logins are missing just now, such as Bitwarden being locked. */
+  locked?(): string | undefined;
 }
 
 export type FilledField = "username" | "password" | "code";
@@ -350,7 +352,8 @@ export async function fillLogin(input: FillLoginInput, deps: FillLoginDeps): Pro
   if (!all.length) {
     const trouble = input.trouble?.();
     const missing = trouble ? ` 1Password could not be read just now, so its logins may be missing: ${trouble}` : "";
-    return { ok: false, host: pageHost, text: `No saved login for ${pageHost}. A login fills on its own site and the sign-in hosts saved with it, never on another site. ${listed(await input.available())}${missing} Open that site's login page, or call request_sign_in so the person signs in.` };
+    const locked = input.locked?.();
+    return { ok: false, host: pageHost, text: `No saved login for ${pageHost}. A login fills on its own site and the sign-in hosts saved with it, never on another site. ${listed(await input.available())}${missing}${locked ? ` ${locked}` : ""} Open that site's login page, or call request_sign_in so the person signs in.` };
   }
   let chosen = all;
   const wanted = input.username?.trim();
@@ -442,7 +445,7 @@ class LoginRun {
   }
 
   private who(): string {
-    return `${this.login.username || (this.addressOnly ? EMAIL_LOGIN : "the saved login")}${this.login.source === "1password" ? " (from 1Password)" : ""}`;
+    return `${this.login.username || (this.addressOnly ? EMAIL_LOGIN : "the saved login")}${this.login.source === "1password" ? " (from 1Password)" : ""}${this.login.source === "bitwarden" ? " (from Bitwarden)" : ""}`;
   }
 
   private filledWords(): string {

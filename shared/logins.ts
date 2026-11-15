@@ -8,7 +8,7 @@ import { getDomain } from "tldts";
 
 /** Where a login came from: the sign-in card's Save, Settings, or the person's
  * 1Password vault (read-only here). */
-export type LoginSource = "card" | "settings" | "1password";
+export type LoginSource = "card" | "settings" | "1password" | "bitwarden";
 
 /** Which bots may use a login: every bot, or the ones named. */
 export type LoginBots = "all" | string[];
@@ -64,6 +64,37 @@ export interface OnePasswordStatus {
   vaults?: OnePasswordVault[];
   /** How many items have a website and a password, across every vault. */
   items?: number;
+  error?: string;
+}
+
+/** A Bitwarden id: a GUID, never the words `null` or `notnull`, which `bw list --folderid` reads as "no folder" and
+ * "any folder". */
+export const BITWARDEN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+/** The one Bitwarden folder bots may read, and which bots. Kept across restarts; the vault itself is not. */
+export interface BitwardenChoice {
+  folderId: string;
+  folderName: string;
+  bots: LoginBots;
+}
+
+/** Bitwarden, read through the `bw` CLI on this computer. Its items stay in memory only from an unlock until the app
+ * stops or the person locks it again; the master password and the session key are never kept. */
+export interface BitwardenStatus {
+  /** This server can use Bitwarden: the desktop app on the person's own computer. */
+  available: boolean;
+  /** The `bw` CLI was found. Unknown until it is first run. */
+  installed?: boolean;
+  folder?: { id: string; name: string };
+  bots?: LoginBots;
+  /** Folders seen at the last unlock, for choosing one. Names and ids only. */
+  folders?: Array<{ id: string; name: string }>;
+  /** Items are loaded from the folder now. */
+  unlocked: boolean;
+  /** Logins with a website and a password, and secrets, loaded from the folder. */
+  logins?: number;
+  secrets?: number;
+  unlockedAt?: number;
   error?: string;
 }
 

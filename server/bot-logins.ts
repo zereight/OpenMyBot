@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 
-import { browserMatesOf, loginPageCheck, loginPlace, loginSite, type LoginBots, type LoginPlace } from "../shared/logins.ts";
+import { browserMatesOf, loginPageCheck, loginPlace, loginSite, type LoginBots, type LoginPlace, type LoginSummary } from "../shared/logins.ts";
 import type { LinkedSecret } from "../shared/vault.ts";
 import type { FillCandidate } from "./login-fill.ts";
 import { receiveLoginHandoff, type ConnectionHandoffAnswer, type ConnectionHandoffWhat, type LoginHandoffResult } from "./login-handoff.ts";
 import type { VaultReader, VaultStore } from "./vault-store.ts";
 import type { OnePasswordLogins } from "./onepassword.ts";
+import type { BitwardenLogins } from "./bitwarden.ts";
 import type { LoginRouteDeps } from "./routes/logins.ts";
 import { findLinkedSecret, linkedCandidates, linkedSecretNames, linkedSecrets, linkedSites, readLinkedSecret, type VaultProvider } from "./vault/providers.ts";
 
@@ -53,16 +54,18 @@ export function cardLoginPlace(cardHost: string, observed: ObservedPage | null, 
 export class BotLogins {
   readonly store: VaultStore;
   readonly onePassword: OnePasswordLogins;
+  readonly bitwarden: BitwardenLogins | null;
   readonly providers: readonly VaultProvider[];
   private readonly bots: () => ReadonlyArray<{ id: string; browserProfile?: string | null }>;
   private readonly hold: (value: string) => void;
 
   /** `hold` masks a value read from a linked manager wherever text crosses to a bot or a transcript. */
   constructor(store: VaultStore, onePassword: OnePasswordLogins, bots: () => ReadonlyArray<{ id: string; browserProfile?: string | null }> = () => [],
-    hold: (value: string) => void = () => {}) {
+    hold: (value: string) => void = () => {}, bitwarden: BitwardenLogins | null = null) {
     this.store = store;
     this.onePassword = onePassword;
-    this.providers = [onePassword];
+    this.bitwarden = bitwarden;
+    this.providers = bitwarden ? [onePassword, bitwarden] : [onePassword];
     this.bots = bots;
     this.hold = hold;
   }
@@ -82,6 +85,11 @@ export class BotLogins {
   sitesFor(botId: string): Array<LoginPlace & { username: string }> {
     const bots = this.cardBots(botId);
     return [...this.store.sitesFor(bots), ...this.providers.flatMap((provider) => linkedSites(provider, bots))];
+  }
+
+  /** Why a manager's logins are missing just now other than 1Password failing: Bitwarden locked, as after a restart. */
+  lockedLogins(): string | undefined {
+    return this.bitwarden?.trouble();
   }
 
   /** Reads each linked manager's list again if it is older than the manager allows. */
@@ -148,6 +156,35 @@ export class BotLogins {
     return { ...config, onePassword: { connected: Boolean(this.store.onePasswordToken()) } };
   }
 
+  private bitwardenRoutes(bitwarden: BitwardenLogins): NonNullable<LoginRouteDeps["bitwarden"]> {
+    return {
+      status: () => bitwarden.status(),
+      list: () => bitwarden.items().flatMap(({ kind, ...item }) => (kind === "login" ? [item as LoginSummary] : [])),
+      unlock: (password) => bitwarden.unlock(password),
+      lock: () => bitwarden.lock(),
+      // Another folder's items go at once: the next unlock loads the new one.
+      chooseFolder: (folderId) => {
+        const folder = bitwarden.hasFolder(folderId);
+        if (!folder) return null;
+        const before = this.store.bitwarden();
+        this.store.setBitwarden({ folderId: folder.id, folderName: folder.name, bots: before?.folderId === folder.id ? before.bots : [] });
+        if (before?.folderId !== folder.id) bitwarden.lock();
+        return bitwarden.status();
+      },
+      grant: (bots) => {
+        const choice = this.store.bitwarden();
+        if (!choice) return null;
+        this.store.setBitwarden({ ...choice, bots });
+        return bitwarden.status();
+      },
+      forget: () => {
+        this.store.setBitwarden(null);
+        bitwarden.forget();
+        return bitwarden.status();
+      },
+    };
+  }
+
   routes(botExists: (id: string) => boolean): LoginRouteDeps {
     return {
       list: () => this.store.list(),
@@ -186,6 +223,7 @@ export class BotLogins {
         // Kept whole, even for an item not loaded here yet: it then opens no wider than the computer that chose it.
         setItemGrants: (grants, keep) => this.store.setOnePasswordItemGrants(keep ? { ...this.store.onePasswordItemGrants(), ...grants } : grants),
       },
+      ...(this.bitwarden ? { bitwarden: this.bitwardenRoutes(this.bitwarden) } : {}),
     };
   }
 }

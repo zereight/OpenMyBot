@@ -1,11 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ChevronDown, KeyRound, Loader2, LockKeyhole, ShieldCheck, Trash2 } from "lucide-react";
 
-import { loginHeldBackFor, type LoginBots, type LoginSummary, type OnePasswordItemRef, type OnePasswordStatus, type OnePasswordVault } from "../../shared/logins";
+import { loginHeldBackFor, type BitwardenStatus, type LoginBots, type LoginSummary, type OnePasswordItemRef, type OnePasswordStatus, type OnePasswordVault } from "../../shared/logins";
 import type { LinkedSecret, VaultSecret } from "../../shared/vault";
 import { t } from "@/lib/i18n";
 import { productName } from "@/lib/brand";
-import { addLogin, changeLogin, connectOnePassword, deleteLogin, disconnectOnePassword, grantOnePasswordItem, grantVault, refreshOnePassword } from "@/lib/logins";
+import { addLogin, changeLogin, chooseBitwardenFolder, connectOnePassword, deleteLogin, disconnectOnePassword, forgetBitwarden, grantBitwarden, grantOnePasswordItem, grantVault, lockBitwarden, refreshOnePassword, unlockBitwarden } from "@/lib/logins";
 import { relativeTime } from "@/lib/memory";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { deleteSecret, listVault } from "@/lib/vault";
@@ -22,6 +22,7 @@ const SOURCE_KEYS = {
   card: "settings.logins.source.card",
   settings: "settings.logins.source.settings",
   "1password": "settings.logins.source.1password",
+  bitwarden: "settings.logins.source.bitwarden",
   linked: "settings.logins.source.1password",
 } as const;
 
@@ -50,6 +51,7 @@ export function VaultSettings() {
   const [logins, setLogins] = useState<LoginSummary[] | null>(null);
   const [secrets, setSecrets] = useState<Array<VaultSecret | LinkedSecret>>([]);
   const [onePassword, setOnePassword] = useState<OnePasswordStatus>({ connected: false });
+  const [bitwarden, setBitwarden] = useState<BitwardenStatus>({ available: false, unlocked: false });
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -73,6 +75,7 @@ export function VaultSettings() {
       setLogins(answer.logins ?? []);
       setSecrets(answer.secrets ?? []);
       setOnePassword(answer.onePassword ?? { connected: false });
+      setBitwarden(answer.bitwarden ?? { available: false, unlocked: false });
       setError(null);
     }
     catch (cause) { setError(cause instanceof Error && cause.message ? cause.message : t("settings.vault.loadError")); }
@@ -198,7 +201,7 @@ export function VaultSettings() {
         <div className="min-w-0 flex-1">
           <div dir="auto" className="truncate text-[13px] font-medium text-ink" title={secret.name}>{secret.name}</div>
           <div className="mt-0.5 text-[12px] leading-snug text-ink-tertiary">
-            {[t(SOURCE_KEYS[secret.source]), whoLine(secret.bots, secret.source === "linked" ? secret.onePassword : undefined), used(secret.lastUsedAt)].join(" · ")}
+            {[t(secret.source === "linked" && secret.provider === "bitwarden" ? SOURCE_KEYS.bitwarden : SOURCE_KEYS[secret.source]), whoLine(secret.bots, secret.source === "linked" ? secret.onePassword : undefined), used(secret.lastUsedAt)].join(" · ")}
           </div>
         </div>
         {secret.source !== "linked" && rowButtons(secret.id, "secret", secret.name, () => startEdit(secret.id))}
@@ -278,6 +281,8 @@ export function VaultSettings() {
           </div>
           <OnePasswordConnection status={onePassword} disabled={logins === null} bots={bots} botNames={botNames}
             onChange={async (next) => { setOnePassword(next); await load(); }} />
+          {bitwarden.available && <BitwardenConnection status={bitwarden} disabled={logins === null} bots={bots} botNames={botNames}
+            onChange={async (next) => { setBitwarden(next); await load(); }} />}
         </SettingsRows>
       </SettingsGroup>}
     </div>
@@ -435,6 +440,101 @@ function OnePasswordConnection({ status, disabled, bots, botNames, onChange }: {
             <SettingsField label={t("settings.logins.onePassword.token")} hint={t("settings.logins.onePassword.note")}>
               <input name="onePasswordToken" type="password" autoComplete="off" spellCheck={false} maxLength={8192} value={token}
                 onChange={(event) => setToken(event.target.value)} disabled={disabled || busy !== null} className={SETTINGS_INPUT} />
+            </SettingsField>
+            {error && <p role="alert" className="text-[12px] leading-4 text-danger">{error}</p>}
+          </form>
+        </SettingsDialog>
+      )}
+    </section>
+  );
+}
+
+/** Bitwarden through the bw CLI here: one folder, loaded at each unlock and gone on lock or restart. */
+function BitwardenConnection({ status, disabled, bots, botNames, onChange }: {
+  status: BitwardenStatus;
+  disabled: boolean;
+  bots: ReadonlyArray<{ id: string; name: string }>;
+  botNames: (value: LoginBots) => string;
+  onChange: (status: BitwardenStatus) => Promise<void>;
+}) {
+  const [password, setPassword] = useState("");
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<"unlock" | "lock" | "folder" | "bots" | "forget" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [editingBots, setEditingBots] = useState(false);
+  const [value, setValue] = useState<LoginBots>(status.bots ?? []);
+  const run = async (kind: NonNullable<typeof busy>, work: () => Promise<BitwardenStatus>) => {
+    if (busy) return;
+    setBusy(kind);
+    setError(null);
+    try {
+      await onChange(await work());
+      if (kind === "unlock") { setPassword(""); setOpen(false); }
+      if (kind === "bots") setEditingBots(false);
+    }
+    catch (cause) { setError(cause instanceof Error && cause.message ? cause.message : t("settings.logins.bitwarden.error")); }
+    finally { if (kind === "unlock") setPassword(""); setBusy(null); }
+  };
+  const unlock = (event: FormEvent) => {
+    event.preventDefault();
+    if (password) void run("unlock", () => unlockBitwarden(password));
+  };
+  const folder = status.folder;
+  const line = status.unlocked && folder
+    ? t("settings.logins.bitwarden.unlocked", { folder: folder.name, logins: String(status.logins ?? 0), secrets: String(status.secrets ?? 0) })
+    : folder ? t("settings.logins.bitwarden.locked", { folder: folder.name }) : t("settings.logins.bitwarden.line");
+  const choosing = !!status.folders?.length && (!folder || !status.unlocked);
+  return (
+    <section className="flex flex-col gap-2 px-4 py-3" aria-label="Bitwarden" data-bitwarden>
+      <div className="flex items-center gap-6">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-[14px] leading-5 text-ink">Bitwarden</span>
+          <span className="text-[13px] leading-[18px] text-ink-secondary">{line}</span>
+          {folder && <span className="text-[12px] leading-4 text-ink-tertiary">{t("settings.logins.bitwarden.who", { who: botNames(status.bots ?? []) })}</span>}
+        </div>
+        {status.unlocked
+          ? <button type="button" className="ui-button" disabled={disabled || busy !== null} onClick={() => void run("lock", lockBitwarden)}>{t("settings.logins.bitwarden.lock")}</button>
+          : <button type="button" className="ui-button" disabled={disabled || busy !== null} onClick={() => setOpen(true)}>{t("settings.logins.bitwarden.unlock")}</button>}
+        {folder && <button type="button" className="settings-quiet cursor-pointer" disabled={disabled || busy !== null} onClick={() => void run("forget", forgetBitwarden)}>{t("settings.logins.onePassword.disconnect")}</button>}
+      </div>
+      {status.error && <p role="alert" className="text-[12px] leading-4 text-danger">{status.error}</p>}
+      {choosing && (
+        <SettingsField label={t("settings.logins.bitwarden.folder")} hint={t("settings.logins.bitwarden.folderHint")}>
+          <select name="bitwardenFolder" className={SETTINGS_INPUT} disabled={disabled || busy !== null} value={folder?.id ?? ""}
+            onChange={(event) => { const id = event.target.value; if (id) void run("folder", () => chooseBitwardenFolder(id)); }}>
+            <option value="" disabled>{t("settings.logins.bitwarden.chooseFolder")}</option>
+            {status.folders!.map((one) => <option key={one.id} value={one.id}>{one.name}</option>)}
+          </select>
+        </SettingsField>
+      )}
+      {folder && !editingBots && (
+        <div className="flex justify-end">
+          <button type="button" className={ROW_BUTTON} disabled={disabled || busy !== null} onClick={() => { setValue(status.bots ?? []); setEditingBots(true); }}>{t("settings.logins.change")}</button>
+        </div>
+      )}
+      {folder && editingBots && (
+        <div className="flex flex-col gap-2 rounded-lg bg-inset/60 p-3">
+          <LoginBotPicker value={value} onChange={setValue} bots={bots} disabled={busy !== null} />
+          <div className="flex flex-wrap justify-end gap-2">
+            <button type="button" className="ui-button ui-button-md" disabled={busy !== null} onClick={() => setEditingBots(false)}>{t("logins.cancel")}</button>
+            <button type="button" className="ui-button ui-button-md ui-button-primary" disabled={busy !== null} onClick={() => void run("bots", () => grantBitwarden(value))}>{t("settings.logins.saveChange")}</button>
+          </div>
+        </div>
+      )}
+      {error && !open && <p role="alert" className="text-[12px] leading-4 text-danger">{error}</p>}
+      {open && !status.unlocked && (
+        <SettingsDialog title={t("settings.logins.bitwarden.unlockTitle")} onClose={() => { setPassword(""); setOpen(false); }}
+          footer={<>
+            <button type="button" className="ui-button" onClick={() => { setPassword(""); setOpen(false); }}>{t("common.cancel")}</button>
+            <button type="submit" form="bitwarden-unlock" className="ui-button ui-button-primary gap-1.5" disabled={disabled || busy !== null || !password}>
+              {busy === "unlock" && <Loader2 size={13} className="animate-spin" />}{t("settings.logins.bitwarden.unlock")}
+            </button>
+          </>}>
+          <form id="bitwarden-unlock" className="flex flex-col gap-3" onSubmit={unlock}>
+            <p className="text-[13px] leading-[18px] text-ink-secondary">{t("settings.logins.bitwarden.guide")}</p>
+            <SettingsField label={t("settings.logins.bitwarden.password")} hint={t("settings.logins.bitwarden.note")}>
+              <input name="bitwardenPassword" type="password" autoComplete="off" spellCheck={false} maxLength={1024} value={password}
+                onChange={(event) => setPassword(event.target.value)} disabled={disabled || busy !== null} className={SETTINGS_INPUT} />
             </SettingsField>
             {error && <p role="alert" className="text-[12px] leading-4 text-danger">{error}</p>}
           </form>
