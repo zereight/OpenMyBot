@@ -1,3 +1,8 @@
+/** "essentials" keeps bots, instructions, memory, skills, settings, conversations and attachments, and leaves out turn
+ * checkpoints, conversation work folders, run logs and project files in bot work folders. "full" (the default when a
+ * summary has no scope) carries the whole data folder. */
+export type WorkspaceBackupScope = "essentials" | "full";
+
 /** Full, encrypted workspace snapshots are distinct from additive team copies. */
 export interface WorkspaceBackupSummary {
   format: "openmaus.workspace-backup";
@@ -12,6 +17,8 @@ export interface WorkspaceBackupSummary {
   groups: number;
   threads: number;
   messages: number;
+  /** Written only by essentials backups; an older app refuses the unknown key instead of restoring it as a full one. */
+  scope?: WorkspaceBackupScope;
   exclusions: string[];
   warnings: string[];
 }

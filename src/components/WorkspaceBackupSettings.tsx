@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
-import type { WorkspaceBackupSummary } from "../../shared/workspace-backup";
+import type { WorkspaceBackupScope, WorkspaceBackupSummary } from "../../shared/workspace-backup";
 import { api } from "@/state/store";
 import { intlLocale, t } from "@/lib/i18n";
 import { applyWorkspaceClientState, collectWorkspaceClientState, WORKSPACE_RESTORE_MARKER } from "@/lib/workspace-backup-client";
@@ -65,6 +65,7 @@ export function WorkspaceBackupSummaryView({ summary }: { summary: WorkspaceBack
     <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[13px]">
       <dt className="text-ink-secondary">{t("backup.date")}</dt><dd className="break-words text-ink">{new Date(summary.createdAt).toLocaleString(intlLocale())}</dd>
       <dt className="text-ink-secondary">{t("backup.version")}</dt><dd className="text-ink">{summary.appVersion}</dd>
+      <dt className="text-ink-secondary">{t("backup.scopeShown")}</dt><dd className="text-ink" data-backup-scope={summary.scope ?? "full"}>{t(summary.scope === "essentials" ? "backup.scopeEssentialsShort" : "backup.scopeFullShort")}</dd>
       <dt className="text-ink-secondary">{t("backup.bots")}</dt><dd className="text-ink">{summary.bots}</dd>
       <dt className="text-ink-secondary">{t("backup.groups")}</dt><dd className="text-ink">{summary.groups}</dd>
       <dt className="text-ink-secondary">{t("backup.threads")}</dt><dd className="text-ink">{summary.threads}</dd>
@@ -89,6 +90,8 @@ export function WorkspaceBackupSettings({ layout = BOTH_ROWS }: { layout?: (rows
   const [error, setError] = useState<string | null>(null);
   const [exportPassword, setExportPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  // Essentials by default: a whole data folder easily passes the 10 GB / 100,000-file limit with checkpoints and clones.
+  const [exportScope, setExportScope] = useState<WorkspaceBackupScope>("essentials");
   const [importPassword, setImportPassword] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [uploadedId, setUploadedId] = useState<string | null>(null);
@@ -127,7 +130,7 @@ export function WorkspaceBackupSettings({ layout = BOTH_ROWS }: { layout?: (rows
   const exportBackup = () => perform("export", async () => {
     if (!validPassword(exportPassword) || exportPassword !== confirmPassword) return;
     const result: { id: string; filename: string } = await api("/api/workspace-backup/export", {
-      method: "POST", body: JSON.stringify({ password: exportPassword, clientState: collectWorkspaceClientState() }),
+      method: "POST", body: JSON.stringify({ password: exportPassword, clientState: collectWorkspaceClientState(), scope: exportScope }),
     });
     if (alive.current) { setExportPassword(""); setConfirmPassword(""); }
     if (!alive.current) return;
@@ -140,6 +143,7 @@ export function WorkspaceBackupSettings({ layout = BOTH_ROWS }: { layout?: (rows
     link.click();
     link.remove();
     setExporting(false);
+    setExportScope("essentials");
   });
 
   const previewBackup = () => perform("preview", async () => {
@@ -183,14 +187,14 @@ export function WorkspaceBackupSettings({ layout = BOTH_ROWS }: { layout?: (rows
   });
 
   const disabled = busy !== null || !status || status.busy || Boolean(status.pendingRestore);
-  const closeExport = () => { setExporting(false); setExportPassword(""); setConfirmPassword(""); };
+  const closeExport = () => { setExporting(false); setExportPassword(""); setConfirmPassword(""); setExportScope("essentials"); };
   const closeImport = () => { setImporting(false); setFile(null); setUploadedId(null); setPreview(null); setConfirmation(""); setImportPassword(""); };
   if (status?.pendingRestore) {
     return layout({ exportRow: null, importRow: <div className="px-4 py-3"><WorkspaceBackupRestartNotice serverRestarts={status.restarts === true} /></div> });
   }
   return <>
     {layout({
-      exportRow: <SettingRow title={t("backup.export")} subtitle={<>{t("backup.exportShort")}{" "}<LearnMore onClick={() => setMore((open) => !open)} /></>}
+      exportRow: <SettingRow title={t("backup.exportTitle")} subtitle={<>{t("backup.exportShort")}{" "}<LearnMore onClick={() => setMore((open) => !open)} /></>}
         message={<>
           {more && <span data-backup-more="" className="flex flex-col gap-1"><span>{t("backup.scope")}</span><span>{t("backup.excluded")}</span><span>{t("backup.privacy")}</span></span>}
           {download && <a href={download.url} download={download.filename} className="break-all text-accent-text hover:underline">{t("backup.downloadAgain", { filename: download.filename })}</a>}
@@ -204,8 +208,21 @@ export function WorkspaceBackupSettings({ layout = BOTH_ROWS }: { layout?: (rows
       </SettingRow>,
     })}
     {exporting && (
-      <SettingsDialog title={t("backup.export")} onClose={closeExport}>
+      <SettingsDialog title={t("backup.exportTitle")} onClose={closeExport}>
         <form id="backup-export" className="flex flex-col gap-4" onSubmit={(event) => { event.preventDefault(); void exportBackup(); }}>
+          <fieldset className="flex flex-col gap-2" data-backup-scope-choice="">
+            <legend className="mb-1 text-[13px] font-medium text-ink">{t("backup.scopeLabel")}</legend>
+            {(["essentials", "full"] as const).map((scope) => (
+              <label key={scope} className="flex cursor-pointer items-start gap-3 rounded-[12px] bg-menu px-4 py-3 shadow-[inset_0_0_0_0.5px_var(--settings-edge)]">
+                <input type="radio" name="backup-scope" value={scope} checked={exportScope === scope} disabled={disabled} onChange={() => setExportScope(scope)}
+                  className="mt-0.5 size-4 shrink-0 accent-[var(--color-ink)] disabled:opacity-40" />
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="text-[14px] leading-5 text-ink">{t(scope === "essentials" ? "backup.scopeEssentials" : "backup.scopeFull")}</span>
+                  <span className="text-[13px] leading-[18px] text-ink-secondary">{t(scope === "essentials" ? "backup.scopeEssentialsHint" : "backup.scopeFullHint")}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
           <p className="text-[13px] leading-[18px] text-ink-secondary">{t("backup.passwordHint")}</p>
           <SettingsField label={t("backup.exportPassword")}>
             <input type="password" autoComplete="new-password" minLength={12} maxLength={1024} required disabled={disabled} value={exportPassword} onChange={(event) => setExportPassword(event.target.value)} className={SETTINGS_INPUT} />

@@ -916,3 +916,169 @@ describe("encrypted full workspace backups", () => {
     expect(() => removeWorkspaceBackupJob(root, staged.id)).toThrow(/needed/);
   });
 });
+
+describe("essentials workspace backups", () => {
+  function write(root: string, path: string, content: string): void {
+    mkdirSync(join(root, ...path.split("/").slice(0, -1)), { recursive: true });
+    writeFileSync(join(root, ...path.split("/")), content);
+  }
+  const read = (root: string, path: string) => readFileSync(join(root, ...path.split("/")), "utf8");
+  function source(): string {
+    const root = directory();
+    json(join(root, "bots.json"), [{ id: "a" }, { id: "c" }]);
+    for (const [path, content] of Object.entries({
+      "bots/a/SOUL.md": "backup soul", "bots/c/SOUL.md": "new bot soul",
+      "workspaces/a/MEMORY.md": "backup memory", "workspaces/a/memory/2026-11.md": "backup note",
+      "workspaces/a/skills/ship/SKILL.md": "backup skill", "workspaces/c/MEMORY.md": "new bot memory",
+      "workspaces/a/repo/index.ts": "source clone", "workspaces/a/.claude/settings.json": '{"hooks":{"PreToolUse":[{"command":"/Users/me/hook.py"}]}}',
+      "workspaces/a/review-state.json": "{}", "attachments/image.png": "picture",
+      "checkpoints/turn/blob": "checkpoint", "task-workspaces/a/thread/out.txt": "work", "events/a.ndjson": "{}",
+      "native/session.jsonl": "{}", "tool-results/r.txt": "result", "browser-uploads/u.bin": "upload",
+    })) write(root, path, content);
+    return root;
+  }
+  async function manifestOf(root: string, archive: string) {
+    const staged = await stageWorkspaceBackup(root, archive, { password: PASSWORD });
+    return { staged, manifest: readJson(join(root, ".backups", staged.id, "staged", "manifest.json")) };
+  }
+
+  it("carries bots, memory, skills, settings, conversations and attachments, and leaves out what work regenerates", async () => {
+    const root = source();
+    const exported = await createWorkspaceBackup(root, { password: PASSWORD, scope: "essentials" });
+    expect(exported.summary.scope).toBe("essentials");
+    expect(exported.summary.exclusions.some((note) => note.startsWith("Essentials backup:"))).toBe(true);
+    expect(exported.summary.exclusions).toContain("Waits bots set up: they end within a week, so ask the bot again after restoring.");
+    expect(exported.summary.exclusions.filter((note) => note.startsWith("VM/container"))).toEqual(["VM/container disk layers and remote cloud data."]);
+    expect(new Set(exported.summary.exclusions).size).toBe(exported.summary.exclusions.length);
+    const paths: string[] = (await manifestOf(directory(), exported.path)).manifest.entries.map((entry: { path: string }) => entry.path);
+    for (const path of ["bots.json", "bots/a/SOUL.md", "bots/c/SOUL.md", "workspaces/a/MEMORY.md", "workspaces/a/memory/2026-11.md", "workspaces/a/skills/ship/SKILL.md", "workspaces/c/MEMORY.md", "attachments/image.png"]) expect(paths).toContain(path);
+    for (const prefix of ["checkpoints", "task-workspaces", "events", "native", "tool-results", "browser-uploads", "workspaces/a/repo", "workspaces/a/.claude", "workspaces/a/review-state.json"]) {
+      expect(paths.filter((path) => path === prefix || path.startsWith(`${prefix}/`))).toEqual([]);
+    }
+    const full = await createWorkspaceBackup(root, { password: PASSWORD });
+    expect(full.summary).not.toHaveProperty("scope");
+    expect((await manifestOf(directory(), full.path)).manifest.entries.map((entry: { path: string }) => entry.path)).toContain("workspaces/a/repo/index.ts");
+  });
+
+  it("restores on this computer by swapping only what it carries, keeping clones, Data tables, checkpoints and other bots' folders", async () => {
+    const exported = await createWorkspaceBackup(source(), { password: PASSWORD, scope: "essentials" });
+    const target = directory();
+    json(join(target, "bots.json"), [{ id: "a" }, { id: "b" }]);
+    for (const [path, content] of Object.entries({
+      "bots/a/SOUL.md": "live soul", "bots/a/data.duckdb": "live tables", "bots/b/SOUL.md": "other bot",
+      "workspaces/a/MEMORY.md": "live memory", "workspaces/a/memory/old.md": "live note", "workspaces/a/repo/index.ts": "live clone",
+      "workspaces/a/.claude/settings.json": "live hooks", "checkpoints/turn/blob": "live checkpoint", "task-workspaces/a/thread/out.txt": "live work",
+      "events/a.ndjson": "live events", "attachments/old.png": "old attachment",
+    })) write(target, path, content);
+    const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
+    expect(staged.summary.scope).toBe("essentials");
+    commitPendingWorkspaceRestore(target, staged.id);
+    expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: true, id: staged.id });
+    // Carried: replaced by the backup's copy, or created for a bot only the backup has.
+    expect(readJson(join(target, "bots.json"))).toEqual([{ id: "a" }, { id: "c" }]);
+    expect(read(target, "bots/a/SOUL.md")).toBe("backup soul");
+    expect(read(target, "bots/c/SOUL.md")).toBe("new bot soul");
+    expect(read(target, "workspaces/a/MEMORY.md")).toBe("backup memory");
+    expect(readdirSync(join(target, "workspaces", "a", "memory"))).toEqual(["2026-11.md"]);
+    expect(read(target, "workspaces/a/skills/ship/SKILL.md")).toBe("backup skill");
+    expect(read(target, "workspaces/c/MEMORY.md")).toBe("new bot memory");
+    expect(read(target, "attachments/image.png")).toBe("picture");
+    expect(existsSync(join(target, "attachments", "old.png"))).toBe(false);
+    // Left in place: everything the backup does not carry.
+    for (const [path, content] of Object.entries({
+      "bots/a/data.duckdb": "live tables", "bots/b/SOUL.md": "other bot", "workspaces/a/repo/index.ts": "live clone",
+      "workspaces/a/.claude/settings.json": "live hooks", "checkpoints/turn/blob": "live checkpoint",
+      "task-workspaces/a/thread/out.txt": "live work", "events/a.ndjson": "live events",
+    })) expect(read(target, path)).toBe(content);
+    // The replaced originals wait in the safety copy.
+    const saved = join(target, ".backups", `safety-${staged.id}`, "data");
+    expect(read(saved, "bots/a/SOUL.md")).toBe("live soul");
+    expect(read(saved, "workspaces/a/MEMORY.md")).toBe("live memory");
+    expect(read(saved, "workspaces/a/memory/old.md")).toBe("live note");
+    expect(read(saved, "attachments/old.png")).toBe("old attachment");
+    expect(existsSync(join(saved, "workspaces", "a", "repo"))).toBe(false);
+    expect(existsSync(join(saved, "checkpoints"))).toBe(false);
+    expect(readJson(join(target, ".backups", `safety-${staged.id}`, "manifest.json")).originalEntries).toEqual(expect.arrayContaining(["bots.json", "attachments", "bots/a/SOUL.md", "workspaces/a/MEMORY.md", "workspaces/a/memory"]));
+  });
+
+  it("restores into an empty data folder on a new computer", async () => {
+    const exported = await createWorkspaceBackup(source(), { password: PASSWORD, scope: "essentials" });
+    const target = directory();
+    const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
+    commitPendingWorkspaceRestore(target, staged.id);
+    expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: true });
+    expect(readJson(join(target, "bots.json"))).toEqual([{ id: "a" }, { id: "c" }]);
+    expect(read(target, "bots/a/SOUL.md")).toBe("backup soul");
+    expect(read(target, "workspaces/a/memory/2026-11.md")).toBe("backup note");
+    expect(read(target, "workspaces/a/skills/ship/SKILL.md")).toBe("backup skill");
+    expect(existsSync(join(target, "checkpoints"))).toBe(false);
+    expect(existsSync(join(target, "workspaces", "a", "repo"))).toBe(false);
+  });
+
+  it.each([false, true])("rolls back an interrupted per-bot swap with incoming moved=%s, never touching the folders around it", async (incomingMoved) => {
+    const exported = await createWorkspaceBackup(source(), { password: PASSWORD, scope: "essentials" });
+    const target = directory();
+    json(join(target, "bots.json"), [{ id: "original" }]);
+    write(target, "workspaces/a/MEMORY.md", "live memory");
+    write(target, "workspaces/a/repo/index.ts", "live clone");
+    const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
+    commitPendingWorkspaceRestore(target, staged.id);
+    const root = join(target, ".backups");
+    const apply = join(root, staged.id, "apply", "data");
+    cpSync(join(root, staged.id, "staged", "data"), apply, { recursive: true });
+    const saved = join(root, `safety-${staged.id}`, "data");
+    mkdirSync(join(saved, "workspaces", "a"), { recursive: true });
+    json(join(root, "restore-journal.json"), {
+      id: staged.id, phase: "applying", existing: ["bots.json"], incoming: ["bots.json"],
+      nested: ["workspaces/a/MEMORY.md", "workspaces/c/MEMORY.md"], nestedExisting: ["workspaces/a/MEMORY.md"],
+    });
+    renameSync(join(target, "bots.json"), join(saved, "bots.json"));
+    renameSync(join(target, "workspaces", "a", "MEMORY.md"), join(saved, "workspaces", "a", "MEMORY.md"));
+    if (incomingMoved) {
+      renameSync(join(apply, "bots.json"), join(target, "bots.json"));
+      renameSync(join(apply, "workspaces", "a", "MEMORY.md"), join(target, "workspaces", "a", "MEMORY.md"));
+      mkdirSync(join(target, "workspaces", "c"));
+      renameSync(join(apply, "workspaces", "c", "MEMORY.md"), join(target, "workspaces", "c", "MEMORY.md"));
+    }
+    expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: false, rolledBack: true, id: staged.id });
+    expect(readJson(join(target, "bots.json"))).toEqual([{ id: "original" }]);
+    expect(read(target, "workspaces/a/MEMORY.md")).toBe("live memory");
+    expect(read(target, "workspaces/a/repo/index.ts")).toBe("live clone");
+    expect(existsSync(join(target, "workspaces", "c", "MEMORY.md"))).toBe(false);
+    expect(applyPendingWorkspaceRestore(target)).toEqual({ restored: false });
+  });
+
+  it.each([
+    { nested: ["workspaces/a/repo"] }, { nested: ["a/b"] }, { nested: ["bots/a"] }, { nested: ["workspaces/../MEMORY.md"] },
+    { nested: ["bots/a/SOUL.md", "bots/a/SOUL.md"] }, { nested: [], nestedExisting: ["bots/a/SOUL.md"] },
+  ])("refuses a recovery journal with unsafe per-bot paths %j", async (paths) => {
+    const exported = await createWorkspaceBackup(source(), { password: PASSWORD, scope: "essentials" });
+    const target = directory();
+    write(target, "workspaces/a/repo/index.ts", "live clone");
+    const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
+    commitPendingWorkspaceRestore(target, staged.id);
+    json(join(target, ".backups", "restore-journal.json"), { id: staged.id, phase: "applying", existing: [], incoming: [], ...paths });
+    expect(() => applyPendingWorkspaceRestore(target)).toThrow(/Invalid restore recovery paths/);
+    expect(read(target, "workspaces/a/repo/index.ts")).toBe("live clone");
+  });
+
+  it("refuses a crafted essentials archive that would replace what a restore keeps in place, and unknown scopes", async () => {
+    const root = source();
+    await expect(createWorkspaceBackup(root, { password: PASSWORD, scope: "partial" as never })).rejects.toThrow(/Unknown workspace backup scope/);
+    const exported = await createWorkspaceBackup(root, { password: PASSWORD, scope: "essentials" });
+    const base = (await manifestOf(directory(), exported.path)).manifest;
+    const crafted = (name: string, summary: Record<string, unknown> = {}) => {
+      const content = "planted";
+      const entry = { path: name, type: "file", size: content.length, mode: 0o600, sha256: createHash("sha256").update(content).digest("hex") };
+      const parents = name.split("/").slice(0, -1).map((_part, index) => name.split("/").slice(0, index + 1).join("/"));
+      const manifest = { ...base, entries: [...parents.map((path) => ({ path, type: "directory", size: 0, mode: 0o700 })), entry], summary: { ...base.summary, directories: parents.length, files: 1, bytes: entry.size, ...summary } };
+      return encryptedPayload(directory(), Buffer.concat([tarEntry("manifest.json", "File", JSON.stringify(manifest)), tarEntry("data", "Directory"), ...parents.map((parent) => tarEntry(`data/${parent}`, "Directory")), tarEntry(`data/${name}`, "File", content), Buffer.alloc(1024)]));
+    };
+    for (const name of ["checkpoints/blob", "Task-Workspaces/a/t/f", "workspaces/a/repo/index.ts", "workspaces/a/.claude/settings.json", "Workspaces/a/MEMORY.md", "bots/README", "workspaces/a"]) {
+      await expect(stageWorkspaceBackup(directory(), crafted(name), { password: PASSWORD })).rejects.toThrow(/outside its scope/);
+    }
+    await expect(stageWorkspaceBackup(directory(), crafted("workspaces/a/MEMORY.md", { scope: "partial" }), { password: PASSWORD })).rejects.toThrow(/metadata/);
+    // The same file is fine in a full backup, which keeps nothing in place.
+    expect((await stageWorkspaceBackup(directory(), crafted("workspaces/a/repo/index.ts", { scope: "full", bots: 0, groups: 0 }), { password: PASSWORD })).summary.scope).toBe("full");
+  });
+});
