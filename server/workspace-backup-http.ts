@@ -122,14 +122,14 @@ export function createWorkspaceBackupRoutes(options: {
         return true;
       }
       if (method === "POST" && path === `${PREFIX}/export`) {
-        const body = z.object({ password: passwordSchema, clientState: z.record(z.string(), z.string()).default({}) }).parse(await options.readBody(req, MAX_CLIENT_STATE_BYTES + 8 * 1024));
+        const body = z.object({ password: passwordSchema, clientState: z.record(z.string(), z.string()).default({}), scope: z.enum(["essentials", "full"]).default("full") }).parse(await options.readBody(req, MAX_CLIENT_STATE_BYTES + 8 * 1024));
         if (Buffer.byteLength(JSON.stringify(body.clientState)) > MAX_CLIENT_STATE_BYTES) throw failure("Saved drafts exceed the 2 MB backup preference limit.", 413);
         const clientState = Object.fromEntries(Object.entries(body.clientState).filter(([key]) => WORKSPACE_BACKUP_CLIENT_KEYS.includes(key as typeof WORKSPACE_BACKUP_CLIENT_KEYS[number])));
         const result = await operate(() => options.exclusive(async () => {
           check(req, auth);
           replacePrevious(auth, ["download"]);
           if (artifacts.size >= 4) throw failure("There are already four backup files in progress. Restart or wait an hour before creating another.", 409);
-          return createWorkspaceBackup(options.dataDir, { password: body.password, clientState, appVersion: options.appVersion });
+          return createWorkspaceBackup(options.dataDir, { password: body.password, clientState, appVersion: options.appVersion, scope: body.scope });
         }));
         try { check(req, auth); } catch (error) { removeWorkspaceBackupJob(options.dataDir, result.id); throw error; }
         artifacts.set(result.id, { owner: owner(auth), kind: "download", path: result.path, summary: result.summary, expires: Date.now() + EXPIRES_MS });

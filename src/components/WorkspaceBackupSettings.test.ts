@@ -66,6 +66,32 @@ describe("Settings full backups", () => {
     expect(html).not.toContain("Replace installation");
     const preview = renderToStaticMarkup(createElement(WorkspaceBackupSummaryView, { summary }));
     for (const text of ["Validated backup", "0.1.71", "Bots", "Threads", "Messages", "Fixture warning", "External CLI sign-ins"]) expect(preview).toContain(text);
+    expect(preview).toContain('data-backup-scope="full">Everything<');
+    const essentials = renderToStaticMarkup(createElement(WorkspaceBackupSummaryView, { summary: { ...summary, scope: "essentials" } }));
+    expect(essentials).toContain('data-backup-scope="essentials">Essentials<');
+  });
+
+  it("offers essentials (checked by default) or everything, and sends the picked scope", async () => {
+    await ready();
+    open("export");
+    let view = render();
+    const radios = view.nodes.filter((node) => node.type === "input" && node.props.type === "radio");
+    expect(radios.map((node) => node.props.value)).toEqual(["essentials", "full"]);
+    expect(radios.map((node) => (node.props as { checked?: boolean }).checked)).toEqual([true, false]);
+    expect(view.html).toContain("Essentials (recommended)");
+    radios[1].props.onChange!({});
+    view = render();
+    expect(view.nodes.filter((node) => node.type === "input" && node.props.type === "radio").map((node) => (node.props as { checked?: boolean }).checked)).toEqual([false, true]);
+    const passwords = view.nodes.filter((node) => node.type === "input" && node.props.type === "password");
+    change(passwords[0], "correct horse battery"); change(passwords[1], "correct horse battery");
+    const link = { href: "", download: "", click: vi.fn(), remove: vi.fn() };
+    vi.stubGlobal("document", { createElement: () => link, body: { append: vi.fn() } });
+    fixture.api.mockResolvedValueOnce({ id: "download-id", filename: "fixture.ombbackup" });
+    submit(formOf("backup-export")); await flush();
+    expect(JSON.parse(fixture.api.mock.calls[1][1].body).scope).toBe("full");
+    // Reopening starts from the recommended choice again.
+    open("export");
+    expect(render().nodes.filter((node) => node.type === "input" && node.props.type === "radio").map((node) => (node.props as { checked?: boolean }).checked)).toEqual([true, false]);
   });
 
   it("exports encrypted state by POST and downloads without putting the password in a URL or storage", async () => {
@@ -84,7 +110,7 @@ describe("Settings full backups", () => {
     expect(fixture.api).toHaveBeenCalledTimes(2); // one status, one export
     const [path, init] = fixture.api.mock.calls[1];
     expect(path).toBe("/api/workspace-backup/export");
-    expect(JSON.parse(init.body)).toEqual({ password: "correct horse battery", clientState: { "omb-drafts": "private draft" } });
+    expect(JSON.parse(init.body)).toEqual({ password: "correct horse battery", clientState: { "omb-drafts": "private draft" }, scope: "essentials" });
     expect(link.href).toBe("/api/workspace-backup/download/download-id");
     expect(link.click).toHaveBeenCalledOnce();
     expect([...storage.values()]).not.toContain("correct horse battery");

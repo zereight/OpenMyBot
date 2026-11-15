@@ -3971,5 +3971,14 @@
   "computer.recovery.restart": "Computer neu starten",
   "computer.recovery.restartTitle": "Diesen Cloud-Computer stoppen und wieder starten. Geöffnete Programme werden geschlossen; die Dateien bleiben.",
   "computer.recovery.replace": "Computer ersetzen",
-  "computer.recovery.replaceTitle": "Diesen Cloud-Computer löschen und dem Bot einen neuen geben. Dateien, die nur darauf liegen, gehen verloren."
+  "computer.recovery.replaceTitle": "Diesen Cloud-Computer löschen und dem Bot einen neuen geben. Dateien, die nur darauf liegen, gehen verloren.",
+  "backup.exportTitle": "Backup exportieren",
+  "backup.scopeLabel": "Inhalt",
+  "backup.scopeEssentials": "Nur das Wichtigste (empfohlen)",
+  "backup.scopeEssentialsHint": "Bots, Anweisungen, Erinnerungen, Skills, Einstellungen, Unterhaltungen und Anhänge. Ohne Checkpoints, Ausführungsprotokolle, Arbeitsordner von Unterhaltungen und Projektdateien in den Arbeitsordnern der Bots; bei einer Wiederherstellung auf diesem Computer bleiben die vorhandenen erhalten.",
+  "backup.scopeFull": "Alles",
+  "backup.scopeFullHint": "Der gesamte Datenordner mit Arbeitsordnern, Projektklonen und Checkpoints. Er kann die Grenze von 10 GB oder 100.000 Dateien überschreiten.",
+  "backup.scopeShown": "Inhalt",
+  "backup.scopeEssentialsShort": "Nur das Wichtigste",
+  "backup.scopeFullShort": "Alles"
 }

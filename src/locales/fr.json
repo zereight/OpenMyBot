@@ -3795,5 +3795,14 @@
   "computer.recovery.restart": "Redémarrer l'ordinateur",
   "computer.recovery.restartTitle": "Arrête puis relance cet ordinateur cloud. Les programmes ouverts sont fermés ; ses fichiers restent.",
   "computer.recovery.replace": "Remplacer l'ordinateur",
-  "computer.recovery.replaceTitle": "Supprime cet ordinateur cloud et en donne un nouveau au bot. Les fichiers qui ne sont que dessus sont perdus."
+  "computer.recovery.replaceTitle": "Supprime cet ordinateur cloud et en donne un nouveau au bot. Les fichiers qui ne sont que dessus sont perdus.",
+  "backup.exportTitle": "Exporter une sauvegarde",
+  "backup.scopeLabel": "Contenu",
+  "backup.scopeEssentials": "L’essentiel (recommandé)",
+  "backup.scopeEssentialsHint": "Bots, instructions, mémoire, compétences, réglages, conversations et pièces jointes. Laisse de côté les points de reprise, les journaux d’exécution, les dossiers de travail des conversations et les fichiers de projet des dossiers des bots ; une restauration sur cet ordinateur conserve ceux déjà présents.",
+  "backup.scopeFull": "Tout",
+  "backup.scopeFullHint": "Tout le dossier de données, avec les dossiers de travail, les clones de projets et les points de reprise. Il peut dépasser la limite de 10 Go ou 100 000 fichiers.",
+  "backup.scopeShown": "Contenu",
+  "backup.scopeEssentialsShort": "L’essentiel",
+  "backup.scopeFullShort": "Tout"
 }

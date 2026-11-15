@@ -178,6 +178,14 @@ it("accepts drafts between 1 and 2 MiB and enforces the preference cap in UTF-8 
   expect(readdirSync(join(dataDir, ".backups"))).toHaveLength(1);
 });
 
+it("passes the chosen backup scope to the archive, defaulting to everything, and refuses an unknown one", async () => {
+  expect((await post("/api/workspace-backup/export", { password: PASSWORD })).status).toBe(200);
+  expect((await post("/api/workspace-backup/export", { password: PASSWORD, scope: "essentials" })).status).toBe(200);
+  expect(archive.create.mock.calls.map((call) => call[1].scope)).toEqual(["full", "essentials"]);
+  expect((await post("/api/workspace-backup/export", { password: PASSWORD, scope: "partial" })).status).toBe(400);
+  expect(archive.create).toHaveBeenCalledTimes(2);
+});
+
 async function stagedRestore() {
   const uploaded = await fetch(`${url}/api/workspace-backup/upload`, { method: "POST", headers: { authorization: `Bearer ${admin.token}` }, body: "fixture bytes" }).then((response) => response.json()) as { id: string };
   return await post("/api/workspace-backup/preview", { id: uploaded.id, password: PASSWORD }).then((response) => response.json()) as { id: string };

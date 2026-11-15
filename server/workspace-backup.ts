@@ -16,10 +16,11 @@ import { WORKSPACE_BACKUP_CLIENT_KEYS } from "../shared/workspace-backup-client.
 import { INSTRUCTION_FILE, restorePaths, validRelative } from "./workspace-backup-paths.ts";
 import { cjkSearchText } from "./cjk-search.ts";
 import { ephemeralWorkspaceTokenPath, excludedWorkspaceAuthPath, liveDataEnginePath, managedTaskSkillLink, portableWorkspaceConfig, redownloadedOrgLibraryPath, restoredWorkspaceConfig } from "./workspace-backup-policy.ts";
+import { essentialArchivePath, essentialExportPath, essentialsExclusionNotes, essentialsKeptInPlace, planNestedSwap, rollbackNested, swapNested, validNestedJournal, type NestedJournal } from "./workspace-backup-essentials.ts";
 import { omittedAsTeamPrivate, routinesWithoutTeamPrivate, stripTeamPrivate, TEAM_PRIVATE_NOTE, teamPrivateAttachments, teamPrivateThreads, withoutTeamPrivate } from "./workspace-backup-team-private.ts";
-import type { WorkspaceBackupClientState, WorkspaceBackupPrivateMetadata, WorkspaceBackupSummary, WorkspaceLeftBehind } from "../shared/workspace-backup.ts";
+import type { WorkspaceBackupClientState, WorkspaceBackupPrivateMetadata, WorkspaceBackupScope, WorkspaceBackupSummary, WorkspaceLeftBehind } from "../shared/workspace-backup.ts";
 
-export type { WorkspaceBackupSummary, WorkspaceBackupPrivateMetadata } from "../shared/workspace-backup.ts";
+export type { WorkspaceBackupScope, WorkspaceBackupSummary, WorkspaceBackupPrivateMetadata } from "../shared/workspace-backup.ts";
 export const MAX_WORKSPACE_BACKUP_BYTES = 10 * 1024 ** 3;
 export const MAX_WORKSPACE_BACKUP_FILES = 100_000;
 export const MAX_WORKSPACE_BACKUP_UPLOAD_BYTES = MAX_WORKSPACE_BACKUP_BYTES + 256 * 1024 ** 2;
@@ -59,6 +60,7 @@ const EXCLUSION_NOTES = [
   "VM/container disk layers and remote cloud data; durable files inside this workspace are included.",
   "Waits bots set up: they end within a week, so ask the bot again after restoring.",
 ];
+const ESSENTIALS_EXCLUSION_NOTES = essentialsExclusionNotes(EXCLUSION_NOTES);
 const RESTORE_WARNING = "Restoring pauses routines, webhooks and calendar calls, ends every wait, and does not resume pending delegations, queued chat messages or queued runs. Definitions and historical receipts are retained; review before enabling them again.";
 
 type Entry = { path: string; type: "file" | "directory"; size: number; mode: number; sha256?: string };
@@ -66,7 +68,7 @@ interface Manifest extends WorkspaceBackupPrivateMetadata {
   sourceDataDir: string;
   entries: Entry[];
 }
-interface RestoreJournal {
+interface RestoreJournal extends NestedJournal {
   id: string;
   phase: "applying" | "committed" | "rolled-back";
   existing: string[];
@@ -76,6 +78,7 @@ export interface CreateWorkspaceBackupOptions {
   password: string;
   clientState?: WorkspaceBackupClientState;
   appVersion?: string;
+  scope?: WorkspaceBackupScope;
 }
 type CreatedWorkspaceBackup = { id: string; path: string; summary: WorkspaceBackupSummary };
 export interface WorkspaceRestoreResult {
@@ -317,6 +320,9 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
   let skippedDependencies = 0;
   let skippedWorkLinks = 0;
   let copiedLinks = 0;
+  const scope = options.scope ?? "full";
+  if (scope !== "full" && scope !== "essentials") throw new Error("Unknown workspace backup scope.");
+  const essentials = scope === "essentials";
   try {
     const root = realpathSync(dataDir);
     for (const [name, snapshotName] of Object.entries(SNAPSHOT_DATABASES)) {
@@ -342,6 +348,7 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
       for (const name of readdirSync(directory).sort()) {
         if (!prefix && excluded(name)) continue;
         const path = prefix ? `${prefix}/${name}` : name;
+        if (essentials && !essentialExportPath(path)) continue;
         if (excludedWorkspaceAuthPath(path) || ephemeralWorkspaceTokenPath(path) || redownloadedOrgLibraryPath(path) || liveDataEnginePath(path)) continue;
         if (privacy && omittedAsTeamPrivate(path, privacy)) continue;
         // Reject noncanonical spellings: a case-sensitive host must not export auth paths active on Windows/Mac.
@@ -349,6 +356,8 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
         if (!validRelative(path)) throw new Error(`Cannot back up a name that cannot be restored on every supported platform, such as one with ":" or "\\", a trailing dot or space, or a Windows device name like CON or AUX; rename it first: ${path}`);
         let source = join(directory, name);
         let stat = lstatSync(source);
+        // An essentials restore swaps bot folders' children one by one, so it only carries real folders at those levels.
+        if (essentials && !essentialArchivePath(path, stat.isDirectory() && !stat.isSymbolicLink() ? "directory" : "file")) continue;
         if (name === "node_modules" && (stat.isDirectory() || stat.isSymbolicLink())) {
           skippedDependencies++;
           continue;
@@ -423,7 +432,8 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
       directories: entries.filter((entry) => entry.type === "directory").length, bytes,
       bots: countJsonArray(join(snapshot, "data", "bots.json")), groups: countJsonArray(join(snapshot, "data", "groups.json")),
       ...databaseCounts(join(snapshot, "data", "messages.db")),
-      exclusions: EXCLUSION_NOTES, warnings,
+      ...(essentials ? { scope } : {}),
+      exclusions: essentials ? ESSENTIALS_EXCLUSION_NOTES : EXCLUSION_NOTES, warnings,
     };
     const manifest: Manifest = {
       summary, sourceDataDir: resolve(dataDir), clientState: options.clientState ?? {}, entries,
@@ -457,7 +467,8 @@ function validateManifest(value: unknown): Manifest {
     value.sourceDataDir === posix.parse(value.sourceDataDir).root || value.sourceDataDir === win32.parse(value.sourceDataDir).root ||
     value.sourceDataDir.replaceAll("\\", "/").split("/").some((part) => part === "." || part === "..") ||
     Object.keys(value).some((key) => !["summary", "sourceDataDir", "clientState", "entries"].includes(key)) ||
-    Object.keys(value.summary).some((key) => !["format", "version", "id", "createdAt", "appVersion", "files", "directories", "bytes", "bots", "groups", "threads", "messages", "exclusions", "warnings"].includes(key)) || !record(value.clientState) ||
+    Object.keys(value.summary).some((key) => !["format", "version", "id", "createdAt", "appVersion", "files", "directories", "bytes", "bots", "groups", "threads", "messages", "scope", "exclusions", "warnings"].includes(key)) ||
+    (Object.hasOwn(value.summary, "scope") && !["essentials", "full"].includes(value.summary.scope as string)) || !record(value.clientState) ||
     !Object.values(value.clientState).every((item) => typeof item === "string") || !Array.isArray(value.entries) ||
     value.entries.length > MAX_WORKSPACE_BACKUP_FILES) throw new Error("Invalid or unsupported workspace backup metadata.");
   if (Object.keys(value.clientState).some((key) => !WORKSPACE_BACKUP_CLIENT_KEYS.includes(key as typeof WORKSPACE_BACKUP_CLIENT_KEYS[number])) ||
@@ -482,6 +493,7 @@ function validateManifest(value: unknown): Manifest {
       bytes += raw.size as number;
       files++;
     } else if (raw.size !== 0) throw new Error("A backup directory has an invalid size.");
+    if (value.summary.scope === "essentials" && !essentialArchivePath(raw.path, String(raw.type))) throw new Error("An essentials backup contains files outside its scope.");
   }
   if (bytes > MAX_WORKSPACE_BACKUP_BYTES || bytes !== value.summary.bytes || files !== value.summary.files ||
     names.size - files !== value.summary.directories) {
@@ -668,6 +680,7 @@ function readJournal(path: string): RestoreJournal {
   for (const key of ["existing", "incoming"] as const) {
     if (!Array.isArray(raw[key]) || !raw[key].every((name) => typeof name === "string" && validRelative(name) && !name.includes("/") && !preserved(name)) || new Set(raw[key]).size !== raw[key].length) throw new Error("Invalid restore recovery paths.");
   }
+  if (!validNestedJournal(raw)) throw new Error("Invalid restore recovery paths.");
   return raw as unknown as RestoreJournal;
 }
 function rollback(dataDir: string, journal: RestoreJournal): void {
@@ -687,6 +700,7 @@ function rollback(dataDir: string, journal: RestoreJournal): void {
     if (entryExists(live)) throw new Error("Restore rollback found conflicting files. Both copies are preserved for recovery.");
     renameSync(original, live);
   }
+  rollbackNested(dataDir, stage, saved, journal);
   const root = backupRoot(dataDir);
   const previousReceipt = join(root, `safety-${journal.id}`, "previous-restore.json");
   const last = join(root, "last-restore.json");
@@ -929,21 +943,25 @@ export function applyPendingWorkspaceRestore(dataDir: string): WorkspaceRestoreR
   const manifest = validateStaged(staged);
   const prepared = prepareRestore(dataDir, pending.id, manifest);
   folder(join(safetyCopyPath, "data"));
+  const essentials = manifest.summary.scope === "essentials";
   const journal: RestoreJournal = {
     id: pending.id, phase: "applying",
-    existing: readdirSync(dataDir).filter((name) => !keptInPlace(name)).sort(),
-    incoming: readdirSync(prepared).sort(),
+    existing: readdirSync(dataDir).filter((name) => !keptInPlace(name) && !(essentials && essentialsKeptInPlace(name))).sort(),
+    incoming: readdirSync(prepared).filter((name) => !(essentials && essentialsKeptInPlace(name))).sort(),
   };
+  // Bot folders stay; only the children the backup carries are swapped, so nothing beside them ever moves.
+  if (essentials) Object.assign(journal, planNestedSwap(dataDir, prepared));
   // Names are checked before any move is recorded; a restored root never traverses an archive-controlled directory.
   for (const name of [...journal.existing, ...journal.incoming]) {
     if (!validRelative(name) || name.includes("/") || preserved(name)) throw new Error("Unsafe workspace restore target.");
   }
-  writeJson(join(safetyCopyPath, "manifest.json"), { id: pending.id, createdAt: new Date().toISOString(), originalEntries: journal.existing });
+  writeJson(join(safetyCopyPath, "manifest.json"), { id: pending.id, createdAt: new Date().toISOString(), originalEntries: [...journal.existing, ...(journal.nestedExisting ?? [])] });
   if (existsSync(join(root, "last-restore.json"))) writeJson(join(safetyCopyPath, "previous-restore.json"), privateJson(join(root, "last-restore.json")));
   writeJson(journalFile, journal);
   try {
     for (const name of journal.existing) renameSync(join(dataDir, name), join(safetyCopyPath, "data", name));
     for (const name of journal.incoming) if (entryExists(join(prepared, name))) renameSync(join(prepared, name), join(dataDir, name));
+    swapNested(dataDir, prepared, join(safetyCopyPath, "data"), journal);
     finishRestore(dataDir, pending.id, false);
     writeJson(journalFile, { ...journal, phase: "committed" });
   } catch (error) {

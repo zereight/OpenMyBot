@@ -119,7 +119,7 @@ describe("the Settings window", () => {
       expect(html).toMatch(/data-settings-page="transfer"[^>]*>[\s\S]*?Import &amp; export/);
       expect(html).toMatch(/<h2[^>]*>Import &amp; export<\/h2>/);
       expect(ascending(order(html, ['data-settings-block="bring-in"', 'data-import-section="grok"', "Move from Grok Bot", 'data-import-section="apps"',
-        "From your AI apps", "Import backup", 'data-settings-block="take-out"', "Export full backup"]))).toBe(true);
+        "From your AI apps", "Import backup", 'data-settings-block="take-out"', "Export backup"]))).toBe(true);
       expect(html).not.toContain("Bring in a bot from another app");
     });
 
