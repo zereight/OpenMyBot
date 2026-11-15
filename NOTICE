@@ -112,3 +112,6 @@ Teams' display-name rule. Copyright 2025-2026 Vexa.ai Inc. and the Vexa
 contributors, used under the Apache License, Version 2.0
 (third_party/vexa/LICENSE). The adapted parts were rewritten in our own code;
 no Vexa file is included unmodified.
+
+OpenMyBot is a fork of OpenMausBot (https://github.com/milind-soni/OpenMausBot).
+The OpenMausBot notice above is kept as the upstream attribution.

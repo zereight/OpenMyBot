@@ -109,7 +109,7 @@ describe("filterTasks", () => {
   });
 
   it("matches titles case-insensitively", () => {
-    expect(filterTasks(tasks, "openmaus").map((task) => task.title)).toEqual(["OpenMyBot Update"]);
+    expect(filterTasks(tasks, "openmy").map((task) => task.title)).toEqual(["OpenMyBot Update"]);
   });
 
   it("ranks prefix hits ahead of substring hits, keeping input order in each tier", () => {

@@ -11,7 +11,7 @@ import { locales } from "./index";
 const RETIRED: ReadonlyArray<readonly [string, RegExp, string]> = [
   ["OMB Cloud", /OMB Cloud/i, "MausBot Cloud"],
   ["OpenMyBot Cloud", /OpenMyBot Cloud/i, "MausBot Cloud"],
-  ["MausBot Pro", /MausBot Pro\b/, "MausBot Cloud"],
+  ["MausBot Pro", /(?:MausBot|OpenMyBot) Pro\b/, "MausBot Cloud"],
   // \b before "_" fails, so environment names such as OMB_PUBLIC_IPV4 pass.
   ["OMB", /\bOMB\b/, "MausBot"],
   ["Cloud box", /Cloud box/i, "cloud desktop"],
