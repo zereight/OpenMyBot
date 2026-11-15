@@ -15,7 +15,7 @@ if [ ! -f .env ]; then
     chmod 700 "$data_root"
     umask 077
     cat > .env <<EOF
-COMPOSE_PROJECT_NAME=openmausbot-podman
+COMPOSE_PROJECT_NAME=openmybot-podman
 OMB_DATA_ROOT=$data_root
 PODMAN_SOCKET=/run/user/$(id -u)/podman/podman.sock
 OMB_PORT=8799

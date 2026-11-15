@@ -33,6 +33,7 @@ Things the script cannot do: lowercase patterns that match the product name in r
 | `com.openmausbot.*` ids and labels, lowercase machine names (CLI, systemd units, `/opt`, `/etc`, `/var/lib` paths, localStorage `openmausbot.*`, MCP names `openmausbot_*`, `_openmausbot._tcp`, `openmausbot://`) | Already installed apps, services and saved settings use them |
 | npm package `openmausbot`, `@openmausbot/*`, `pnpm-lock.yaml` | Published package names |
 | `electron-builder.yml`, `.github/workflows/` (entry file rename only), `cloudflare/` | Release pipeline, tied to the OS product name |
+| Docker pieces that must match the server or upstream: the `/api/health` body `{"app":"openmausbot"}` that every healthcheck greps for, the `/run/openmausbot` socket folder and the `ghcr.io/milind-soni/openmausbot` image used by `deploy/` scripts, the `.github/workflows/docker.yml` tags, the `openmausbot` CLI alias in the image (`deploy/update.sh` runs `openmausbot doctor`) | Wire contract and upstream's registry. Already renamed: image / compose project / volume names, `/opt/openmybot-browser`, the `openmybot` CLI and `OMB_CLI_PREFIX` in the image |
 | `OpenMausBot.app/.exe/.dmg/.deb`, `OpenMausBot Speech/Recorder.app`, `Application Support/OpenMausBot`, `OpenMausBot Safe Storage`, `electron.app.OpenMausBot`, update feed `repo: OpenMausBot` | Derived from the OS product name (see below) |
 | `LICENSE`, `NOTICE`, `CLA.md`, `LICENSING.md`, `enterprise/`, `third_party/` | Upstream legal text. `NOTICE` has a line saying this is a fork |
 

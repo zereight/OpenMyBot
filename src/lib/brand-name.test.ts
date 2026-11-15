@@ -55,7 +55,7 @@ describe("brand name", () => {
       ["electron/desktop-server-auth.cjs", "X-OpenMausBot-Desktop-Owner"],
       ["electron-builder.yml", "productName: OpenMausBot"],
       ["electron-builder.yml", "appId: com.openmausbot.app"],
-      ["Dockerfile", "> /usr/local/bin/openmausbot"],
+      ["Dockerfile", "ln -s openmybot /usr/local/bin/openmausbot"],
       ["NOTICE", "OpenMausBot"],
     ];
     for (const [file, needle] of expectations) {

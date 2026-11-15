@@ -18,7 +18,7 @@ below. `repo` must be the candidate checkout's absolute Linux path, for example
 
 ```sh
 cd "$repo"
-podman build -f deploy/podman/Containerfile -t localhost/openmausbot-podman:verify .
+podman build -f deploy/podman/Containerfile -t localhost/openmybot-podman:verify .
 fixture=$(mktemp -d /tmp/omb-podman-verify-XXXXXXXX)
 mkdir -m 700 "$fixture/.openmausbot"
 cp server/testing/fake-claude-cli.ts "$fixture/fake-claude-cli.ts"
