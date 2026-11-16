@@ -2,7 +2,7 @@ import { createElement, type ComponentProps, type MemoExoticComponent, type Reac
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "@/lib/i18n";
-import { formatUpdatedAt, nextSnoozeExpiry, orderedSidebarThreads, orderedThreadList, SidebarThreadRow, stampClock, threadByline, threadOpenerLabel, threadUpdatedLabel, visibleSidebarThreads } from "./SidebarThreadRow";
+import { archivedLast, formatUpdatedAt, nextSnoozeExpiry, orderedSidebarThreads, orderedThreadList, SidebarThreadRow, stampClock, threadByline, threadOpenerLabel, threadUpdatedLabel, visibleSidebarThreads } from "./SidebarThreadRow";
 
 type ThreadRowProps = ComponentProps<typeof SidebarThreadRow>;
 
@@ -42,9 +42,9 @@ afterEach(() => setLocale("en"));
 
 describe("sidebar thread visibility", () => {
   const tasks = Array.from({ length: 10 }, (_, index) => ({ threadId: String(index), title: `Thread ${index}`, ...(index > 7 ? { projectId: "research" } : {}) }));
-  it("keeps the active and attention-needed threads visible beyond the six recent rows", () => {
+  it("lists every live thread, with no cap on recent rows", () => {
     const rows = tasks.map((task) => ({ ...task, busy: task.threadId === "7", unread: task.threadId === "9" }));
-    expect(visibleSidebarThreads(rows, "8").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "7", "8", "9"]);
+    expect(visibleSidebarThreads(rows, "8").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]);
     expect(visibleSidebarThreads(rows, "8", "", [], true)).toEqual(rows);
   });
 
@@ -90,11 +90,11 @@ describe("sidebar thread visibility", () => {
   });
   it("keeps queued older threads visible", () => {
     const rows = tasks.map((task) => ({ ...task, queued: task.threadId === "9" }));
-    expect(visibleSidebarThreads(rows, "0").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "9"]);
+    expect(visibleSidebarThreads(rows, "0").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]);
   });
   it("never hides an older approval just because its busy flag is false", () => {
     const rows = tasks.map((task) => ({ ...task, busy: false, activity: task.threadId === "9" ? "waiting-on-you" as const : "idle" as const }));
-    expect(visibleSidebarThreads(rows, "0").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "9"]);
+    expect(visibleSidebarThreads(rows, "0").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]);
   });
   it("shows Queued only for idle threads, preserving Working and Waiting", () => {
     const render = (busy = false, activity?: "waiting-on-you") => renderToStaticMarkup(createElement(SidebarThreadRow, {
@@ -121,10 +121,10 @@ describe("threads waiting on a teammate", () => {
     expect(markup).toContain('aria-label="Waiting on teammate"');
     expect(markup).not.toContain("animate-spin");
   });
-  it("keeps an older waiting thread visible past the six recent rows", () => {
+  it("keeps an older waiting thread visible", () => {
     const rows = Array.from({ length: 9 }, (_, index) => ({ threadId: String(index), title: `Thread ${index}` }));
     const waiting = [...rows, { threadId: "dispatch", title: "Dispatch", waitingForTeammates: true as const, busy: false }];
-    expect(visibleSidebarThreads(waiting, "0").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "dispatch"]);
+    expect(visibleSidebarThreads(waiting, "0").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "6", "7", "8", "dispatch"]);
   });
   it("surfaces the live activity label the chat pane derives while the row works", () => {
     const markup = render({ threadId: "live", title: "Live work", busy: true, activity: "working" }, { activityLabel: "Reading a file" });
@@ -158,7 +158,7 @@ describe("threads a bot opened", () => {
     expect(waiting).toContain("opened by Scout");
     const rows = Array.from({ length: 9 }, (_, index) => ({ threadId: String(index), title: `Thread ${index}` }));
     const opened = [...rows, { threadId: "qa", title: "QA PR 245", openedBy, activity: "waiting-on-you" as const, busy: false }];
-    expect(visibleSidebarThreads(opened, "0").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "qa"]);
+    expect(visibleSidebarThreads(opened, "0").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "6", "7", "8", "qa"]);
   });
 });
 
@@ -166,17 +166,17 @@ describe("snoozed threads", () => {
   const rows = Array.from({ length: 9 }, (_, index) => ({ threadId: String(index), title: `Thread ${index}` }));
   it("never strands an approval: a snoozed thread that is waiting on the person stays visible", () => {
     const snoozed = [...rows, { threadId: "approval", title: "Approve deploy", snoozedUntil: 0, activity: "waiting-on-you" as const, busy: false }];
-    expect(visibleSidebarThreads(snoozed, "0").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "approval"]);
+    expect(visibleSidebarThreads(snoozed, "0").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "6", "7", "8", "approval"]);
   });
   it("folds an idle snoozed thread out of the default list while show-all and search still list it", () => {
     const withSnoozed = [{ ...rows[0], snoozedUntil: Date.now() + 3_600_000 }, ...rows.slice(1)];
-    expect(visibleSidebarThreads(withSnoozed, "8").map((task) => task.threadId)).toEqual(["1", "2", "3", "4", "5", "6", "8"]);
+    expect(visibleSidebarThreads(withSnoozed, "8").map((task) => task.threadId)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
     expect(visibleSidebarThreads(withSnoozed, "8", "", [], true)).toEqual(withSnoozed);
     expect(visibleSidebarThreads(withSnoozed, "8", "thread 0").map((task) => task.threadId)).toEqual(["0"]);
   });
   it("treats snoozedUntil: 0 as snoozed — presence, not truthiness — and says so in the byline", () => {
     const sentinel = [{ ...rows[0], snoozedUntil: 0 }, ...rows.slice(1)];
-    expect(visibleSidebarThreads(sentinel, "8").map((task) => task.threadId)).toEqual(["1", "2", "3", "4", "5", "6", "8"]);
+    expect(visibleSidebarThreads(sentinel, "8").map((task) => task.threadId)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
     expect(threadByline({ snoozedUntil: 0 })).toBe("Snoozed");
     expect(threadByline({ archivedAt: 5, snoozedUntil: 0 })).toBe("Archived");
     expect(threadByline({})).toBeNull();
@@ -184,9 +184,9 @@ describe("snoozed threads", () => {
   it("wakes a timed snooze once its moment passes, without waiting for a fresh snapshot", () => {
     const now = Date.now();
     const expired = [{ ...rows[0], snoozedUntil: now - 1 }, ...rows.slice(1)];
-    expect(visibleSidebarThreads(expired, "8").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "8"]);
+    expect(visibleSidebarThreads(expired, "8").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "6", "7", "8"]);
     expect(threadByline({ snoozedUntil: now - 1 })).toBeNull();
-    expect(visibleSidebarThreads([{ ...rows[0], snoozedUntil: now + 3_600_000 }, ...rows.slice(1)], "8").map((task) => task.threadId)).toEqual(["1", "2", "3", "4", "5", "6", "8"]);
+    expect(visibleSidebarThreads([{ ...rows[0], snoozedUntil: now + 3_600_000 }, ...rows.slice(1)], "8").map((task) => task.threadId)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
   });
   it("schedules the next wake at the soonest future timed snooze, skipping the sentinel and the past", () => {
     const now = Date.now();
@@ -220,7 +220,7 @@ describe("threads a bot opened", () => {
     expect(waiting).toContain("opened by Scout");
     const rows = Array.from({ length: 9 }, (_, index) => ({ threadId: String(index), title: `Thread ${index}` }));
     const opened = [...rows, { threadId: "qa", title: "QA PR 245", openedBy, activity: "waiting-on-you" as const, busy: false }];
-    expect(visibleSidebarThreads(opened, "0").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "qa"]);
+    expect(visibleSidebarThreads(opened, "0").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "6", "7", "8", "qa"]);
   });
 });
 
@@ -230,10 +230,10 @@ describe("threads a bot closed", () => {
   const render = (task: ThreadRowProps["task"], current = false) => renderToStaticMarkup(createElement(SidebarThreadRow, {
     task, ownerId: "pm", current, onSelect: vi.fn(), onRename: vi.fn(), onDelete: vi.fn(), locale: "en",
   }));
-  it("folds closed threads out of the default list without spending the six recent rows on them", () => {
+  it("folds closed threads out of the default list and lists every open one", () => {
     const helpers = Array.from({ length: 3 }, (_, index) => ({ threadId: `h${index}`, title: `Helper ${index}`, openedBy, closedBy }));
     const own = Array.from({ length: 8 }, (_, index) => ({ threadId: String(index), title: `Thread ${index}` }));
-    expect(visibleSidebarThreads([...helpers, ...own], "0").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5"]);
+    expect(visibleSidebarThreads([...helpers, ...own], "0").map((task) => task.threadId)).toEqual(["0", "1", "2", "3", "4", "5", "6", "7"]);
     expect(visibleSidebarThreads([...helpers, ...own], "0", "", [], true)).toHaveLength(11);
     expect(visibleSidebarThreads([...helpers, ...own], "0", "helper 1").map((task) => task.threadId)).toEqual(["h1"]);
   });
@@ -480,11 +480,39 @@ describe("orderedSidebarThreads", () => {
   });
 });
 
+describe("archived threads sink to the bottom", () => {
+  it("keeps live threads first in their order and archived ones last in theirs", () => {
+    const rows = [
+      { threadId: "a1", archivedAt: 1 }, { threadId: "l1" }, { threadId: "a2", archivedAt: 0 }, { threadId: "l2" }, { threadId: "l3" },
+    ];
+    expect(archivedLast(rows).map((task) => task.threadId)).toEqual(["l1", "l2", "l3", "a1", "a2"]);
+    expect(archivedLast([])).toEqual([]);
+  });
+  it("puts an archived thread last after show-all and ordering, even a pinned or newer one", () => {
+    const rows = [
+      { threadId: "old-archived", title: "x", archivedAt: 9, lastThreadOrderAt: 90, createdAt: 1 },
+      { threadId: "pinned-archived", title: "x", archivedAt: 9, pinned: true, createdAt: 2 },
+      { threadId: "live-old", title: "x", lastThreadOrderAt: 1, createdAt: 3 },
+      { threadId: "live-new", title: "x", lastThreadOrderAt: 50, createdAt: 4 },
+    ];
+    const listed = archivedLast(orderedThreadList(visibleSidebarThreads(rows, "live-new", "", [], true)));
+    expect(listed.map((task) => task.threadId)).toEqual(["live-new", "live-old", "pinned-archived", "old-archived"]);
+  });
+  it("shows all 12 live threads by default and leaves the archived ones for show-all", () => {
+    const live = Array.from({ length: 12 }, (_, index) => ({ threadId: `t${index}`, title: `T${index}`, createdAt: 100 - index }));
+    const archived = [{ threadId: "z1", title: "Z1", archivedAt: 5, createdAt: 200 }, { threadId: "z2", title: "Z2", archivedAt: 5, createdAt: 199 }];
+    const all: { threadId: string; title: string; createdAt: number; archivedAt?: number }[] = [archived[0], ...live.slice(0, 6), archived[1], ...live.slice(6)];
+    expect(visibleSidebarThreads(all, "t0")).toHaveLength(12);
+    expect(visibleSidebarThreads(all, "t0").some((task) => "archivedAt" in task)).toBe(false);
+    expect(archivedLast(orderedThreadList(visibleSidebarThreads(all, "t0", "", [], true))).map((task) => task.threadId).slice(-2)).toEqual(["z1", "z2"]);
+  });
+});
+
 describe("archived threads", () => {
   const render = (task: ThreadRowProps["task"]) => renderToStaticMarkup(createElement(SidebarThreadRow, {
     task, ownerId: "scout", current: false, onSelect: vi.fn(), onRename: vi.fn(), onDelete: vi.fn(), locale: "en",
   }));
-  it("keeps the six newest open threads, and does not spend those slots on a pin", () => {
+  it("lists every open thread newest first, with a pin on top and closed threads folded away", () => {
     const rows = [
       { threadId: "old-open", title: "Old", createdAt: 1, lastThreadOrderAt: 1 },
       { threadId: "newer", title: "Newer", createdAt: 2, lastThreadOrderAt: 50 },
@@ -496,7 +524,7 @@ describe("archived threads", () => {
       { threadId: "pinned-closed", title: "Pinned", createdAt: 8, updatedAt: 2, pinned: true, closedBy: { botId: "b", name: "Scout", at: 2 } },
     ];
     expect(visibleSidebarThreads(rows, "none").map((task) => task.threadId)).toEqual([
-      "pinned-closed", "newer", "mid", "also", "fourth", "fifth", "sixth",
+      "pinned-closed", "newer", "mid", "also", "fourth", "fifth", "sixth", "old-open",
     ]);
   });
   it("keeps archived threads out of the default list until the person unarchives them, even when they need the person", () => {
@@ -770,28 +798,22 @@ describe("threads a bot opened", () => {
     expect(markup).toContain('aria-label="opened by Pepper"');
   });
 
-  it("keeps bot-opened threads in the list by recency, on rows of their own so the person's six stay put", () => {
+  it("lists bot-opened threads next to the person's own by recency, with no cap on either", () => {
     const own = Array.from({ length: 8 }, (_, index) => thread(`own-${index}`, { createdAt: 100 - index }));
     const bots = Array.from({ length: 5 }, (_, index) => thread(`bot-${index}`, { openedBy: opener, createdAt: 200 - index }));
     expect(visibleSidebarThreads([...own, ...bots], "own-0").map((task) => task.threadId)).toEqual(
-      ["bot-0", "bot-1", "bot-2", "own-0", "own-1", "own-2", "own-3", "own-4", "own-5"],
+      ["bot-0", "bot-1", "bot-2", "bot-3", "bot-4", "own-0", "own-1", "own-2", "own-3", "own-4", "own-5", "own-6", "own-7"],
     );
     expect(visibleSidebarThreads([...own, ...bots], "own-0", "", [], true)).toHaveLength(13);
   });
 
-  it("keeps a bot-opened thread in view while it needs the person or is doing something", () => {
+  it("still folds a bot-opened thread's closed and burst-part cases, but never caps the open ones", () => {
     const tasks = [
       thread("a", { openedBy: opener }), thread("b", { openedBy: opener }), thread("c", { openedBy: opener }),
-      thread("approval", { openedBy: opener, activity: "waiting-on-you" }),
-      thread("reply", { openedBy: opener, unread: true }),
-      thread("working", { openedBy: opener, busy: true }),
-      thread("waiting", { openedBy: opener, waitingForTeammates: true }),
-      thread("queued", { openedBy: opener, queued: true }),
-      thread("pinned", { openedBy: opener, pinned: true }),
-      thread("quiet", { openedBy: opener }),
+      thread("d", { openedBy: opener }), thread("approval", { openedBy: opener, activity: "waiting-on-you" }),
+      thread("closed", { openedBy: opener, closedBy: { botId: "b", name: "Scout", at: 2 } }),
     ];
-    expect(visibleSidebarThreads(tasks, "a").map((task) => task.threadId).sort())
-      .toEqual(["a", "approval", "b", "c", "pinned", "queued", "reply", "waiting", "working"].sort());
+    expect(visibleSidebarThreads(tasks, "a").map((task) => task.threadId).sort()).toEqual(["a", "approval", "b", "c", "d"]);
   });
 
   it("finds bot-opened threads when searching", () => {

@@ -104,7 +104,7 @@ describe("sidebar bot threads", () => {
     }
   });
 
-  it("lists threads another bot opened in the same list, badged, without spending the six visible rows, and keeps one at work in view", () => {
+  it("lists threads another bot opened in the same list, badged, next to every one of the person's own", () => {
     const openedBy = { botId: "pepper", name: "Pepper", at: 1 };
     const own = Array.from({ length: 7 }, (_, index) => ({ threadId: `own-${index}`, title: `Own ${index}`, createdAt: 10 + index, busy: false, activity: "idle" as const }));
     const helpers = [
@@ -119,19 +119,23 @@ describe("sidebar bot threads", () => {
     expect(markup).toContain('data-sidebar-thread-row="review"');
     expect(markup.match(/aria-label="opened by Pepper"/g)).toHaveLength(3);
     expect(markup.indexOf('data-sidebar-thread-row="pricing"')).toBeLessThan(markup.indexOf('data-sidebar-thread-row="own-6"'));
-    expect(markup).toContain("Show all 10 threads");
+    expect(markup).toContain('data-sidebar-thread-row="own-0"');
+    expect(markup).not.toContain("Show all");
     const searched = renderToStaticMarkup(threadList({ ...bot, threadId: "own-6", tasks: [...own, ...helpers] }, "pricing"));
     expect(searched).toContain('data-sidebar-thread-row="pricing"');
   });
 
-  it("shows a bot-opened thread past the three-row limit only through Show all", () => {
+  it("shows every bot-opened thread, with no Show all while nothing is archived", () => {
     const openedBy = { botId: "pepper", name: "Pepper", at: 1 };
     const helpers = Array.from({ length: 5 }, (_, index) => ({ threadId: `h-${index}`, title: `Helper ${index}`, createdAt: 30 + index, busy: false, activity: "idle" as const, openedBy }));
     const own = [{ threadId: "mine", title: "Mine", createdAt: 1, busy: false, activity: "idle" as const }];
     const markup = renderToStaticMarkup(threadList({ ...bot, threadId: "mine", tasks: [...own, ...helpers] }));
-    expect(markup).not.toContain('data-sidebar-thread-row="h-0"');
+    expect(markup).toContain('data-sidebar-thread-row="h-0"');
     expect(markup).toContain('data-sidebar-thread-row="h-4"');
-    expect(markup).toContain("Show all 6 threads");
+    expect(markup).not.toContain("Show all");
+    const withArchived = renderToStaticMarkup(threadList({ ...bot, threadId: "mine", tasks: [...own, ...helpers, { threadId: "old", title: "Old", createdAt: 0, archivedAt: 5, busy: false, activity: "idle" as const }] }));
+    expect(withArchived).not.toContain('data-sidebar-thread-row="old"');
+    expect(withArchived).toContain("Show all 7 threads");
   });
 
   it("exposes group history through the same nested thread rows and All threads picker", () => {
