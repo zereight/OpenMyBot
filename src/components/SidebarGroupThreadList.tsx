@@ -3,7 +3,7 @@ import { useStore, type Group } from "@/state/store";
 import { activeLocale, t } from "@/lib/i18n";
 import { roomThreadSpeakerId, roomThreadWorking } from "@/lib/room-threads";
 import { BulkSelectFilters, ThreadListFooter, deleteThreadsInBulk, useBulkSelect } from "./BulkSelectBar";
-import { orderedThreadList, SidebarThreadRow, stampClock, threadRecency, useRelativeNow, useRevealedThreadRow, visibleSidebarThreads } from "./SidebarThreadRow";
+import { archivedLast, orderedThreadList, SidebarThreadRow, stampClock, threadRecency, useRelativeNow, useRevealedThreadRow, visibleSidebarThreads } from "./SidebarThreadRow";
 
 export function GroupThreadList({ group, selected, query = "" }: { group: Group; selected: boolean; query?: string }) {
   const { state, dispatch } = useStore();
@@ -18,7 +18,7 @@ export function GroupThreadList({ group, selected, query = "" }: { group: Group;
     };
   });
   const bulk = useBulkSelect();
-  const visible = orderedThreadList(visibleSidebarThreads(tasks, group.threadId, query, [], showAll || bulk.active));
+  const visible = archivedLast(orderedThreadList(visibleSidebarThreads(tasks, group.threadId, query, [], showAll || bulk.active)));
   const selection = bulk.forRows(visible);
   useRevealedThreadRow(state.revealThread, selected ? group.threadId : null);
   const latest = useRef(group);

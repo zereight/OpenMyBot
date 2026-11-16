@@ -14,14 +14,14 @@ import { threadRefUrl } from "@/lib/thread-refs";
 import { copyText } from "@/lib/copy-text";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { threadLinkLabel } from "../../shared/thread-link";
-import { isSnoozed, orderedThreadList } from "../../shared/thread-order";
+import { archivedLast, isSnoozed, orderedThreadList } from "../../shared/thread-order";
 import { Select } from "./Select";
 import { WorkingTimer } from "./WorkingIndicator";
 import { useHeldText } from "./SidebarWorkingStep";
 import { localizedTaskTitle } from "@/lib/task-title";
 import { ShareRowItems } from "./conversation-share/ShareRowItems";
 
-export { isSnoozed, orderedThreadList };
+export { archivedLast, isSnoozed, orderedThreadList };
 
 type ThreadRowTask = Pick<Task, "threadId" | "title" | "sharedChat" | "private" | "shared" | "sharedWith" | "projectId" | "busy" | "activity" | "unread" | "openedBy" | "closedBy" | "archivedAt" | "snoozedUntil" | "waitingForTeammates" | "link" | "turnStartedAt"> & {
   queued?: boolean;
@@ -97,18 +97,13 @@ const isWaitingOnTeammate = (task: Pick<Task, "waitingForTeammates">): boolean =
 const demandsAttention = (task: ThreadRowTask, activeId: string) =>
   task.threadId === activeId || task.activity === "waiting-on-you" || isWorking(task) || isWaitingOnTeammate(task) || Boolean(task.queued) || Boolean(task.unread);
 
-/** Threads a bot opened sit in the list by recency but spend their own rows, so they never push the person's threads out of the six. */
-const BOT_OPENED_VISIBLE = 3;
-
-/** Default list shows each routine's newest run only; older runs stay under "Show all". */
+/** Default list shows every live thread, folding only archived ones, closed or snoozed ones that need nothing, and each routine's older runs; "Show all" lists those too. */
 export function visibleSidebarThreads<T extends ThreadRowTask>(tasks: T[], activeId: string, query = "", folders: BotProject[] = [], showAll = false, routineRuns: readonly Pick<RoutineRun, "routineId" | "threadId" | "createdAt">[] = []): T[] {
   const needle = query.trim().toLowerCase();
   if (needle) {
     return tasks.filter((task) => task.title.toLowerCase().includes(needle) || folders.some((folder) => folder.id === task.projectId && folder.name.toLowerCase().includes(needle)));
   }
   if (showAll) return tasks;
-  let open = 0;
-  let botOpened = 0;
   const runOf = new Map(routineRuns.flatMap((run) => run.threadId ? [[run.threadId, run] as const] : []));
   // Newest by the run's start, not sidebar order (an older run that finished later sorts first), among runs the list can show.
   const newestRun = new Map<string, Pick<RoutineRun, "routineId" | "createdAt">>();
@@ -126,8 +121,7 @@ export function visibleSidebarThreads<T extends ThreadRowTask>(tasks: T[], activ
     const run = runOf.get(task.threadId);
     if (run && newestRun.get(run.routineId) !== run) return demandsAttention(task, activeId);
     if (task.closedBy || isSnoozed(task)) return demandsAttention(task, activeId);
-    if (task.openedBy) return botOpened++ < BOT_OPENED_VISIBLE || demandsAttention(task, activeId);
-    return open++ < 6 || demandsAttention(task, activeId);
+    return true;
   });
 }
 
