@@ -50,6 +50,7 @@ export interface ChromeEngineOptions {
   held?(session: string): boolean;
   egressNotice(key: string): string | null;
   language?(): string | undefined;
+  preferDownloaded?(): boolean;
   log?: (line: string) => void;
 }
 
@@ -71,7 +72,7 @@ export class ChromeEngine {
     const env = options.env ?? process.env;
     const platform = options.platform ?? process.platform;
     const sandbox = !sandboxDisabled(env);
-    this.launcher = new ChromeLauncher({ dataDir: options.dataDir, env, platform, language: options.language, engine: () => ({ managed: true }), wrapper: false, sandbox, ...(options.log ? { log: options.log } : {}) });
+    this.launcher = new ChromeLauncher({ dataDir: options.dataDir, env, platform, language: options.language, preferDownloaded: options.preferDownloaded, engine: () => ({ managed: true }), wrapper: false, sandbox, ...(options.log ? { log: options.log } : {}) });
     this.#registry = new ProcessRegistry(browserRoot(options.dataDir));
     let screen: ReturnType<typeof displayScreen> | null = null;
     const locale = () => browserLanguage(env, options.language?.()) ?? null;

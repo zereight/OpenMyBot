@@ -410,6 +410,22 @@ export class BrowserService {
     await Promise.all(this.profiles().map((profile) => this.#stop(profile, null)));
   }
 
+  /** Closes only running profiles that have no active tool calls or holds; leaves busy profiles running. */
+  async closeIdleNow(): Promise<{ closed: number; deferred: number }> {
+    let closed = 0;
+    let deferred = 0;
+    for (const profile of this.profiles()) {
+      if (!profile.run && !profile.starting) continue;
+      if (!this.#unused(profile, 0)) {
+        deferred++;
+        continue;
+      }
+      await this.#stop(profile, null);
+      closed++;
+    }
+    return { closed, deferred };
+  }
+
   // Bot calls.
 
   async agentRpc(target: BrowserTarget, method: "tools/list" | "tools/call", params: unknown, beforeDispatch?: () => void): Promise<unknown> {

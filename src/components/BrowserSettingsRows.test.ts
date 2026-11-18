@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setLocale } from "@/lib/i18n";
-import { BrowserProxyRow, NewBrowserSettings, ServerSitesRow } from "./BrowserSettingsRows";
+import { BrowserChromeUpdateRow, BrowserProxyRow, NewBrowserSettings, ServerSitesRow } from "./BrowserSettingsRows";
 
 const fixture = vi.hoisted(() => ({
   config: undefined as Record<string, unknown> | undefined,
@@ -150,5 +150,86 @@ describe("Built-in browser proxy setting", () => {
     fixture.config = { team: { id: "team", name: "Team" }, features: { browser: true }, browserEngine: { kind: "engine", proxyEditable: true } };
     show();
     expect(host.querySelector('input[aria-label="SOCKS5 proxy"]')).not.toBeNull();
+  });
+});
+
+describe("Built-in Chrome update", () => {
+  const show = () => flushSync(() => root.render(createElement(BrowserChromeUpdateRow)));
+  afterEach(() => { owner.value = true; });
+
+  it("shows profile mismatch status and triggers bulk update via POST /api/browser-chrome/update", async () => {
+    fixture.config = { features: { browser: true }, browserEngine: { kind: "engine" } };
+    fixture.api
+      .mockResolvedValueOnce({
+        currentVersion: "157.0.8103.51",
+        currentSource: "installed",
+        currentDescription: "Google Chrome 157.0.8103.51",
+        latestVersion: "158.0.8127.36",
+        latestError: null,
+        updatable: true,
+        notUpdatableReason: null,
+        updateAvailable: true,
+        profiles: { total: 2, maxVersion: "158.0.8127.36", mismatchedCount: 1 },
+        updating: false,
+        phase: "idle",
+        progress: null,
+        error: null,
+        closedSessions: 0,
+        deferredSessions: 0,
+      })
+      .mockResolvedValueOnce({
+        currentVersion: "157.0.8103.51",
+        currentSource: "installed",
+        currentDescription: "Google Chrome 157.0.8103.51",
+        latestVersion: "158.0.8127.36",
+        latestError: null,
+        updatable: true,
+        notUpdatableReason: null,
+        updateAvailable: true,
+        profiles: { total: 2, maxVersion: "158.0.8127.36", mismatchedCount: 1 },
+        updating: true,
+        phase: "downloading",
+        progress: { received: 50 * 1_048_576, total: 100 * 1_048_576 },
+        error: null,
+        closedSessions: 0,
+        deferredSessions: 0,
+      });
+
+    show();
+    await vi.waitFor(() => expect(host.textContent).toContain("1 profile(s) require Chrome 158.0.8127.36"));
+    const updateBtn = [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Update all")!;
+    expect(updateBtn.disabled).toBe(false);
+
+    flushSync(() => updateBtn.click());
+    await vi.waitFor(() => expect(fixture.api).toHaveBeenCalledWith("/api/browser-chrome/update", {
+      method: "POST",
+      body: JSON.stringify({}),
+    }));
+    await vi.waitFor(() => expect(host.textContent).toContain("50 / 100 MB"));
+  });
+
+  it("disables update when environment is not updatable", async () => {
+    fixture.config = { features: { browser: true }, browserEngine: { kind: "engine" } };
+    fixture.api.mockResolvedValueOnce({
+      currentVersion: "157.0.8103.51",
+      currentSource: "named",
+      currentDescription: "Chrome 157.0.8103.51",
+      latestVersion: null,
+      latestError: null,
+      updatable: false,
+      notUpdatableReason: "Browser executable is pinned by environment variable.",
+      updateAvailable: false,
+      profiles: { total: 0, maxVersion: null, mismatchedCount: 0 },
+      updating: false,
+      phase: "idle",
+      progress: null,
+      error: null,
+      closedSessions: 0,
+      deferredSessions: 0,
+    });
+    show();
+    await vi.waitFor(() => expect(host.textContent).toContain("Browser executable is pinned by environment variable."));
+    const updateBtn = [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Update all")!;
+    expect(updateBtn.disabled).toBe(true);
   });
 });

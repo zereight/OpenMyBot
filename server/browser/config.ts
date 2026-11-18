@@ -26,6 +26,8 @@ export const browserEngineConfigSchema = z.object({
   egress: browserEgressConfigSchema.optional(),
   /** "chrome" runs the bots' browsers on OpenMyBot's own Chrome driver, an early test; agent-browser is the default. */
   engine: z.enum(["agent-browser", "chrome"]).optional(),
+  /** Prefer downloaded Chrome for Testing over an installed system Google Chrome after an explicit update. */
+  preferChromeForTesting: z.boolean().optional(),
 });
 
 export interface BrowserEngineConfig {
@@ -33,6 +35,7 @@ export interface BrowserEngineConfig {
   idleTimeoutMinutes?: number;
   egress?: BrowserEgressConfig;
   engine?: BrowserEngineKind;
+  preferChromeForTesting?: boolean;
 }
 
 export function browserEngineKind(cfg: { browserEngine?: BrowserEngineConfig }): BrowserEngineKind {

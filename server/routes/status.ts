@@ -2,6 +2,7 @@ import { readBotActivity } from "../activity.ts";
 import { activityCsv, activityEntries, parseActivityWhat, readAdminActivityRange } from "../admin-activity.ts";
 import { loadBrand } from "../brand.ts";
 import { browserEngineStatus, ensureChrome, installAgentBrowserBinary, resolveAgentBrowserBinary } from "../browser-engine.ts";
+import type { ChromeUpdater } from "../browser/chrome/updater.ts";
 import { DATA_DIR, EVENTS_DIR, NATIVE_DIR, instanceConfigs, type AppConfig } from "../config.ts";
 import { boundRetentionDays, decisionsCsv, readDecisionRange, readDecisions, type DecisionRow } from "../decision-log.ts";
 import { flushNativeLog } from "../drivers/native.ts";
@@ -18,7 +19,7 @@ import { readThreadEvents } from "../thread-events.ts";
 import { parseUsageRange } from "../usage-ledger.ts";
 import type { ConfigStatus } from "./config.ts";
 import type { PrivateRecords } from "../host/private-records.ts";
-import type { RequestAuth } from "../request-auth.ts";
+import { ownerOrAdmin, type RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
 export interface StatusRouteDeps {
@@ -31,6 +32,7 @@ export interface StatusRouteDeps {
   broadcast(payload: Record<string, unknown>): void;
   browserEngineInstall: { get(): Promise<void> | null; set(install: Promise<void> | null): void };
   browserEngineInstallError: { set(error: string | null): void };
+  chromeUpdater?: Pick<ChromeUpdater, "status" | "startUpdate">;
   /** On a Team Cloud: false for someone else's private chat, whose words never reach this session's lists. */
   threadShown?(auth: RequestAuth): (threadId: string) => boolean;
   /** On a Team Cloud: the decision and admin rows as this reader may see them (host/private-records.ts). */
@@ -80,6 +82,27 @@ export function createStatusRoutes(deps: StatusRouteDeps): RouteHandler {
         broadcast({ kind: "config", ...configStatus() });
       }
       return json(res, 202, { installing: true });
+    }
+    if (method === "GET" && path === "/api/browser-chrome/status") {
+      if (!ownerOrAdmin(auth)) return json(res, 403, { error: "admin access required" });
+      if (!deps.chromeUpdater) return json(res, 404, { error: "browser updater is unavailable" });
+      res.setHeader("cache-control", "no-store");
+      const forceCheck = url.searchParams.get("refresh") === "1";
+      return json(res, 200, await deps.chromeUpdater.status({ forceCheck }));
+    }
+    // JSON-only, so a form posted from another local page cannot start the update.
+    if (method === "POST" && path === "/api/browser-chrome/update") {
+      if (!ownerOrAdmin(auth)) return json(res, 403, { error: "admin access required" });
+      const mediaType = String(req.headers["content-type"] ?? "").split(";", 1)[0].trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return json(res, 415, { error: "content-type must be application/json" });
+      }
+      if (!deps.chromeUpdater) return json(res, 404, { error: "browser updater is unavailable" });
+      const result = deps.chromeUpdater.startUpdate();
+      if (!result.started && result.conflict) {
+        return json(res, 409, { ...result.status, error: result.conflict });
+      }
+      return json(res, 202, result.status);
     }
     // Admin scope plus the `admin` entitlement; the socket's own permissions decide whether this workspace may drive the agent.
     const fleetRoute = /^\/api\/fleet(?:\/(workspaces(?:\/([a-z0-9-]+)(?:\/(users|suspend|resume))?)?|upgrade))?$/.exec(path);
