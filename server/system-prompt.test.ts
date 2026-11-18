@@ -343,6 +343,12 @@ describe("shared sentences", () => {
     expect(CREDENTIAL_PROMPT).toContain("secure credential request");
     expect(CREDENTIAL_PROMPT).not.toContain("applied immediately");
   });
+
+  it("omits a literal /learn slash token from LEARN_PROMPT so ACP CLIs do not auto-expand it", () => {
+    expect(LEARN_PROMPT).toContain("skills_list and skill_manage");
+    expect(LEARN_PROMPT).toContain("learn command");
+    expect(LEARN_PROMPT).not.toMatch(/(?:^|\s)\/learn\b/i);
+  });
 });
 
 describe("composioSystemPrompt", () => {
