@@ -75,7 +75,8 @@ export async function runMemoryEval(cases: readonly MemoryEvalCase[]): Promise<M
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const tempRoot = mkdtempSync(join(tmpdir(), "omb-memory-eval-"));
-  process.env.OPENMAUSBOT_DATA_DIR = tempRoot;
+  process.env.HOME = tempRoot;
+  process.env.USERPROFILE = tempRoot;
   try {
     const cases = JSON.parse(readFileSync(args.casesPath, "utf8")) as MemoryEvalCase[];
     const report = await runMemoryEval(cases);
