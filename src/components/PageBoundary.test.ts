@@ -14,10 +14,15 @@ function Broken() {
 }
 
 describe("PageBoundary", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    delete (window as { ogb?: unknown }).ogb;
+    vi.restoreAllMocks();
+  });
 
   it("keeps the page up, with the error and a reload, when a part of it throws in an effect", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
+    const reportDiagnostic = vi.fn();
+    (window as { ogb?: unknown }).ogb = { reportDiagnostic };
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
@@ -26,6 +31,11 @@ describe("PageBoundary", () => {
     expect(host.textContent).toContain("This page hit an error.");
     expect(host.textContent).toContain("desktop.shown is not a function");
     expect(host.querySelector("button")?.textContent).toBe("Reload");
+    expect(reportDiagnostic).toHaveBeenCalledWith({
+      kind: "renderer-error",
+      origin: "error-boundary",
+      error: { name: "TypeError" },
+    });
     root.unmount();
     host.remove();
   });

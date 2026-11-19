@@ -433,6 +433,12 @@ const __APP_VERSION__: string;
       /** Writes the redacted diagnostics report to a user-chosen file;
        * resolves the path, or null when cancelled. */
       exportDiagnostics?(): Promise<string | null>;
+      /** Reports a privacy-safe renderer diagnostic event (error name or API timeout metadata) to the desktop crash log. */
+      reportDiagnostic?(
+        event:
+          | { kind: "renderer-error"; origin: "error" | "unhandledrejection" | "error-boundary"; error?: { name?: string } }
+          | { kind: "api-timeout"; method: string; timeoutMs: number },
+      ): void;
       /** Asks where to save a bot-created file (inside ~/.openmausbot), copies
        * it there and reveals it. Resolves the chosen path, or null if the
        * user cancelled the dialog. */
