@@ -8,7 +8,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { Audience } from "../audience.ts";
 import type { CloudLendingRefusal } from "../cloud-lending.ts";
 import type { AppConfig } from "../config.ts";
-import { browserEngineAttachCdpUrl, browserProfilePartitionId, browserProfilePartitionTarget, builtInBrowserEnabled, DATA_DIR } from "../config.ts";
+import { browserEngineAttachCdpUrl, browserProfilePartitionId, browserProfilePartitionTarget, builtInBrowserEnabled, DATA_DIR, saveConfig } from "../config.ts";
 import { BrowserRuntime, TransportError, attachesToChrome, browserRuntimeEnv, formatBrowserTiming } from "../browser-runtime.ts";
 import { RelayTimeout, relay, relayCommand, relayInput } from "../browser-relay.ts";
 import { browserSteps } from "../browser-steps.ts";
@@ -34,6 +34,7 @@ import type { BrowserSitesTarget } from "../browser-sites.ts";
 import { namedUploadPaths } from "../browser-upload.ts";
 import type { BrowserSitesRef } from "../routes/browser-sites.ts";
 import { chromeLauncher } from "../browser/chrome/launcher.ts";
+import { ChromeUpdater } from "../browser/chrome/updater.ts";
 import { LAUNCHER_SECCOMP_FD, browserLanguage, type LauncherBox } from "../browser/chrome/wrapper.ts";
 import type { HostKind } from "../browser/chrome/flags.ts";
 import { browserEngineKind, type BrowserEngineKind } from "../browser/config.ts";
@@ -82,6 +83,8 @@ export interface BrowserHostDeps {
   audienceOf?(threadId: string): Audience;
   /** The box every Chrome of the bots' browsers runs in (a Team Cloud's), or none. */
   browserBox?(seccompFd: number, ro: readonly string[]): LauncherBox | null;
+  /** Called when an explicit built-in Chrome update changes state. */
+  onChromeUpdateChange?(): void;
 }
 
 /** The lent computer's connection for a browser's pages, under the rule for everything it lends: only while the last
@@ -101,7 +104,9 @@ const BOT_SESSION = /^bot-[A-Za-z0-9_.-]+$/;
 
 export function createBrowserHost(deps: BrowserHostDeps) {
   const { cfg, turnResources, activeInternalGenerationByThread, mintInternalCapability, DESKTOP_MANAGED, CLOUD_HOME, PORT } = deps;
+  const preferDownloaded = () => cfg.browserEngine?.preferChromeForTesting === true;
   chromeLauncher.setLanguageProvider(deps.language);
+  chromeLauncher.setPreferDownloadedProvider(preferDownloaded);
   const store: Pick<Store, "bots" | "bot" | "botByThread"> = { get bots() { return deps.store().bots; }, bot: (id: string) => deps.store().bot(id),
     botByThread: (threadId: string) => deps.store().botByThread(threadId) };
 
@@ -130,6 +135,7 @@ export function createBrowserHost(deps: BrowserHostDeps) {
     egressNotice: (key) => browserEgress.takeNotice(key),
     idleMs,
     language: deps.language,
+    preferDownloaded,
     held: (session) => !turnResources.free(`browser:${session}`),
     log: (line) => console.warn(line),
   });
@@ -560,11 +566,37 @@ export function createBrowserHost(deps: BrowserHostDeps) {
     };
   }
 
+  const chromeUpdater = new ChromeUpdater({
+    dataDir: DATA_DIR,
+    launchers: () => browserEngineKind(cfg) === "chrome" ? [chromeEngine.launcher, chromeLauncher] : [chromeLauncher, chromeEngine.launcher],
+    closeIdleSessions: async () => {
+      const cdp = await chromeEngine.service.closeIdleNow();
+      let closed = cdp.closed;
+      let active = cdp.deferred;
+      const entries = Array.from(usedBrowserSessions.entries());
+      for (const [session, spec] of entries) {
+        if (chromeTarget(session, spec) || attachesToChrome(spec.env)) continue;
+        if (!turnResources.free(`browser:${session}`)) {
+          active++;
+          continue;
+        }
+        if (await closeBrowser(session, spec)) closed++;
+      }
+      return { closed, active };
+    },
+    onPreferDownloaded: () => {
+      cfg.browserEngine = { ...cfg.browserEngine, preferChromeForTesting: true };
+      saveConfig(cfg);
+    },
+    onChange: deps.onChromeUpdateChange,
+    log: (line) => console.warn(line),
+  });
+
   return {
     browserRuntime, browserLive, usedBrowserSessions, browserSweep, temporaryBrowserSessions, browserIdleMs: idleMs,
     currentBrowserSession, forgetTemporaryBrowser, myChromeAvailable, lentChromeSummary, usesMyChrome, browserSessionSpec, browserIntegration,
     browserReady, currentBrowserSpec, loginInput, browserSystemPrompt, signedInSitesRefusal, closeBrowser, browserEngineSwitched,
     eraseDeletedBrowser, engineSummary, engineBrowsers, browserAudience, browserSessionsOf, signedInSitesTarget, uploadPaths,
-    eraseAudienceBrowsers,
+    eraseAudienceBrowsers, chromeUpdater,
   };
 }

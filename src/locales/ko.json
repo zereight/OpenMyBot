@@ -7823,5 +7823,21 @@
   "settings.browser.proxyConfigured": "새로 여는 기본 브라우저 연결에 이 SOCKS5 프록시를 사용합니다. My Chrome에는 적용되지 않으며, 사설·로컬 주소는 기존 차단 규칙을 유지합니다.",
   "settings.browser.proxyInactive": "저장되어 있지만 지원되는 환경에서 기본 브라우저를 사용할 때만 적용됩니다.",
   "settings.browser.proxySave": "저장",
-  "settings.browser.proxyClear": "삭제"
+  "settings.browser.proxyClear": "삭제",
+  "settings.browser.chromeUpdateTitle": "내장 브라우저 일괄 업데이트",
+  "settings.browser.chromeUpdateChecking": "내장 브라우저 버전을 확인하는 중…",
+  "settings.browser.chromeUpdateCheck": "확인",
+  "settings.browser.chromeUpdateNow": "일괄 업데이트",
+  "settings.browser.chromeUpdating": "업데이트 중…",
+  "settings.browser.chromeUpToDate": "최신 버전입니다 (Chrome {version}).",
+  "settings.browser.chromeUpdateAvailable": "현재: {current} · 최신: {latest}. 모든 내장 브라우저 프로필에 적용됩니다.",
+  "settings.browser.chromeMismatch": "프로필 {count}개가 Chrome {required} 이상을 필요로 하지만 현재 버전은 {current}입니다.",
+  "settings.browser.chromePhaseChecking": "최신 Chrome for Testing 버전을 확인하는 중…",
+  "settings.browser.chromePhaseDownloading": "Chrome for Testing 다운로드 중…",
+  "settings.browser.chromePhaseDownloadingProgress": "Chrome for Testing 다운로드 중 ({received} / {total} MB)…",
+  "settings.browser.chromePhaseExtracting": "Chrome for Testing 압축 해제 중…",
+  "settings.browser.chromePhaseVerifying": "다운로드한 Chrome 검증 중…",
+  "settings.browser.chromePhaseSwitching": "유휴 브라우저 세션에 새 버전을 적용하는 중…",
+  "settings.browser.chromeUpdateDone": "Chrome {version} 버전으로 업데이트되었습니다.",
+  "settings.browser.chromeUpdateDoneDeferred": "Chrome {version} 버전으로 업데이트되었습니다. 실행 중인 세션 {count}개는 다음 재시작 시 적용됩니다."
 }

@@ -71,6 +71,8 @@ export interface ChromeLauncherOptions {
   wrapper?: boolean;
   /** Chrome's sandbox while its identity is read; by default off only where agent-browser turns it off. */
   sandbox?: boolean;
+  /** When true, prefers a downloaded Chrome for Testing over an installed system Google Chrome. */
+  preferDownloaded?: () => boolean;
 }
 
 export class ChromeLauncher implements BrowserLaunch {
@@ -78,11 +80,13 @@ export class ChromeLauncher implements BrowserLaunch {
   readonly path: string;
   private state: State = { kind: "idle" };
   private preparing: Promise<void> | null = null;
+  private generation = 0;
   private screen: Promise<Screen> | null = null;
   private readonly options: Required<Pick<ChromeLauncherOptions, "dataDir" | "env" | "platform" | "readyWaitMs">> & ChromeLauncherOptions;
   private readonly host: ChromeHost;
   private readonly sidecars: IdentitySidecars;
   private language: (() => string | undefined) | undefined;
+  private preferDownloaded: (() => boolean) | undefined;
   private box: (() => LauncherBox | null) | null = null;
 
   constructor(options: ChromeLauncherOptions) {
@@ -90,6 +94,7 @@ export class ChromeLauncher implements BrowserLaunch {
     const platform = options.platform ?? process.platform;
     this.options = { ...options, env, platform, readyWaitMs: options.readyWaitMs ?? 45_000 };
     this.language = options.language;
+    this.preferDownloaded = options.preferDownloaded;
     this.host = options.host ?? chromeHost({ dataDir: options.dataDir, env, platform, arch: options.arch });
     this.sidecars = options.sidecars ?? new IdentitySidecars();
     this.path = launcherPath(options.dataDir, platform);
@@ -113,13 +118,27 @@ export class ChromeLauncher implements BrowserLaunch {
   plan(): ChromePlan {
     // Once a download has started, a browser agent-browser's PATH shows later must not switch a session's launcher.
     const downloading = this.state.kind === "preparing" || this.state.kind === "downloading";
-    return resolveChromePlan(this.host, this.options.engine ? this.options.engine() : this.managedEngine(), { downloading });
+    return resolveChromePlan(this.host, this.options.engine ? this.options.engine() : this.managedEngine(), {
+      downloading,
+      preferDownloaded: this.preferDownloaded?.() === true,
+    });
   }
 
   /** Keep the shared agent-browser launcher and sidecar in the application's current language. */
   setLanguageProvider(language: (() => string | undefined) | undefined): void {
     this.language = language ?? this.options.language;
     this.followLanguage();
+  }
+
+  setPreferDownloadedProvider(prefer: (() => boolean) | undefined): void {
+    this.preferDownloaded = prefer ?? this.options.preferDownloaded;
+  }
+
+  /** Clears cached binary readiness so the next prepare() resolves and calibrates the updated Chrome; keeps box and language bindings. */
+  reset(): void {
+    this.generation++;
+    this.preparing = null;
+    this.state = { kind: "idle" };
   }
 
   private resolvedLanguage(): string | undefined {
@@ -178,16 +197,22 @@ export class ChromeLauncher implements BrowserLaunch {
     if (plan.kind === "legacy") return Promise.resolve();
     const previous = this.state.kind === "ready" ? this.state : null;
     if (!previous) this.state = { kind: "preparing" };
-    this.preparing = this.prepareFor(plan).then((ready) => {
+    const gen = this.generation;
+    const job = this.prepareFor(plan).then((ready) => {
+      if (this.generation !== gen) return;
       this.state = ready;
       this.followLanguage();
       this.log(`browser: ${this.describe()}`);
     }, (error: unknown) => {
+      if (this.generation !== gen) return;
       // A launcher that already works is kept as it is: switching browsers under a running session would lose its pages.
       this.state = previous ? { ...previous, fingerprint: this.fingerprintOr(previous) } : { kind: "failed", reason: message(error) };
       this.log(`browser: Chrome could not be prepared (${message(error)}); ${previous ? "keeping the browser already set up" : "bots keep the engine's own browser"}`);
-    }).finally(() => { this.preparing = null; });
-    return this.preparing;
+    }).finally(() => {
+      if (this.preparing === job) this.preparing = null;
+    });
+    this.preparing = job;
+    return job;
   }
 
   async ready(spec: LaunchSpec): Promise<void> {
@@ -227,6 +252,34 @@ export class ChromeLauncher implements BrowserLaunch {
     if (state.kind === "downloading") return `Chrome for Testing ${state.pin.version} (downloading: ${megabytes(state.progress.received)} of ${megabytes(state.progress.total)} MB)`;
     if (plan.kind === "download") return `Chrome for Testing ${plan.pin.version} (not downloaded yet)`;
     return `${product(plan.chrome)} (${SOURCES[plan.chrome.source]}; not started yet)`;
+  }
+
+  /** Structured version and source summary for Settings and update checks. */
+  statusInfo(): { version: string | null; source: FoundChrome["source"] | "legacy" | null; path: string | null; description: string } {
+    const state = this.state;
+    if (state.kind === "ready") {
+      return {
+        version: state.identity.userAgentMetadata.fullVersion || null,
+        source: state.chrome.source,
+        path: state.chrome.path,
+        description: this.describe(),
+      };
+    }
+    const plan = this.plan();
+    if (plan.kind === "chrome") {
+      const fromPath = /(?:tools[\\/]chrome[\\/]|chrome-)(\d+(?:\.\d+){1,3})/.exec(plan.chrome.path)?.[1] ?? null;
+      return { version: fromPath, source: plan.chrome.source, path: plan.chrome.path, description: this.describe() };
+    }
+    if (plan.kind === "download") {
+      return { version: null, source: "downloaded", path: null, description: this.describe() };
+    }
+    return { version: null, source: "legacy", path: null, description: this.describe() };
+  }
+
+  /** Calibrates a freshly downloaded Chrome binary before switching active sessions to it. */
+  async verifyBinary(executablePath: string): Promise<string> {
+    const identity = await this.identityOf({ path: executablePath, source: "downloaded" });
+    return identity.userAgentMetadata.fullVersion;
   }
 
   /** On macOS every Chrome this starts gets the person's own home, whatever HOME the server runs with (a test fixture's is

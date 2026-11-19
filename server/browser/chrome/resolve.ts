@@ -6,7 +6,8 @@ import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { posix, resolve, win32 } from "node:path";
 
-import { chromeForTestingExecutable, chromeForTestingPin, type ChromeForTestingPin } from "./install.ts";
+import { CHROME_FOR_TESTING_VERSION_RE, chromeForTestingExecutable, chromeForTestingPin, chromeForTestingPlatform, type ChromeForTestingPin } from "./install.ts";
+import { compareVersions } from "./profile.ts";
 
 export type ChromeSource = "installed" | "downloaded" | "named" | "agent-browser";
 
@@ -92,14 +93,43 @@ export function chromePolicyManaged(host: ChromeHost): boolean {
   return false;
 }
 
+export interface VersionedChrome { path: string; version: string }
+
 /** The Chrome for Testing `agent-browser install` unpacked for this user, newest first. */
-export function agentBrowserChrome(host: ChromeHost): string | null {
+export function agentBrowserChromeWithVersion(host: ChromeHost): VersionedChrome | null {
   const layout = AGENT_BROWSER_LAYOUTS[host.platform];
   if (!layout) return null;
   const { join } = paths(host.platform);
   const browsers = join(host.home, ".agent-browser", "browsers");
-  const versions = host.list(browsers).filter((name) => name.startsWith("chrome-")).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-  return versions.map((version) => join(browsers, version, layout)).find((candidate) => host.exists(candidate)) ?? null;
+  const versions = host.list(browsers)
+    .filter((name) => name.startsWith("chrome-"))
+    .map((name) => ({ name, version: name.slice("chrome-".length) }))
+    .sort((a, b) => compareVersions(b.version, a.version));
+  for (const { name, version } of versions) {
+    const candidate = join(browsers, name, layout);
+    if (host.exists(candidate)) return { path: candidate, version };
+  }
+  return null;
+}
+
+export function agentBrowserChrome(host: ChromeHost): string | null {
+  return agentBrowserChromeWithVersion(host)?.path ?? null;
+}
+
+/** The newest Chrome for Testing unpacked under `<dataDir>/tools/chrome` for this host's platform. */
+export function latestDownloadedChrome(host: ChromeHost, pin: ChromeForTestingPin | null = chromeForTestingPin(host.platform, host.arch)): VersionedChrome | null {
+  const cftPlatform = chromeForTestingPlatform(host.platform, host.arch);
+  if (!cftPlatform) return null;
+  const { join } = paths(host.platform);
+  const root = join(host.dataDir, "tools", "chrome");
+  const versions = new Set(host.list(root).filter((name) => CHROME_FOR_TESTING_VERSION_RE.test(name)));
+  if (pin) versions.add(pin.version);
+  const sorted = [...versions].sort((a, b) => compareVersions(b, a));
+  for (const version of sorted) {
+    const executable = chromeForTestingExecutable(host.dataDir, { version, platform: cftPlatform });
+    if (host.exists(executable)) return { path: executable, version };
+  }
+  return null;
 }
 
 /** agent-browser's own search on Linux: these browsers on PATH, then Puppeteer's and Playwright's caches. */
@@ -120,7 +150,7 @@ export function engineFindsLinuxBrowser(host: ChromeHost): boolean {
 }
 
 /** `downloading`: a Chrome for Testing download is under way, so a browser agent-browser finds later does not replace it. */
-export function resolveChromePlan(host: ChromeHost, engine: ChromeEngine | null, options: { downloading?: boolean } = {}): ChromePlan {
+export function resolveChromePlan(host: ChromeHost, engine: ChromeEngine | null, options: { downloading?: boolean; preferDownloaded?: boolean } = {}): ChromePlan {
   const { env, platform } = host;
   if (env.OMB_BROWSER_LEGACY_SHELL?.trim() === "1") return { kind: "legacy", reason: "OMB_BROWSER_LEGACY_SHELL=1" };
   const named = env.OMB_CHROME_PATH?.trim() || env.AGENT_BROWSER_EXECUTABLE_PATH?.trim();
@@ -132,14 +162,22 @@ export function resolveChromePlan(host: ChromeHost, engine: ChromeEngine | null,
   if (!engine?.managed) return { kind: "legacy", reason: "agent-browser was named, so it picks its own browser" };
   // The Linux desktop app keeps its bundled browser; a Linux server downloads Chrome for Testing like a Mac.
   const pin = platform === "linux" && env.OMB_RESOURCES_PATH ? null : chromeForTestingPin(platform, host.arch);
+  const downloaded = platform === "linux" && env.OMB_RESOURCES_PATH ? null : latestDownloadedChrome(host, pin);
   const installed = installedGoogleChrome(host);
-  if (installed && !chromePolicyManaged(host)) return { kind: "chrome", chrome: { path: installed, source: "installed" }, fallback: pin };
+  if (installed && !chromePolicyManaged(host)) {
+    if (options.preferDownloaded && downloaded) return { kind: "chrome", chrome: { path: downloaded.path, source: "downloaded" }, fallback: null };
+    return { kind: "chrome", chrome: { path: installed, source: "installed" }, fallback: pin };
+  }
   if (platform === "linux" && env.OMB_RESOURCES_PATH) return { kind: "legacy", reason: installed ? "Google Chrome here is managed by an organization" : "Google Chrome is not installed" };
-  const own = agentBrowserChrome(host);
-  if (own) return { kind: "chrome", chrome: { path: own, source: "agent-browser" }, fallback: null };
+  const own = agentBrowserChromeWithVersion(host);
+  if (downloaded && own) {
+    return compareVersions(downloaded.version, own.version) >= 0
+      ? { kind: "chrome", chrome: { path: downloaded.path, source: "downloaded" }, fallback: null }
+      : { kind: "chrome", chrome: { path: own.path, source: "agent-browser" }, fallback: null };
+  }
+  if (own) return { kind: "chrome", chrome: { path: own.path, source: "agent-browser" }, fallback: null };
+  if (downloaded) return { kind: "chrome", chrome: { path: downloaded.path, source: "downloaded" }, fallback: null };
   if (pin) {
-    const executable = chromeForTestingExecutable(host.dataDir, pin);
-    if (host.exists(executable)) return { kind: "chrome", chrome: { path: executable, source: "downloaded" }, fallback: null };
     if (platform === "linux" && !options.downloading && engineFindsLinuxBrowser(host)) return { kind: "legacy", reason: "agent-browser found a browser on this server" };
     return { kind: "download", pin };
   }

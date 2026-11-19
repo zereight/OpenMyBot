@@ -2388,8 +2388,8 @@ function cancelDirectTurnDispatch(botId: string, expectedThreadId?: string): Dir
 const {
   browserRuntime, browserLive, usedBrowserSessions, browserSweep, temporaryBrowserSessions,
   currentBrowserSession, forgetTemporaryBrowser, myChromeAvailable, usesMyChrome, lentChromeSummary, browserSessionSpec, browserIntegration,
-  browserReady, currentBrowserSpec, loginInput, browserSystemPrompt, closeBrowser, browserEngineSwitched, eraseDeletedBrowser, engineSummary, browserSessionsOf, signedInSitesTarget, uploadPaths, eraseAudienceBrowsers, engineBrowsers,
-} = createBrowserHost({ cfg, language: appLanguage, store: () => store, turnResources, activeInternalGenerationByThread, mintInternalCapability, DESKTOP_MANAGED, CLOUD_HOME, HOSTED_WORKSPACE, PORT, engineMemory, audienceOf: teamHost.browserAudience, ...(CLOUD_TEAM ? { browserBox: (fd: number, ro: readonly string[]) => botBox.browserBox(fd, ro) } : {}), lendRefusal: (turn) => cloudLendingRefusal({ botId: store.botByThread(turn.threadId)?.id ?? "", threadId: turn.threadId, generation: turn.generation }), device: () => deviceLinks.route(CLOUD_HOME_LENDER) ?? sharedComputers.internetAway(CLOUD_HOME_LENDER) ?? { unshared: true as const }, lentChrome: CLOUD_PERSONAL ? { route: () => deviceLinks.chromeRoute(CLOUD_HOME_LENDER), lender: () => sharedComputers.chromeLender(CLOUD_HOME_LENDER) } : undefined });
+  browserReady, currentBrowserSpec, loginInput, browserSystemPrompt, closeBrowser, browserEngineSwitched, eraseDeletedBrowser, engineSummary, browserSessionsOf, signedInSitesTarget, uploadPaths, eraseAudienceBrowsers, engineBrowsers, chromeUpdater,
+} = createBrowserHost({ cfg, language: appLanguage, store: () => store, turnResources, activeInternalGenerationByThread, mintInternalCapability, DESKTOP_MANAGED, CLOUD_HOME, HOSTED_WORKSPACE, PORT, engineMemory, audienceOf: teamHost.browserAudience, onChromeUpdateChange: () => broadcast({ kind: "config", ...configStatus() }), ...(CLOUD_TEAM ? { browserBox: (fd: number, ro: readonly string[]) => botBox.browserBox(fd, ro) } : {}), lendRefusal: (turn) => cloudLendingRefusal({ botId: store.botByThread(turn.threadId)?.id ?? "", threadId: turn.threadId, generation: turn.generation }), device: () => deviceLinks.route(CLOUD_HOME_LENDER) ?? sharedComputers.internetAway(CLOUD_HOME_LENDER) ?? { unshared: true as const }, lentChrome: CLOUD_PERSONAL ? { route: () => deviceLinks.chromeRoute(CLOUD_HOME_LENDER), lender: () => sharedComputers.chromeLender(CLOUD_HOME_LENDER) } : undefined });
 
 const dataSheets = new DataSheetRegistry({
   broadcast: (frame) => broadcast({ ...frame }),
@@ -12380,7 +12380,7 @@ ROUTES.push(createComputerRoutes({
   claimBoatInventoryRequest, claimManagedBoatMutation, claimManagedVpsMutation, cloudComputerUsed: owner => cloudComputerPower.used(owner), boatRecovery, cloudComputerOwner: botComputerControlKey,
 }));
 ROUTES.push(createStatusRoutes({
-  store, cfg,
+  store, cfg, chromeUpdater,
   staticDir: STATIC_DIR,
   sharedWorkspaceFullAccessEnabled, adminActivityRecording, configStatus, broadcast, threadShown, records: privateRecords, boxOn: () => botBox.enabled(),
   browserEngineInstall: { get: () => browserEngineInstall, set: (install) => { browserEngineInstall = install; } },

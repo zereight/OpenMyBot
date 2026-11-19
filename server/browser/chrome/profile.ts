@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 /** Every Chrome-related file OMB keeps lives under `<data dir>/browser`. */
@@ -172,4 +172,29 @@ export function versionOf(product: string): string {
 
 export function removeProfile(dir: string): void {
   rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+}
+
+export interface LocalProfileVersionSummary {
+  total: number;
+  maxVersion: string | null;
+  mismatchedCount: number;
+}
+
+/** Scans local managed browser profiles (`backend === "local"`) to report the highest recorded Chrome version and how many exceed `currentVersion`. */
+export function scanLocalProfileChromeVersions(dataDir: string, currentVersion: string | null): LocalProfileVersionSummary {
+  const root = join(browserRoot(dataDir), "profiles");
+  if (!existsSync(root)) return { total: 0, maxVersion: null, mismatchedCount: 0 };
+  let total = 0;
+  let maxVersion: string | null = null;
+  let mismatchedCount = 0;
+  for (const name of readdirSync(root)) {
+    const record = readProfileRecord(join(root, name));
+    if (!record || record.backend !== "local") continue;
+    total++;
+    if (record.chromeVersion) {
+      if (!maxVersion || compareVersions(record.chromeVersion, maxVersion) > 0) maxVersion = record.chromeVersion;
+      if (currentVersion && compareVersions(currentVersion, record.chromeVersion) < 0) mismatchedCount++;
+    }
+  }
+  return { total, maxVersion, mismatchedCount };
 }

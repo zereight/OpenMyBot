@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled } from "@/lib/feature-flags";
 import { t } from "@/lib/i18n";
@@ -59,6 +59,167 @@ export function BuiltInBrowserRow() {
           onClick={() => void save({ features: { browser: !browser } })}
           className="disabled:cursor-wait disabled:opacity-50"
       />
+    </SettingRow>
+  );
+}
+
+interface BrowserChromeStatusResponse {
+  currentVersion: string | null;
+  currentSource: string | null;
+  currentDescription: string;
+  latestVersion: string | null;
+  latestError: string | null;
+  updatable: boolean;
+  notUpdatableReason: string | null;
+  updateAvailable: boolean;
+  profiles: { total: number; maxVersion: string | null; mismatchedCount: number };
+  updating: boolean;
+  phase: "idle" | "checking" | "downloading" | "extracting" | "verifying" | "switching" | "done" | "error";
+  progress: { received: number; total: number } | null;
+  error: string | null;
+  closedSessions: number;
+  deferredSessions: number;
+}
+
+const megabytes = (bytes: number) => String(Math.round(bytes / 1_048_576));
+
+function chromeUpdateSubtitle(status: BrowserChromeStatusResponse | null): string {
+  if (!status) return t("settings.browser.chromeUpdateChecking");
+  if (status.updating) {
+    if (status.phase === "checking") return t("settings.browser.chromePhaseChecking");
+    if (status.phase === "downloading") {
+      return status.progress && status.progress.total > 0
+        ? t("settings.browser.chromePhaseDownloadingProgress", {
+          received: megabytes(status.progress.received),
+          total: megabytes(status.progress.total),
+        })
+        : t("settings.browser.chromePhaseDownloading");
+    }
+    if (status.phase === "extracting") return t("settings.browser.chromePhaseExtracting");
+    if (status.phase === "verifying") return t("settings.browser.chromePhaseVerifying");
+    return t("settings.browser.chromePhaseSwitching");
+  }
+  if (!status.updatable && status.notUpdatableReason) return status.notUpdatableReason;
+  if (status.profiles.mismatchedCount > 0 && status.profiles.maxVersion) {
+    return t("settings.browser.chromeMismatch", {
+      count: String(status.profiles.mismatchedCount),
+      required: status.profiles.maxVersion,
+      current: status.currentVersion ?? "—",
+    });
+  }
+  if (status.updateAvailable && status.latestVersion) {
+    return t("settings.browser.chromeUpdateAvailable", {
+      current: status.currentVersion ?? "—",
+      latest: status.latestVersion,
+    });
+  }
+  return t("settings.browser.chromeUpToDate", { version: status.currentVersion ?? status.latestVersion ?? "—" });
+}
+
+export function BrowserChromeUpdateRow() {
+  const { state } = useStore();
+  const owner = useOwnerOrAdmin();
+  const enabled = owner === true && builtInBrowserEnabled(state.config);
+  const [status, setStatus] = useState<BrowserChromeStatusResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const fetchStatus = useCallback(async (refresh = false) => {
+    setLoading(true);
+    setError("");
+    try {
+      const next: BrowserChromeStatusResponse = await api(refresh ? "/api/browser-chrome/status?refresh=1" : "/api/browser-chrome/status");
+      setStatus(next);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("settings.experimental.error"));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    void api<BrowserChromeStatusResponse>("/api/browser-chrome/status").then(
+      (next) => { if (!cancelled) setStatus(next); },
+      (cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : t("settings.experimental.error")); },
+    ).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled || !status?.updating) return;
+    let cancelled = false;
+    const timer = setInterval(() => {
+      void api<BrowserChromeStatusResponse>("/api/browser-chrome/status").then(
+        (next) => { if (!cancelled) setStatus(next); },
+        (cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : t("settings.experimental.error")); },
+      );
+    }, 1500);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [enabled, status?.updating]);
+
+  if (!enabled) return null;
+
+  const startUpdate = async () => {
+    if (loading || status?.updating) return;
+    setError("");
+    try {
+      const next: BrowserChromeStatusResponse = await api("/api/browser-chrome/update", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      setStatus(next);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("settings.experimental.error"));
+    }
+  };
+
+  const alertText = error || status?.error || status?.latestError || "";
+  const doneMessage = !alertText && status?.phase === "done"
+    ? (status.deferredSessions > 0
+      ? t("settings.browser.chromeUpdateDoneDeferred", {
+        version: status.currentVersion ?? status.latestVersion ?? "—",
+        count: String(status.deferredSessions),
+      })
+      : t("settings.browser.chromeUpdateDone", { version: status.currentVersion ?? status.latestVersion ?? "—" }))
+    : "";
+
+  return (
+    <SettingRow
+      title={t("settings.browser.chromeUpdateTitle")}
+      subtitle={chromeUpdateSubtitle(status)}
+      message={alertText
+        ? <p role="alert" className="text-danger">{alertText}</p>
+        : doneMessage
+          ? <p className="text-muted">{doneMessage}</p>
+          : null}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={loading || status?.updating === true}
+          onClick={() => void fetchStatus(true)}
+          className="rounded-lg bg-control px-3 py-2 text-[13px] text-ink disabled:opacity-50"
+        >
+          {t("settings.browser.chromeUpdateCheck")}
+        </button>
+        <button
+          type="button"
+          disabled={loading || !status || !status.updatable || status.updating}
+          onClick={() => void startUpdate()}
+          className="rounded-lg bg-control px-3 py-2 text-[13px] text-ink disabled:opacity-50"
+        >
+          {status?.updating ? t("settings.browser.chromeUpdating") : t("settings.browser.chromeUpdateNow")}
+        </button>
+      </div>
     </SettingRow>
   );
 }

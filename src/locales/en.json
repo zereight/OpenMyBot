@@ -10718,5 +10718,21 @@
   "settings.browser.proxyConfigured": "New built-in browser connections use this SOCKS5 proxy. My Chrome keeps its own settings; private and local destinations stay protected.",
   "settings.browser.proxyInactive": "Saved, but active only with the built-in browser on supported hosts.",
   "settings.browser.proxySave": "Save",
-  "settings.browser.proxyClear": "Remove"
+  "settings.browser.proxyClear": "Remove",
+  "settings.browser.chromeUpdateTitle": "Built-in Chrome update",
+  "settings.browser.chromeUpdateChecking": "Checking built-in Chrome version…",
+  "settings.browser.chromeUpdateCheck": "Check",
+  "settings.browser.chromeUpdateNow": "Update all",
+  "settings.browser.chromeUpdating": "Updating…",
+  "settings.browser.chromeUpToDate": "Up to date (Chrome {version}).",
+  "settings.browser.chromeUpdateAvailable": "Current: {current} · Latest: {latest}. Updates all built-in browser profiles.",
+  "settings.browser.chromeMismatch": "{count} profile(s) require Chrome {required}, but current is {current}.",
+  "settings.browser.chromePhaseChecking": "Checking latest Chrome for Testing release…",
+  "settings.browser.chromePhaseDownloading": "Downloading Chrome for Testing…",
+  "settings.browser.chromePhaseDownloadingProgress": "Downloading Chrome for Testing ({received} / {total} MB)…",
+  "settings.browser.chromePhaseExtracting": "Extracting Chrome for Testing…",
+  "settings.browser.chromePhaseVerifying": "Verifying downloaded Chrome…",
+  "settings.browser.chromePhaseSwitching": "Applying updated Chrome to idle sessions…",
+  "settings.browser.chromeUpdateDone": "Updated to Chrome {version}.",
+  "settings.browser.chromeUpdateDoneDeferred": "Updated to Chrome {version}. {count} active browser session(s) will switch on next restart."
 }
