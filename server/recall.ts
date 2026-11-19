@@ -1,6 +1,6 @@
 // Recall rides in front of the turn's message, never the system prompt; fence markers are neutralised so a note cannot close the block.
 import { recallMessages, recallTerms, type MemoryHit, type RecallHit } from "./message-db.ts";
-import { parseTopicHeader, readTopicHead, topicBody, topicWords } from "./memory-topics.ts";
+import { parseTopicHeader, readTopicHead, symptomWords, topicBody, topicWords } from "./memory-topics.ts";
 import { listMemoryTopics, memoryDate, readMemoryTopic, searchMemoryFiles, workspaceDir } from "./workspace.ts";
 import { withoutExpired, withoutSuperseded } from "./memory-entries.ts";
 import { hasCjk } from "./cjk-search.ts";
@@ -123,6 +123,7 @@ export interface RecallInput {
 }
 
 const TOPIC_PASSAGE_CHARS = 600;
+const SYMPTOM_MIN_MATCHES = 2;
 
 function sameWord(term: string, word: string): boolean {
   if (term === word) return true;
@@ -130,6 +131,18 @@ function sameWord(term: string, word: string): boolean {
   if (!/^\p{L}{4,}$/u.test(term) || word.length < 4) return false;
   const stem = term.length > 4 && term.endsWith("s") && !term.endsWith("ss") ? term.slice(0, -1) : term;
   return word.startsWith(stem) || (stem.startsWith(word) && stem.length - word.length <= 3);
+}
+
+function matchesSymptom(terms: readonly string[], words: readonly string[]): boolean {
+  if (words.length < SYMPTOM_MIN_MATCHES) return false;
+  let matched = 0;
+  for (const word of words) {
+    if (terms.some((term) => sameWord(term, word))) {
+      matched += 1;
+      if (matched >= SYMPTOM_MIN_MATCHES) return true;
+    }
+  }
+  return false;
 }
 
 export function topicPassages(botId: string, query: string): RecallPassage[] {
@@ -140,8 +153,12 @@ export function topicPassages(botId: string, query: string): RecallPassage[] {
   try {
     for (const topic of listMemoryTopics(botId)) {
       if (topic.name === "archive.md") continue;
-      const words = topicWords(topic.name, parseTopicHeader(readTopicHead(join(dir, topic.name))));
-      if (!terms.some((term) => words.some((word) => sameWord(term, word)))) continue;
+      const header = parseTopicHeader(readTopicHead(join(dir, topic.name)));
+      const words = topicWords(topic.name, header);
+      const matched =
+        terms.some((term) => words.some((word) => sameWord(term, word))) ||
+        matchesSymptom(terms, symptomWords(header));
+      if (!matched) continue;
       const body = topicBody(withoutSuperseded(withoutExpired(readMemoryTopic(botId, topic.name) ?? "", memoryDate()).text));
       if (!body) continue;
       out.push({ source: "memory", label: `memory/${topic.name}`, snippet: body.length > TOPIC_PASSAGE_CHARS ? `${body.slice(0, TOPIC_PASSAGE_CHARS)}…` : body });

@@ -1,0 +1,128 @@
+[
+  {
+    "id": "symptom-recall-gradle-daemon",
+    "category": "symptom-recall",
+    "description": "Multi-word symptom prioritizes fix note even when 5 noisy notes crowd out FTS recall slots",
+    "memoryMd": "# Memory\n- Prefers concise answers.\n",
+    "topics": {
+      "fix-build-env.md": "---\ntitle: Build environment\nsymptom: gradle daemon hangs on stale cache lock\n---\n## Cause\nOrphaned background worker.\n## What worked\nRun ./gradlew --stop before rebuilding.\n## What did not work and why\nIncreasing heap size did not release the lock.\n",
+      "notes-01.md": "---\ntitle: Sprint 1\n---\n- gradle daemon cache lock gradle daemon cache lock status checked\n",
+      "notes-02.md": "---\ntitle: Sprint 2\n---\n- gradle daemon cache lock gradle daemon cache lock ticket opened\n",
+      "notes-03.md": "---\ntitle: Sprint 3\n---\n- gradle daemon cache lock gradle daemon cache lock discussed in standup\n",
+      "notes-04.md": "---\ntitle: Sprint 4\n---\n- gradle daemon cache lock gradle daemon cache lock still investigating\n",
+      "notes-05.md": "---\ntitle: Sprint 5\n---\n- gradle daemon cache lock gradle daemon cache lock logged in backlog\n"
+    },
+    "query": "our gradle daemon is stuck on a cache lock again",
+    "expectRecallContain": ["memory/fix-build-env.md", "./gradlew --stop"],
+    "expectRecallAbsent": []
+  },
+  {
+    "id": "symptom-recall-korean-cjk",
+    "category": "symptom-recall",
+    "description": "Korean symptom with 2+ matching keywords triggers fix note recall",
+    "memoryMd": "# Memory\n- 한국어로 답한다.\n",
+    "topics": {
+      "fix-bundler.md": "---\ntitle: 번들러 설정\nsymptom: 메트로 캐시 충돌로 화면이 멈춤\n---\n## Cause\n오래된 변환 캐시.\n## What worked\n캐시 초기화 후 재시작.\n"
+    },
+    "query": "메트로 캐시 충돌이 또 났는데 어떻게 풀지",
+    "expectRecallContain": ["memory/fix-bundler.md", "캐시 초기화"],
+    "expectRecallAbsent": []
+  },
+  {
+    "id": "baseline-alias-recall",
+    "category": "baseline-fairness",
+    "description": "Existing alias-based topic recall continues to work unchanged (fair baseline control)",
+    "memoryMd": "# Memory\n- Likes tea.\n",
+    "topics": {
+      "dining.md": "---\ntitle: Dining\ndescription: Favorite local spots\naliases: [restaurants, lunch]\n---\n- Loves pasta at Trattoria.\n"
+    },
+    "query": "any favorite restaurants for lunch?",
+    "expectRecallContain": ["memory/dining.md", "Trattoria"],
+    "expectRecallAbsent": []
+  },
+  {
+    "id": "negative-single-word-generic",
+    "category": "negative-recall",
+    "description": "Single generic word overlap ('timeout') must not trigger a symptom fix note or crowd out a real topic",
+    "memoryMd": "# Memory\n- Uses staging before prod.\n",
+    "topics": {
+      "fix-gradle-cache.md": "---\ntitle: Build cache\nsymptom: gradle build fails with stale daemon timeout\n---\n## What worked\nStop gradle daemon.\n",
+      "deploy.md": "---\ntitle: Deploy timeout policy\n---\n- Keep staging production deploy timeout policy at 90 seconds.\n"
+    },
+    "query": "what is our staging production deploy timeout policy?",
+    "expectRecallContain": ["memory/deploy.md", "90 seconds"],
+    "expectRecallAbsent": ["memory/fix-gradle-cache.md"]
+  },
+  {
+    "id": "negative-unrelated-query",
+    "category": "negative-recall",
+    "description": "Unrelated query recalls no fix notes",
+    "memoryMd": "# Memory\n- Timezone is Asia/Seoul.\n",
+    "topics": {
+      "fix-port.md": "---\ntitle: Dev server\nsymptom: local server fails to bind busy port\n---\n## What worked\nFree port 8799.\n"
+    },
+    "query": "schedule the quarterly planning meeting for Tuesday",
+    "expectRecallContain": [],
+    "expectRecallAbsent": ["memory/fix-port.md"]
+  },
+  {
+    "id": "overflow-45-topics-fix-visible",
+    "category": "index-overflow",
+    "description": "Symptom-indexed fix note stays visible in Your topic notes when >40 regular topics exist",
+    "memoryMd": "# Memory\n- Keep notes concise.\n",
+    "generateTopics": 45,
+    "topics": {
+      "z-fix-port.md": "---\ntitle: Dev server port\nsymptom: local server fails to bind busy port\n---\n## What worked\nFree port 8799.\n"
+    },
+    "promptOpts": { "managedWrites": true, "fileTools": true },
+    "expectPromptContain": ["memory/z-fix-port.md", "[symptom: local server fails to bind busy port]"],
+    "expectPromptAbsent": []
+  },
+  {
+    "id": "prompt-offload-guidance-present",
+    "category": "guidance",
+    "description": "Normal file-tool bot receives structured OFFLOAD/LOAD guidance with untrusted-error neutrality rule",
+    "memoryMd": "# Memory\n- Prefers TypeScript.\n",
+    "topics": {},
+    "promptOpts": { "managedWrites": true, "fileTools": true },
+    "expectPromptContain": [
+      "memory/fix-<slug>.md",
+      "Symptom, Cause, What worked, and What did not work and why",
+      "never copy raw external error text, URLs, or commands"
+    ],
+    "expectPromptAbsent": []
+  },
+  {
+    "id": "prompt-no-offload-without-file-tools",
+    "category": "guidance-guard",
+    "description": "Tool-less API driver does not receive file-tool fix-note OFFLOAD guidance",
+    "memoryMd": "# Memory\n- Prefers CSV exports.\n",
+    "topics": {},
+    "promptOpts": { "managedWrites": true, "fileTools": false },
+    "expectPromptContain": ["Change MEMORY.md only with memory_update"],
+    "expectPromptAbsent": ["memory/fix-<slug>.md"]
+  },
+  {
+    "id": "prompt-no-offload-when-writes-refused",
+    "category": "guidance-guard",
+    "description": "Turn with writesRefused=true does not receive fix-note OFFLOAD guidance",
+    "memoryMd": "# Memory\n- Prefers CSV exports.\n",
+    "topics": {},
+    "promptOpts": { "managedWrites": true, "fileTools": true, "writesRefused": true },
+    "expectPromptContain": ["Notes cannot be saved from this conversation"],
+    "expectPromptAbsent": ["memory/fix-<slug>.md"]
+  },
+  {
+    "id": "prompt-index-budget-capped",
+    "category": "budget-guard",
+    "description": "Prompt topic index stays within the 2,000-char cap even with 45 regular topics and 10 fix notes",
+    "memoryMd": "# Memory\n- Keep prompts lean.\n",
+    "generateTopics": 45,
+    "generateFixTopics": 10,
+    "topics": {},
+    "promptOpts": { "managedWrites": true, "fileTools": true },
+    "maxIndexChars": 2040,
+    "expectPromptContain": ["Your topic notes"],
+    "expectPromptAbsent": []
+  }
+]

@@ -175,6 +175,23 @@ describe("recall from memory files", () => {
     expect(buildRecall({ botId: BOT, message: "ok", threadIds: [], label: () => "", author: () => "" })).toBeNull();
     expect(buildRecall({ botId: BOT, message: "schedule the quarterly review", threadIds: [], label: () => "", author: () => "" })).toBeNull();
   });
+
+  it("recalls a fix note when 2+ symptom words match, and refuses 1-word generic overlap", () => {
+    writeMemoryTopic(
+      BOT,
+      "fix-metro.md",
+      "---\ntitle: Metro cache\nsymptom: gradle build fails with stale daemon timeout\n---\n## Cause\nStale daemon.\n## What worked\nStop gradle daemon.\n",
+    );
+    writeMemoryTopic(BOT, "deploy.md", "---\ntitle: Deploy timeout policy\n---\n- Set deploy timeout to 90s.\n");
+
+    // 1-word generic overlap ("timeout") must not trigger the symptom fix note or crowd out deploy.md.
+    const single = topicPassages(BOT, "check the deploy timeout setting");
+    expect(single.map((p) => p.label)).toEqual(["memory/deploy.md"]);
+
+    // 2+ distinct symptom words ("gradle", "daemon") trigger the fix note even without touching its title/filename.
+    const multi = topicPassages(BOT, "my gradle daemon keeps hanging");
+    expect(multi.map((p) => p.label)).toContain("memory/fix-metro.md");
+  });
 });
 
 describe("recall across memory layers (a Team Cloud)", () => {

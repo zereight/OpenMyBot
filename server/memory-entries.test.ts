@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { DATA_DIR } from "./config.ts";
 import { factIdentity, isExpired, isMemoryDate, lineFactIdentity, notebookIdentities, parseMemoryEntries, withoutExpired } from "./memory-entries.ts";
-import { parseTopicHeader, renderTopicIndex, TOPIC_INDEX_MAX_TOPICS } from "./memory-topics.ts";
+import { mergeTopicText, parseTopicHeader, renderTopicIndex, symptomWords, TOPIC_INDEX_FIX_SLOTS, TOPIC_INDEX_MAX_CHARS, TOPIC_INDEX_MAX_TOPICS, topicWords } from "./memory-topics.ts";
 import { closeMessageDb } from "./message-db.ts";
 import { ensureWorkspace, loadMemory, memorySystemPrompt, searchMemoryFiles, updateMemory, writeMemoryFile, writeMemoryTopic, WORKSPACES_DIR } from "./workspace.ts";
 
@@ -110,6 +110,49 @@ describe("topic headers and the index", () => {
       .toBe("- memory/archive.md — older notes moved out of MEMORY.md, kept for the record");
     const many = Array.from({ length: TOPIC_INDEX_MAX_TOPICS + 5 }, (_, i) => ({ name: `t${String(i).padStart(2, "0")}.md`, header: { aliases: [] } }));
     expect(renderTopicIndex(many)).toContain("…and 5 more in memory/");
+  });
+
+  it("parses symptom cleanly, keeps it out of 1-word topicWords, reserves fix slots in prompt index, and preserves it in mergeTopicText", () => {
+    const header = parseTopicHeader(
+      `---\ntitle: Metro cache\nsymptom: "  bundler\u0007 fails   with stale hash  "\naliases: [metro]\n---\nbody`,
+    );
+    expect(header).toEqual({
+      title: "Metro cache",
+      symptom: "bundler fails with stale hash",
+      aliases: ["metro"],
+    });
+    expect(symptomWords(header)).toEqual(["bundler", "fails", "with", "stale", "hash"]);
+    expect(topicWords("fix-metro.md", header)).not.toContain("stale");
+
+    const overflow = [
+      ...Array.from({ length: TOPIC_INDEX_MAX_TOPICS + 5 }, (_, i) => ({
+        name: `a-${String(i).padStart(2, "0")}.md`,
+        header: { title: `Topic ${i}`, aliases: [] },
+      })),
+      { name: "z-fix-metro.md", header },
+    ];
+    expect(renderTopicIndex(overflow)).not.toContain("z-fix-metro.md");
+    const promptIndex = renderTopicIndex(overflow, { reserveSymptoms: true });
+    expect(promptIndex).toContain("- memory/z-fix-metro.md — Metro cache [symptom: bundler fails with stale hash] (also: metro)");
+    expect(promptIndex.length).toBeLessThanOrEqual(TOPIC_INDEX_MAX_CHARS + 40);
+
+    const manyFixes = Array.from({ length: TOPIC_INDEX_FIX_SLOTS + 3 }, (_, i) => ({
+      name: `z-fix-${String(i).padStart(2, "0")}.md`,
+      header: { title: `Fix ${i}`, symptom: `issue number ${i}`, aliases: [] },
+    }));
+    const withRegular = [
+      ...Array.from({ length: TOPIC_INDEX_MAX_TOPICS }, (_, i) => ({ name: `a-${String(i).padStart(2, "0")}.md`, header: { aliases: [] } })),
+      ...manyFixes,
+    ];
+    const reservedLines = renderTopicIndex(withRegular, { reserveSymptoms: true }).split("\n");
+    expect(reservedLines.slice(0, TOPIC_INDEX_FIX_SLOTS).every((line) => line.includes("[symptom:"))).toBe(true);
+
+    const merged = mergeTopicText(
+      "---\ntitle: Metro cache\nsymptom: bundler fails with stale hash\naliases: [metro]\n---\n\n## What worked\n- Clear watchman\n",
+      { title: "Metro cache", aliases: ["watchman"], lines: ["- Also reset metro temp dir"] },
+    );
+    expect(merged).toContain("symptom: bundler fails with stale hash");
+    expect(merged).toContain("aliases: [metro, watchman]");
   });
 });
 
