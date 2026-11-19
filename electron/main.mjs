@@ -18,8 +18,7 @@ import {
   appendDesktopCrashRecord,
   buildDiagnosticsReport,
   diagnosticsFileName,
-  formatDesktopCrashRecord,
-  installDesktopCrashListeners,
+  installDesktopDiagnostics,
   readSafeLogTail,
 } from "./diagnostics.mjs";
 import { migrateWorkspaceConfigFile, workspaceCredentialEnv } from "./workspace-credentials.mjs";
@@ -502,10 +501,12 @@ function slog(line) {
 
 // Synchronous: a fatal exception can end Electron before an async write flushes.
 // uncaughtExceptionMonitor observes Node's fatal path without handling it, so the process still exits.
-installDesktopCrashListeners({
+const desktopDiagnostics = installDesktopDiagnostics({
   appTarget: app,
   processTarget: process,
-  record: (event) => appendDesktopCrashRecord(DESKTOP_CRASH_LOG, DESKTOP_CRASH_LOG_MAX_BYTES, formatDesktopCrashRecord(event)),
+  ipcTarget: ipcMain,
+  append: (record) => appendDesktopCrashRecord(DESKTOP_CRASH_LOG, DESKTOP_CRASH_LOG_MAX_BYTES, record),
+  rendererAllowed: (event) => homeWindow.homePage(event) || senderIsLocal(event),
   isShuttingDown: () => desktopShutdownStarted,
   mainWebContents: () => mainWindow?.webContents ?? null,
 });
@@ -2038,6 +2039,7 @@ function createWindow({ deferNavigation = false } = {}) {
       slog(`blocked subframe navigation to ${details.url}`);
     }
   });
+  desktopDiagnostics.attachWindow(win);
   win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame || errorCode === -3) return; // -3: aborted by a newer navigation
     const remote = activeRemote(environmentsState);
@@ -2798,6 +2800,7 @@ setCuaStateListener((connection) => {
 });
 
 app.whenReady().then(async () => {
+  desktopDiagnostics.attachPower(powerMonitor);
   await evictStartupCacheOnce({
     userData: app.getPath("userData"),
     currentVersion: app.getVersion(),

@@ -8,11 +8,16 @@ import { join } from "node:path";
 const require = createRequire(import.meta.url);
 const {
   appendDesktopCrashRecord,
+  attachPowerMonitorDiagnostics,
+  attachWindowDiagnosticListeners,
   buildDiagnosticsReport,
+  createDesktopDiagnosticLimiter,
   decodeLogTail,
   diagnosticsFileName,
   formatDesktopCrashRecord,
+  formatRendererDiagnosticRecord,
   installDesktopCrashListeners,
+  installDesktopDiagnostics,
   readSafeLogTail,
   redactSecretsInLine,
   CREDENTIAL_ENV_NAMES,
@@ -368,6 +373,169 @@ describe("installDesktopCrashListeners", () => {
     appTarget.emit("render-process-gone", {}, {}, { reason: "killed", exitCode: 0 });
     appTarget.emit("child-process-gone", {}, { type: "Utility", reason: "killed", exitCode: 0 });
     expect(records).toEqual([]);
+  });
+});
+
+describe("hang, power, and renderer diagnostic events", () => {
+  it("formats allowlisted hang, power, load-failure, preload, renderer-error, and api-timeout metadata", () => {
+    expect(formatDesktopCrashRecord({ kind: "unresponsive", surface: "main-window" })).toBe(
+      "event=window-unresponsive surface=main-window",
+    );
+    expect(formatDesktopCrashRecord({ kind: "responsive", surface: "other" })).toBe(
+      "event=window-responsive surface=auxiliary",
+    );
+    expect(formatDesktopCrashRecord({ kind: "power", state: "suspend" })).toBe("event=power-state state=suspend");
+    expect(formatDesktopCrashRecord({ kind: "power", state: "secret-state" })).toBeNull();
+    expect(formatDesktopCrashRecord({ kind: "did-fail-load", surface: "main-window", errorCode: -105 })).toBe(
+      "event=did-fail-load surface=main-window errorCode=-105",
+    );
+    expect(formatDesktopCrashRecord({ kind: "did-fail-load", surface: "main-window", errorCode: -3 })).toBeNull();
+    expect(formatDesktopCrashRecord({ kind: "preload-error", surface: "main-window", error: new TypeError("secret path") })).toBe(
+      "event=preload-error surface=main-window error=TypeError",
+    );
+    expect(formatDesktopCrashRecord({ kind: "renderer-error", origin: "error-boundary", error: { name: "ChunkLoadError" } })).toBe(
+      "event=renderer-error origin=error-boundary error=ChunkLoadError",
+    );
+    expect(formatDesktopCrashRecord({ kind: "renderer-error", origin: "unhandledrejection", error: { name: "DOMException" } })).toBe(
+      "event=renderer-error origin=unhandledrejection error=DOMException",
+    );
+    expect(formatDesktopCrashRecord({ kind: "renderer-error", origin: "error", error: { name: "PrivateTokenError" } })).toBe(
+      "event=renderer-error origin=error error=Error",
+    );
+    expect(formatDesktopCrashRecord({ kind: "renderer-error", origin: "unknown-origin", error: { name: "TypeError" } })).toBeNull();
+    expect(formatDesktopCrashRecord({ kind: "api-timeout", method: "POST", timeoutMs: 30_000 })).toBe(
+      "event=api-timeout method=POST timeoutMs=30000",
+    );
+    expect(formatDesktopCrashRecord({ kind: "api-timeout", method: "GET", timeoutMs: 5 })).toBe(
+      "event=api-timeout method=GET timeoutMs=100",
+    );
+    expect(formatDesktopCrashRecord({ kind: "api-timeout", method: "GET", timeoutMs: 9_999_999 })).toBe(
+      "event=api-timeout method=GET timeoutMs=600000",
+    );
+    expect(formatDesktopCrashRecord({ kind: "api-timeout", method: "BREW", timeoutMs: 30_000 })).toBeNull();
+    expect(formatDesktopCrashRecord({ kind: "api-timeout", method: "GET", timeoutMs: -1 })).toBeNull();
+    expect(formatDesktopCrashRecord({ kind: "api-timeout", method: "GET", timeoutMs: "30000" })).toBeNull();
+  });
+
+  it("restricts renderer IPC formatting to renderer-scoped kinds", () => {
+    expect(formatRendererDiagnosticRecord({ kind: "renderer-error", origin: "error", error: { name: "TypeError" } })).toBe(
+      "event=renderer-error origin=error error=TypeError",
+    );
+    expect(formatRendererDiagnosticRecord({ kind: "api-timeout", method: "GET", timeoutMs: 30_000 })).toBe(
+      "event=api-timeout method=GET timeoutMs=30000",
+    );
+    expect(formatRendererDiagnosticRecord({ kind: "main", origin: "uncaughtException", error: new Error("spoof") })).toBeNull();
+    expect(formatRendererDiagnosticRecord({ kind: "renderer", reason: "crashed", exitCode: 1 })).toBeNull();
+    expect(formatRendererDiagnosticRecord({ kind: "power", state: "suspend" })).toBeNull();
+    expect(formatRendererDiagnosticRecord(null)).toBeNull();
+  });
+
+  it("deduplicates identical records and enforces the per-minute cap", () => {
+    let clock = 100_000;
+    const limiter = createDesktopDiagnosticLimiter({ maxPerMinute: 3, dedupeWindowMs: 60_000, now: () => clock });
+    expect(limiter.allow("event=api-timeout method=GET timeoutMs=30000")).toBe(true);
+    expect(limiter.allow("event=api-timeout method=GET timeoutMs=30000")).toBe(false);
+    expect(limiter.allow("event=api-timeout method=POST timeoutMs=30000")).toBe(true);
+    expect(limiter.allow("event=renderer-error origin=error error=TypeError")).toBe(true);
+    expect(limiter.allow("event=renderer-error origin=error error=RangeError")).toBe(false);
+    clock += 60_001;
+    expect(limiter.allow("event=api-timeout method=GET timeoutMs=30000")).toBe(true);
+  });
+
+  it("records power state transitions without consecutive duplicates and detaches cleanly", () => {
+    const powerMonitor = new EventEmitter();
+    const records = [];
+    const detach = attachPowerMonitorDiagnostics(powerMonitor, {
+      record: (event) => records.push(event),
+      isShuttingDown: () => false,
+    });
+    powerMonitor.emit("suspend");
+    powerMonitor.emit("suspend");
+    powerMonitor.emit("resume");
+    powerMonitor.emit("lock-screen");
+    powerMonitor.emit("unlock-screen");
+    expect(records).toEqual([
+      { kind: "power", state: "suspend" },
+      { kind: "power", state: "resume" },
+      { kind: "power", state: "lock-screen" },
+      { kind: "power", state: "unlock-screen" },
+    ]);
+    detach();
+    powerMonitor.emit("suspend");
+    expect(records).toHaveLength(4);
+  });
+
+  it("records window unresponsive, responsive, main-frame did-fail-load, and preload-error events", () => {
+    const win = new EventEmitter();
+    win.webContents = new EventEmitter();
+    const records = [];
+    const detach = attachWindowDiagnosticListeners(win, {
+      record: (event) => records.push(event),
+      isShuttingDown: () => false,
+      surface: "main-window",
+    });
+    win.emit("unresponsive");
+    win.emit("responsive");
+    win.webContents.emit("did-fail-load", {}, -3, "ERR_ABORTED", "http://127.0.0.1/", true);
+    win.webContents.emit("did-fail-load", {}, -105, "ERR_NAME_NOT_RESOLVED", "http://127.0.0.1/frame", false);
+    win.webContents.emit("did-fail-load", {}, -102, "ERR_CONNECTION_REFUSED", "http://127.0.0.1/", true);
+    const preloadErr = new SyntaxError("secret preload detail");
+    win.webContents.emit("preload-error", {}, "/private/preload.cjs", preloadErr);
+    expect(records).toEqual([
+      { kind: "unresponsive", surface: "main-window" },
+      { kind: "responsive", surface: "main-window" },
+      { kind: "did-fail-load", surface: "main-window", errorCode: -102 },
+      { kind: "preload-error", surface: "main-window", error: preloadErr },
+    ]);
+    detach();
+    win.emit("unresponsive");
+    expect(records).toHaveLength(4);
+  });
+
+  it("wires crash, window, power and renderer records into one log, limiting all but crashes", () => {
+    const appTarget = new EventEmitter();
+    const processTarget = new EventEmitter();
+    const ipcTarget = new EventEmitter();
+    const lines = [];
+    let guard = () => true;
+    const diagnostics = installDesktopDiagnostics({
+      appTarget,
+      processTarget,
+      ipcTarget,
+      append: (record) => lines.push(record),
+      rendererAllowed: (event) => guard(event),
+      limiter: createDesktopDiagnosticLimiter({ maxPerMinute: 10, dedupeWindowMs: 60_000, now: () => 1_000 }),
+    });
+    const win = new EventEmitter();
+    win.webContents = new EventEmitter();
+    const powerMonitor = new EventEmitter();
+    diagnostics.attachWindow(win);
+    diagnostics.attachPower(powerMonitor);
+
+    win.emit("unresponsive");
+    win.emit("responsive");
+    win.emit("unresponsive"); // identical within a minute: once
+    powerMonitor.emit("resume");
+    ipcTarget.emit("desktop:report-diagnostic", {}, { kind: "api-timeout", method: "POST", timeoutMs: 30_000 });
+    // A page may not forge main-process kinds, and malformed payloads are dropped.
+    ipcTarget.emit("desktop:report-diagnostic", {}, { kind: "renderer", surface: "main-window", reason: "crashed" });
+    ipcTarget.emit("desktop:report-diagnostic", {}, null);
+    guard = () => false;
+    ipcTarget.emit("desktop:report-diagnostic", {}, { kind: "renderer-error", origin: "error", error: { name: "TypeError" } });
+    guard = () => { throw new Error("guard failed"); };
+    expect(() => ipcTarget.emit("desktop:report-diagnostic", {}, { kind: "api-timeout", method: "GET", timeoutMs: 30_000 })).not.toThrow();
+    const gone = { reason: "crashed", exitCode: 1 };
+    appTarget.emit("render-process-gone", {}, {}, gone);
+    appTarget.emit("render-process-gone", {}, {}, gone); // crashes are never deduplicated
+
+    expect(lines).toEqual([
+      "event=window-unresponsive surface=main-window",
+      "event=window-responsive surface=main-window",
+      "event=power-state state=resume",
+      "event=api-timeout method=POST timeoutMs=30000",
+      "event=render-process-gone surface=auxiliary reason=crashed exitCode=1",
+      "event=render-process-gone surface=auxiliary reason=crashed exitCode=1",
+    ]);
   });
 });
 

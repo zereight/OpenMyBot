@@ -16,8 +16,11 @@ import { PairPage, TeamLeftPage } from "./pair/PairPage";
 import { TEAM_LEFT_REFUSAL } from "../shared/cloud-hints";
 import { HomeScreen, SignedOutAtHome } from "./components/HomeScreen";
 import { PageBoundary } from "./components/PageBoundary";
+import { installRendererErrorDiagnostics } from "./lib/renderer-diagnostics";
 import { endedBeforeReload, forgetEndedSession } from "./lib/session-ended";
 import "./styles.css";
+
+installRendererErrorDiagnostics();
 
 // Before first paint; settleInterfaceMode must run before applySkin writes omb-skin.
 settleInterfaceMode();

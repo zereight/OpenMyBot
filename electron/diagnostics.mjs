@@ -160,13 +160,27 @@ const CHILD_PROCESS_TYPES = new Set([
   "Zygote",
 ]);
 const MAIN_FAILURE_ORIGINS = new Set(["uncaughtException", "unhandledRejection"]);
+const RENDERER_ERROR_ORIGINS = new Set(["error", "unhandledrejection", "error-boundary"]);
+const POWER_STATES = new Set(["suspend", "resume", "lock-screen", "unlock-screen"]);
+const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"]);
+const RENDERER_DIAGNOSTIC_KINDS = new Set(["renderer-error", "api-timeout"]);
+const MIN_API_TIMEOUT_MS = 100;
+const MAX_API_TIMEOUT_MS = 600_000;
 const ERROR_NAMES = new Set([
+  "AbortError",
   "AggregateError",
+  "ApiError",
+  "ChunkLoadError",
+  "DOMException",
   "Error",
   "EvalError",
+  "NetworkError",
+  "QuotaExceededError",
   "RangeError",
   "ReferenceError",
+  "SecurityError",
   "SyntaxError",
+  "TimeoutError",
   "TypeError",
   "URIError",
 ]);
@@ -187,14 +201,23 @@ function safeErrorName(error) {
   }
 }
 
+function safeTimeoutMs(value) {
+  if (!Number.isSafeInteger(value) || value <= 0) return null;
+  return Math.min(MAX_API_TIMEOUT_MS, Math.max(MIN_API_TIMEOUT_MS, value));
+}
+
+function safeSurface(value) {
+  return value === "main-window" ? "main-window" : "auxiliary";
+}
+
 /** Unknown event shapes are dropped, not serialised, so new Electron fields cannot leak. */
 export function formatDesktopCrashRecord(event = {}) {
   try {
+    if (!event || typeof event !== "object") return null;
     if (event.kind === "renderer") {
       const reason = known(event.reason, PROCESS_GONE_REASONS);
       if (reason === "clean-exit") return null;
-      const surface = event.surface === "main-window" ? "main-window" : "auxiliary";
-      return `event=render-process-gone surface=${surface} reason=${reason} exitCode=${exitCode(event.exitCode)}`;
+      return `event=render-process-gone surface=${safeSurface(event.surface)} reason=${reason} exitCode=${exitCode(event.exitCode)}`;
     }
     if (event.kind === "child") {
       const reason = known(event.reason, PROCESS_GONE_REASONS);
@@ -206,14 +229,104 @@ export function formatDesktopCrashRecord(event = {}) {
       const origin = known(event.origin, MAIN_FAILURE_ORIGINS, "uncaughtException");
       return `event=main-process-failure origin=${origin} error=${safeErrorName(event.error)}`;
     }
+    if (event.kind === "unresponsive") {
+      return `event=window-unresponsive surface=${safeSurface(event.surface)}`;
+    }
+    if (event.kind === "responsive") {
+      return `event=window-responsive surface=${safeSurface(event.surface)}`;
+    }
+    if (event.kind === "power") {
+      const state = known(event.state, POWER_STATES, "");
+      return state ? `event=power-state state=${state}` : null;
+    }
+    if (event.kind === "did-fail-load") {
+      // Chromium -3 is ERR_ABORTED from a newer navigation, not a load failure.
+      if (event.errorCode === -3) return null;
+      return `event=did-fail-load surface=${safeSurface(event.surface)} errorCode=${exitCode(event.errorCode)}`;
+    }
+    if (event.kind === "preload-error") {
+      return `event=preload-error surface=${safeSurface(event.surface)} error=${safeErrorName(event.error)}`;
+    }
+    if (event.kind === "renderer-error") {
+      const origin = known(event.origin, RENDERER_ERROR_ORIGINS, "");
+      if (!origin) return null;
+      return `event=renderer-error origin=${origin} error=${safeErrorName(event.error)}`;
+    }
+    if (event.kind === "api-timeout") {
+      const method = known(event.method, HTTP_METHODS, "");
+      const timeoutMs = safeTimeoutMs(event.timeoutMs);
+      if (!method || timeoutMs === null) return null;
+      return `event=api-timeout method=${method} timeoutMs=${timeoutMs}`;
+    }
   } catch {
   }
   return null;
 }
 
+/** Security boundary for renderer IPC: only renderer-scoped diagnostic kinds may be reported. */
+export function formatRendererDiagnosticRecord(event) {
+  if (!event || typeof event !== "object" || !RENDERER_DIAGNOSTIC_KINDS.has(event.kind)) return null;
+  return formatDesktopCrashRecord(event);
+}
+
+/** Bounds noisy diagnostic writes so repeated timeouts or sleep loops cannot truncate real crash history. */
+export function createDesktopDiagnosticLimiter({
+  maxPerMinute = 10,
+  dedupeWindowMs = 60_000,
+  now = Date.now,
+} = {}) {
+  const recentTimestamps = [];
+  const lastSeenByRecord = new Map();
+  return {
+    allow(record) {
+      if (typeof record !== "string" || !record) return false;
+      const t = now();
+      const windowStart = t - 60_000;
+      while (recentTimestamps.length > 0 && recentTimestamps[0] <= windowStart) {
+        recentTimestamps.shift();
+      }
+      const dedupeStart = t - dedupeWindowMs;
+      for (const [key, seenAt] of lastSeenByRecord) {
+        if (seenAt <= dedupeStart) lastSeenByRecord.delete(key);
+      }
+      const lastSeen = lastSeenByRecord.get(record);
+      if (lastSeen !== undefined && t - lastSeen < dedupeWindowMs) return false;
+      if (recentTimestamps.length >= maxPerMinute) return false;
+      recentTimestamps.push(t);
+      lastSeenByRecord.set(record, t);
+      return true;
+    },
+  };
+}
+
+// Electron's powerMonitor module cannot be accessed until app.whenReady() resolves.
+export function attachPowerMonitorDiagnostics(powerMonitorTarget, {
+  record,
+  isShuttingDown = () => false,
+}) {
+  if (!powerMonitorTarget || typeof powerMonitorTarget.on !== "function") return () => {};
+  let lastPowerState = null;
+  const powerHandlers = [];
+  for (const state of POWER_STATES) {
+    const handler = () => {
+      if (isShuttingDown() || lastPowerState === state) return;
+      lastPowerState = state;
+      record({ kind: "power", state });
+    };
+    powerMonitorTarget.on(state, handler);
+    powerHandlers.push([state, handler]);
+  }
+  return () => {
+    for (const [state, handler] of powerHandlers) {
+      powerMonitorTarget.off?.(state, handler);
+    }
+  };
+}
+
 export function installDesktopCrashListeners({
   appTarget,
   processTarget,
+  powerMonitorTarget = null,
   record,
   isShuttingDown = () => false,
   mainWebContents = () => null,
@@ -238,6 +351,7 @@ export function installDesktopCrashListeners({
     });
   };
 
+  const detachPower = attachPowerMonitorDiagnostics(powerMonitorTarget, { record, isShuttingDown });
   processTarget.on("uncaughtExceptionMonitor", onMainFailure);
   appTarget.on("render-process-gone", onRendererGone);
   appTarget.on("child-process-gone", onChildGone);
@@ -245,6 +359,81 @@ export function installDesktopCrashListeners({
     processTarget.off("uncaughtExceptionMonitor", onMainFailure);
     appTarget.off("render-process-gone", onRendererGone);
     appTarget.off("child-process-gone", onChildGone);
+    detachPower();
+  };
+}
+
+export function attachWindowDiagnosticListeners(win, {
+  record,
+  isShuttingDown = () => false,
+  surface = "main-window",
+}) {
+  const onUnresponsive = () => {
+    if (isShuttingDown()) return;
+    record({ kind: "unresponsive", surface });
+  };
+  const onResponsive = () => {
+    if (isShuttingDown()) return;
+    record({ kind: "responsive", surface });
+  };
+  const onDidFailLoad = (_event, errorCode, _errorDescription, _validatedURL, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3 || isShuttingDown()) return;
+    record({ kind: "did-fail-load", surface, errorCode });
+  };
+  const onPreloadError = (_event, _preloadPath, error) => {
+    if (isShuttingDown()) return;
+    record({ kind: "preload-error", surface, error });
+  };
+
+  win.on("unresponsive", onUnresponsive);
+  win.on("responsive", onResponsive);
+  win.webContents?.on("did-fail-load", onDidFailLoad);
+  win.webContents?.on("preload-error", onPreloadError);
+  return () => {
+    win.off?.("unresponsive", onUnresponsive);
+    win.off?.("responsive", onResponsive);
+    win.webContents?.off?.("did-fail-load", onDidFailLoad);
+    win.webContents?.off?.("preload-error", onPreloadError);
+  };
+}
+
+/**
+ * Wires every desktop diagnostic into one append-only log. Crash records are always written; hang, power and
+ * renderer records pass a limiter so a flapping signal or an error loop cannot truncate real crash history.
+ * attachWindow runs per main window; attachPower only after app.whenReady(), when powerMonitor exists.
+ */
+export function installDesktopDiagnostics({
+  appTarget,
+  processTarget,
+  ipcTarget = null,
+  append,
+  rendererAllowed = () => false,
+  isShuttingDown = () => false,
+  mainWebContents = () => null,
+  limiter = createDesktopDiagnosticLimiter(),
+}) {
+  const write = (record, limited) => {
+    if (record && (!limited || limiter.allow(record))) append(record);
+  };
+  const recordLimited = (event) => write(formatDesktopCrashRecord(event), true);
+  installDesktopCrashListeners({
+    appTarget,
+    processTarget,
+    record: (event) => write(formatDesktopCrashRecord(event), false),
+    isShuttingDown,
+    mainWebContents,
+  });
+  // One-way IPC: an unauthorized sender or malformed event is dropped silently, never thrown into the main event loop.
+  ipcTarget?.on("desktop:report-diagnostic", (event, payload) => {
+    try {
+      if (rendererAllowed(event)) write(formatRendererDiagnosticRecord(payload), true);
+    } catch {}
+  });
+  return {
+    attachWindow: (win, surface = "main-window") =>
+      attachWindowDiagnosticListeners(win, { record: recordLimited, isShuttingDown, surface }),
+    attachPower: (powerMonitorTarget) =>
+      attachPowerMonitorDiagnostics(powerMonitorTarget, { record: recordLimited, isShuttingDown }),
   };
 }
 
