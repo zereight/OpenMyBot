@@ -2,6 +2,9 @@
 // one of them answers "no plan, nothing to buy". Upstream keeps real code at this path: keep it as a stub on merges.
 import type { CloudOffer } from "../../electron/cloud-home.mjs";
 
+export const CLOUD_SOURCES = ["app_card", "app_howto", "app_menu", "app_settings", "app_routines", "app_pages", "app_whats_new_pro", "app_whats_new_team", "app_onboarding"] as const;
+export type CloudSource = (typeof CLOUD_SOURCES)[number];
+
 export type CloudPlanView = { kind: "unknown" | "signed-out" | "paid" | "free" | "attention" | "purchase" | "unverified" | "reauth" | "removed"; label: string; trial?: boolean; checking?: boolean; paidAt?: number; reason?: string };
 
 const PLAN_LABEL: Record<string, string> = { starter: "Starter", personal: "Personal", pro: "Pro", max: "Max" };

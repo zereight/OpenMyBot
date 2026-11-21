@@ -7,7 +7,8 @@ import { randomUuid } from "@/lib/random-uuid";
 import { imeComposing, sendsMessage, useSendKey } from "@/lib/send-key";
 import { localizedTaskTitle } from "@/lib/task-title";
 import type { BoardCard, BoardColumn } from "@/lib/thread-board";
-import { api, useStore, visibleMessages, type Bot, type Message } from "@/state/store";
+import { api, visibleMessages, type Bot, type Message } from "@/state/store";
+import { useStoreDispatch } from "@/state/store-select";
 import { BotAvatar } from "./Avatar";
 
 /** How many of the newest messages the panel shows. */
@@ -53,7 +54,7 @@ export function ThreadBoardPanel({ card, column, bot, onOpen, onClose }: {
   onOpen: () => void;
   onClose: () => void;
 }) {
-  const { dispatch } = useStore();
+  const dispatch = useStoreDispatch();
   const sendKey = useSendKey();
   const canWrite = useCanWriteIn(card.threadId, bot?.yourAccess);
   const [text, setText] = useState("");

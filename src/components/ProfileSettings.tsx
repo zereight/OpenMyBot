@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { api, useStore, type ConfigStatus } from "@/state/store";
+import { api, type ConfigStatus } from "@/state/store";
 import { t } from "@/lib/i18n";
+import { avatarMarks } from "@/lib/avatar-marks";
 import { saveTeamProfile } from "@/lib/own-profile";
 import { IMAGE_MAX_BYTES, imageAttachmentFromFile, isImageFile } from "@/lib/composer-attachments";
 import type { LocaleKey } from "@/locales";
@@ -10,6 +11,7 @@ import { EveryBotRules } from "./EveryBotRules";
 import { SETTINGS_INPUT, SettingsField } from "./SettingsPrimitives";
 import { profileInitials } from "./SidebarProfileMenu";
 import { User } from "lucide-react";
+import { sameFields, useStoreDispatch, useStoreSelector } from "@/state/store-select";
 
 const PHOTO_MIN_SIDE = 64;
 const PHOTO_MAX_SIDE = 8192;
@@ -64,7 +66,7 @@ function croppedPhoto(file: File, zoom: number): Promise<File> {
 
 /** The person's own picture beside their name in the sidebar. Kept in the app's attachment store; "" removes it. */
 function ProfilePhoto({ initials }: { initials: string }) {
-  const { state, dispatch } = useStore();
+  const state = useStoreSelector((s) => ({ config: s.config }), sameFields), dispatch = useStoreDispatch();
   const avatarUrl = state.config?.profile?.avatarUrl ?? "";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -135,8 +137,8 @@ function ProfilePhoto({ initials }: { initials: string }) {
               <button type="button" className="rounded-md bg-control px-2 py-1 text-[12px] text-ink hover:bg-raised-hover" disabled={busy} onClick={() => save(draft)}>{t("settings.profile.avatar.save")}</button>
             </div>
           </div>
-        ) : avatarUrl ? <img src={avatarUrl} alt="" className="size-10 rounded-full object-cover" />
-          : <span aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-full bg-ink/[0.08] text-[14px] font-medium leading-[18px] text-ink-secondary">{initials}</span>}
+        ) : avatarUrl ? <img {...avatarMarks("person", "picture")} src={avatarUrl} alt="" className="size-10 rounded-full object-cover" />
+          : <span {...avatarMarks("person", "initials")} aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-full bg-ink/[0.08] text-[14px] font-medium leading-[18px] text-ink-secondary">{initials}</span>}
         <label className="ui-button ui-button-md cursor-pointer rounded-full">
           {busy ? t("settings.profile.avatar.uploading") : t(avatarUrl ? "settings.profile.avatar.change" : "settings.profile.avatar.choose")}
           <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="sr-only" disabled={busy} onChange={(event) => {
@@ -153,7 +155,7 @@ function ProfilePhoto({ initials }: { initials: string }) {
 }
 
 export function ProfileFields() {
-  const { state, dispatch } = useStore();
+  const state = useStoreSelector((s) => ({ config: s.config }), sameFields), dispatch = useStoreDispatch();
   const [name, setName] = useState(state.config?.profile?.name ?? "");
   const [email, setEmail] = useState(state.config?.profile?.email ?? "");
   useEffect(() => {
@@ -210,7 +212,7 @@ function ProfileAvatar({ profile }: { profile?: { name?: string; email?: string;
   const initials = profileInitials(profile);
   const photo = profile?.avatarUrl && failed !== profile.avatarUrl ? profile.avatarUrl : null;
   return (
-    <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-ink/[0.06] text-[15px] font-medium text-ink-secondary">
+    <span {...avatarMarks("person", photo ? "picture" : "initials")} className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-ink/[0.06] text-[15px] font-medium text-ink-secondary">
       {photo ? <img src={photo} alt="" onError={() => setFailed(photo)} className="size-full object-cover" />
         : initials !== "?" ? initials : <User size={20} aria-hidden="true" />}
     </span>
@@ -218,7 +220,7 @@ function ProfileAvatar({ profile }: { profile?: { name?: string; email?: string;
 }
 
 export function ProfileSummaryRow() {
-  const { state } = useStore();
+  const state = useStoreSelector((s) => ({ config: s.config }), sameFields);
   const [editing, setEditing] = useState(false);
   const profile = state.config?.profile;
   const name = profile?.name?.trim() ?? "";

@@ -77,6 +77,7 @@ export const VITEST_SUBSETS = {
       "server/cloud-lending-memory.e2e.test.ts",
       "server/cloud-lending.e2e.test.ts",
       "server/cloud-lent-mcp.e2e.test.ts",
+      "server/cloud-personal-slack.e2e.test.ts",
       "server/cloud-send-kinds.e2e.test.ts",
       "server/cloud-send-move.e2e.test.ts",
       "server/cloud-send-rooms.e2e.test.ts",
@@ -86,16 +87,21 @@ export const VITEST_SUBSETS = {
       "server/cloud-sync.e2e.test.ts",
       "server/cloud-team-asker-owns.e2e.test.ts",
       "server/cloud-team-away.e2e.test.ts",
+      "server/cloud-team-bitwarden.e2e.test.ts",
+      "server/cloud-team-box-audience.e2e.test.ts",
       "server/cloud-team-browser.e2e.test.ts",
+      "server/cloud-team-check-backs.e2e.test.ts",
       "server/cloud-team-connections.e2e.test.ts",
       "server/cloud-team-conversation-share.e2e.test.ts",
       "server/cloud-team-engine-homes.e2e.test.ts",
+      "server/cloud-team-files.e2e.test.ts",
       "server/cloud-team-gateway-mcp.e2e.test.ts",
       "server/cloud-team-inbox.e2e.test.ts",
       "server/cloud-team-included-hosting.e2e.test.ts",
       "server/cloud-team-mausbot-reach.e2e.test.ts",
       "server/cloud-team-member-secrets.e2e.test.ts",
       "server/cloud-team-new-chat-private.e2e.test.ts",
+      "server/cloud-team-onepassword.e2e.test.ts",
       "server/cloud-team-open-reach.e2e.test.ts",
       "server/cloud-team-own-key-apps.e2e.test.ts",
       "server/cloud-team-owners.e2e.test.ts",
@@ -108,10 +114,12 @@ export const VITEST_SUBSETS = {
       "server/cloud-team-private-default.e2e.test.ts",
       "server/cloud-team-private.e2e.test.ts",
       "server/cloud-team-profile.e2e.test.ts",
+      "server/cloud-team-slack.e2e.test.ts",
       "server/cloud-team-published-apps.e2e.test.ts",
       "server/cloud-team-requests.e2e.test.ts",
       "server/cloud-team-routines.e2e.test.ts",
       "server/cloud-team-setup-request.e2e.test.ts",
+      "server/cloud-team-templates.e2e.test.ts",
       "server/cloud-team.e2e.test.ts",
       "server/host/brief-words.test.ts",
       "server/host/lending-lifts.test.ts",
@@ -204,6 +212,7 @@ export const SRC_OUTSIDE_RENDERER = [
   "src/components/app/app-frame-host.ts",
   "src/lib/citations.ts",
   "src/lib/composer-attachments.ts",
+  "src/lib/peer-message.ts",
   "src/lib/random-uuid.ts",
   "src/lib/receipts.ts",
 ];
@@ -346,9 +355,11 @@ export function laneOf(event) {
   return "full";
 }
 
-// The slowest shard sets the run's length. Windows and macOS run only the e2e files that depend on their OS, so their
-// shards stay as short as Linux's, and macOS keeps four: the account runs five macOS jobs at a time.
-export const VITEST_SHARDS = { "macos-latest": 4, "ubuntu-latest": 8, "windows-latest": 8 };
+// The slowest shard sets the run's length. Windows and macOS run only the e2e files that depend on their OS. A macOS
+// shard runs one file at a time: four took 24 minutes each on average in November 2026, and about one in eight hit
+// the 30-minute cap, so macOS runs five. The account runs five macOS jobs at a time; the full lane's other macOS jobs
+// (the smokes, browser identity and the browser driver) wait for a free one.
+export const VITEST_SHARDS = { "macos-latest": 5, "ubuntu-latest": 8, "windows-latest": 8 };
 
 // Test files at once on each platform's runner (OMB_VITEST_WORKERS, vite.config.ts). A Linux shard mostly waits on real
 // servers and fake engines: its 4 vCPU sat 70% idle one file at a time, and four files take a third of the time. A

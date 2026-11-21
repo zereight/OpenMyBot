@@ -8,7 +8,8 @@ import { useShowThreads } from "@/lib/thread-preferences";
 import { openThread } from "@/state/thread-navigation";
 import { setMapView, useMapView, type MapView } from "@/lib/map-view";
 import { SIDEBAR_INLINE, useMediaQuery } from "@/lib/use-media-query";
-import { useStore, type Bot } from "@/state/store";
+import type { Bot } from "@/state/store";
+import { sameFields, useStoreDispatch, useStoreSelector } from "@/state/store-select";
 import { BotAvatar } from "./Avatar";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Select } from "./Select";
@@ -98,7 +99,11 @@ function Column({ column, cards, bots, now, actions, capped }: { column: BoardCo
 }
 
 export function ThreadBoard({ bots, teams }: { bots: Bot[]; teams: Array<{ key: string; name: string }> }) {
-  const { state, dispatch } = useStore();
+  const dispatch = useStoreDispatch();
+  const { pendingQueued, allBots, groups } = useStoreSelector(
+    (state) => ({ pendingQueued: state.pendingQueued, allBots: state.bots, groups: state.groups }),
+    sameFields,
+  );
   const showThreads = useShowThreads();
   const now = useRelativeNow();
   const [team, setTeam] = useState<string | null>(null);
@@ -117,17 +122,17 @@ export function ThreadBoard({ bots, teams }: { bots: Bot[]; teams: Array<{ key: 
       .filter((lane) => lane.bots.length > 0);
   }, [bots, team, teams]);
   const laneBoards = useMemo(() => lanes.map((lane) => {
-    const built = buildThreadBoard(lane.bots, now, state.pendingQueued);
+    const built = buildThreadBoard(lane.bots, now, pendingQueued);
     if (removed.size === 0) return built;
     return Object.fromEntries(BOARD_COLUMNS.map((column) => [column, built[column].filter((card) => !removed.has(cardKey(card)))])) as ThreadBoardColumns;
-  }), [lanes, now, state.pendingQueued, removed]);
+  }), [lanes, now, pendingQueued, removed]);
   const everyCard = laneBoards.flatMap((board) => BOARD_COLUMNS.map((column) => ({ column, cards: board[column] })).flatMap(({ column, cards }) => cards.map((card) => ({ card, column, siblings: cards }))));
   const [deleting, setDeleting] = useState<{ botId: string; threadId: string } | null>(null);
   // The open dialog follows the board, so a thread that started working or went away since it was asked about is not deleted.
   const doomed = deleting ? everyCard.find(({ card }) => card.botId === deleting.botId && card.threadId === deleting.threadId)?.card : undefined;
   const wide = useMediaQuery(SIDEBAR_INLINE, true);
   const [selected, setSelected] = useState<{ botId: string; threadId: string } | null>(null);
-  const open = (card: BoardCard) => openThread(dispatch, { botId: card.botId, threadId: card.threadId }, state, showThreads);
+  const open = (card: BoardCard) => openThread(dispatch, { botId: card.botId, threadId: card.threadId }, { bots: allBots, groups }, showThreads);
   // Looked up on every render: a thread that was deleted, snoozed or ended since closes the panel instead of leaving a stale copy.
   const chosen = wide && selected
     ? everyCard.find(({ card }) => card.botId === selected.botId && card.threadId === selected.threadId)
@@ -150,7 +155,7 @@ export function ThreadBoard({ bots, teams }: { bots: Bot[]; teams: Array<{ key: 
   const actions: CardActions = {
     selected: chosen ? selected : null,
     onOpen: (card) => (wide ? setSelected({ botId: card.botId, threadId: card.threadId }) : open(card)),
-    onArchive: (card) => threadRowActions(card.botId, dispatch, false).onArchive(card, card.archived ? null : Date.now()),
+    onArchive: (card) => threadRowActions(card.botId, dispatch).onArchive(card, card.archived ? null : Date.now()),
     onDelete: (card) => setDeleting({ botId: card.botId, threadId: card.threadId }),
   };
   return (

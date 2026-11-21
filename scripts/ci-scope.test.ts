@@ -76,7 +76,7 @@ describe("vitest matrix", () => {
   it("gives Linux and Windows eight shards each and macOS four, and only Linux every e2e file", () => {
     const { include } = vitestMatrix(["macos-latest", "ubuntu-latest", "windows-latest"]);
     const count = (os: string) => include.filter((entry) => entry.os === os).length;
-    expect([count("ubuntu-latest"), count("windows-latest"), count("macos-latest")]).toEqual([8, 8, 4]);
+    expect([count("ubuntu-latest"), count("windows-latest"), count("macos-latest")]).toEqual([8, 8, 5]);
     expect(include.find((entry) => entry.os === "windows-latest" && entry.shard === 8))
       .toEqual({ os: "windows-latest", part: "shard 8/8", shard: 8, shards: 8, files: "", e2e: "host", node_tests: false, workers: 2 });
     expect(include.filter((entry) => entry.node_tests).map((entry) => [entry.os, entry.shard]))
@@ -217,6 +217,7 @@ describe("CI outputs", () => {
       "server/cloud-lending-memory.e2e.test.ts",
       "server/cloud-lending.e2e.test.ts",
       "server/cloud-lent-mcp.e2e.test.ts",
+      "server/cloud-personal-slack.e2e.test.ts",
       "server/cloud-send-kinds.e2e.test.ts",
       "server/cloud-send-move.e2e.test.ts",
       "server/cloud-send-rooms.e2e.test.ts",
@@ -226,16 +227,21 @@ describe("CI outputs", () => {
       "server/cloud-sync.e2e.test.ts",
       "server/cloud-team-asker-owns.e2e.test.ts",
       "server/cloud-team-away.e2e.test.ts",
+      "server/cloud-team-bitwarden.e2e.test.ts",
+      "server/cloud-team-box-audience.e2e.test.ts",
       "server/cloud-team-browser.e2e.test.ts",
+      "server/cloud-team-check-backs.e2e.test.ts",
       "server/cloud-team-connections.e2e.test.ts",
       "server/cloud-team-conversation-share.e2e.test.ts",
       "server/cloud-team-engine-homes.e2e.test.ts",
+      "server/cloud-team-files.e2e.test.ts",
       "server/cloud-team-gateway-mcp.e2e.test.ts",
       "server/cloud-team-inbox.e2e.test.ts",
       "server/cloud-team-included-hosting.e2e.test.ts",
       "server/cloud-team-mausbot-reach.e2e.test.ts",
       "server/cloud-team-member-secrets.e2e.test.ts",
       "server/cloud-team-new-chat-private.e2e.test.ts",
+      "server/cloud-team-onepassword.e2e.test.ts",
       "server/cloud-team-open-reach.e2e.test.ts",
       "server/cloud-team-own-key-apps.e2e.test.ts",
       "server/cloud-team-owners.e2e.test.ts",
@@ -248,10 +254,12 @@ describe("CI outputs", () => {
       "server/cloud-team-private-default.e2e.test.ts",
       "server/cloud-team-private.e2e.test.ts",
       "server/cloud-team-profile.e2e.test.ts",
+      "server/cloud-team-slack.e2e.test.ts",
       "server/cloud-team-published-apps.e2e.test.ts",
       "server/cloud-team-requests.e2e.test.ts",
       "server/cloud-team-routines.e2e.test.ts",
       "server/cloud-team-setup-request.e2e.test.ts",
+      "server/cloud-team-templates.e2e.test.ts",
       "server/cloud-team.e2e.test.ts",
       "server/host/brief-words.test.ts",
       "server/host/lending-lifts.test.ts",

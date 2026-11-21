@@ -113,6 +113,13 @@ describe("the words", () => {
     expect(due.map((candidate) => candidate.id)).toEqual(["before"]);
   });
 
+  it("name Antigravity's windows as Gemini's, and keep them out of the automations, which wait for the engine's own reset", () => {
+    const gemini: EngineLimit = { ...claude(95), engine: "antigravity", name: "Antigravity", driver: "antigravity", meter: "Gemini" };
+    expect(limits.limitLine(gemini, NOW)).toBe("Antigravity (Gemini): 95% used · resets 3:40 PM");
+    expect(limits.nearLimitEngines([claude(92), gemini]).map((limit) => limit.engine)).toEqual(["claude"]);
+    expect(limits.resetMarkers([claude(92), gemini], NOW, NOW + 24 * HOUR, NOW).map((marker) => marker.engine)).toEqual(["claude"]);
+  });
+
   it("put each known reset in the calendar's range", () => {
     expect(limits.resetMarkers([claude(92), { ...claude(10), engine: "codex", name: "Codex", resetsAt: null }], NOW, NOW + 24 * HOUR, NOW))
       .toEqual([{ engine: "claude", name: "Claude", at: RESET }]);
@@ -196,6 +203,25 @@ describe("the bars", () => {
     expect(out.querySelector("[data-usage-warn]")).not.toBeNull();
     expect(out.querySelector("svg path")).not.toBeNull();
     expect(out.querySelector(".sr-only")?.textContent).toBe("Claude: at its limit, resets 3:40 PM");
+  });
+
+  it("keep the bars and each window's track grey with room left, orange near the limit and red at it", () => {
+    const glyph = (limit: EngineLimit) => {
+      serve([limit]);
+      const ink = mount(createElement(UsageBars, { engine: "claude" })).querySelector("[data-usage-glyph]")?.getAttribute("class");
+      root!.unmount();
+      return ink;
+    };
+    expect([glyph(windows(38, 10)), glyph(claude(92)), glyph(claude(100, true))]).toEqual([
+      expect.stringContaining("text-ink-tertiary"), expect.stringContaining("text-warning"), expect.stringContaining("text-danger"),
+    ]);
+    const tracks = (limit: EngineLimit) => {
+      const fills = [...mount(createElement(UsageRows, { limit })).querySelectorAll("[data-usage-track]")].map((track) => track.className.match(/bg-[\w-]+/)?.[0]);
+      root!.unmount();
+      return fills;
+    };
+    expect(tracks(windows(92, 20, { blocked: true, usedPercent: 100 }))).toEqual(["bg-danger", "bg-ink-tertiary"]);
+    expect(tracks(windows(95, 20))).toEqual(["bg-warning", "bg-ink-tertiary"]);
   });
 
   it("open every window in a card on a mouse hover, never on a touch, and keep the card's clicks from the model button", async () => {

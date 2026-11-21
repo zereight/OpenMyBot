@@ -9,7 +9,7 @@ export interface VaultList {
   logins: LoginSummary[];
   secrets: Array<VaultSecret | LinkedSecret>;
   onePassword: OnePasswordStatus;
-  /** Absent from a server older than Bitwarden. */
+  /** Absent from a server that does not offer Bitwarden. */
   bitwarden?: BitwardenStatus;
 }
 

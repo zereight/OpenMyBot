@@ -49,12 +49,10 @@ export function createVaultRoutes(deps: VaultRouteDeps): RouteHandler {
     const readable = (id: string) => deps.secrets.listSecrets(reader).some((secret) => secret.id === id);
     if (path === "/api/vault") {
       if (method !== "GET") return json(res, 405, { error: "method not allowed" });
-      if (!reader.team) return json(res, 200, { logins: [], secrets: deps.secrets.listSecrets(reader), onePassword: { connected: false } });
-      return json(res, 200, {
-        logins: [...deps.logins.list(), ...deps.logins.onePassword.list(), ...(deps.logins.bitwarden?.list() ?? [])],
-        secrets: [...deps.secrets.listSecrets(reader), ...(deps.linked?.() ?? [])], onePassword: deps.logins.onePassword.status(),
-        ...(deps.logins.bitwarden ? { bitwarden: deps.logins.bitwarden.status() } : {}),
-      });
+      const bitwarden = deps.logins.bitwarden;
+      if (!reader.team) return json(res, 200, { logins: [], secrets: deps.secrets.listSecrets(reader), onePassword: { connected: false }, ...(bitwarden ? { bitwarden: { connected: false } } : {}) });
+      return json(res, 200, { logins: [...deps.logins.list(), ...deps.logins.onePassword.list(), ...(bitwarden?.list() ?? [])], secrets: [...deps.secrets.listSecrets(reader), ...(deps.linked?.() ?? [])],
+        onePassword: deps.logins.onePassword.status(), ...(bitwarden ? { bitwarden: bitwarden.status() } : {}) });
     }
     if (path !== SECRETS && !path.startsWith(`${SECRETS}/`)) return json(res, 404, { error: "not found" });
     if (!reader.team && method !== "DELETE") return json(res, 403, { error: "Only an admin can add or change a secret in the Vault." });

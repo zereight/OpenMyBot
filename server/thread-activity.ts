@@ -5,7 +5,8 @@ import { movesThreadToTop } from "../shared/thread-order.ts";
 
 interface ThreadActivity {
   bots: Array<{ id: string; tasks?: Array<{ threadId: string; createdAt: number; updatedAt?: number; lastThreadOrderAt?: number; askedAt?: number; routineRunId?: string; archivedAt?: number; archivedBy?: "auto" }> }>;
-  groups: Array<{ tasks?: Array<{ threadId: string; createdAt: number; updatedAt?: number; lastThreadOrderAt?: number }> }>;
+  groups: Array<{ id: string; tasks?: Array<{ threadId: string; createdAt: number; updatedAt?: number; lastThreadOrderAt?: number }> }>;
+  registry?: { changedInPlace(ref: { kind: "bot" | "group"; id: string }): void };
   taskByThread(botId: string, threadId: string): { archivedBy?: "auto" } | undefined;
   patchTask(botId: string, threadId: string, patch: { archivedAt?: number; archivedBy?: "auto"; restoredAt?: number }): unknown;
   saveBots(): void;
@@ -15,8 +16,10 @@ interface ThreadActivity {
 /** In memory only: message writes must not rewrite bots.json. */
 export function noteThreadActivity(host: ThreadActivity, threadId: string, at: number, forOrder = false, orderAt = at): void {
   if (!Number.isFinite(at)) return;
-  for (const task of [...host.bots, ...host.groups].map((owner) => owner.tasks?.find((candidate) => candidate.threadId === threadId))) {
+  for (const [kind, owner] of [...host.bots.map((bot) => ["bot", bot] as const), ...host.groups.map((group) => ["group", group] as const)]) {
+    const task = owner.tasks?.find((candidate) => candidate.threadId === threadId);
     if (!task) continue;
+    host.registry?.changedInPlace({ kind, id: owner.id });
     task.updatedAt = Math.max(task.updatedAt ?? 0, at);
     if (forOrder) task.lastThreadOrderAt = Math.max(task.lastThreadOrderAt ?? 0, orderAt);
   }

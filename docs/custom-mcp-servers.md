@@ -92,6 +92,7 @@ so each service bills you directly and OpenMyBot pays for none of it.
 | --- | --- | --- |
 | **AgentMail**, email inboxes | `https://mcp.agentmail.to/mcp` | Browser sign-in |
 | **AgentPhone**, US and Canadian numbers, texts and calls | `https://mcp.agentphone.ai/mcp` | Browser sign-in |
+| **Higgsfield**, AI images and videos | `https://mcp.higgsfield.ai/mcp` | Browser sign-in |
 | **Vapi**, phone calls | `https://mcp.vapi.ai/mcp` | A private API key from the Vapi dashboard |
 | **Telnyx**, numbers in many countries, texts and calls | `https://api.telnyx.com/v2/mcp` | An API key from the Telnyx portal |
 
@@ -259,8 +260,15 @@ already use** step (`server/setup-import.ts`). On the computer running
 OpenMyBot, and only for the desktop app's own window there, it reads the
 `mcpServers` of Claude Code (only the top-level key of `~/.claude.json`),
 Claude Desktop, Cursor (`~/.cursor/mcp.json`) and Gemini CLI
-(`~/.gemini/settings.json`), and the `[mcp_servers.*]` tables of Codex's
-`config.toml`. Each server goes through the import parser, switched off;
+(`~/.gemini/settings.json`), the `[mcp_servers.*]` tables of Codex's
+`config.toml`, the `mcp_servers:` of Hermes Agent's `config.yaml`
+(`$HERMES_HOME`, else `~/.hermes`, or `%LOCALAPPDATA%\hermes` on Windows) and
+the `mcp.servers` of OpenClaw's `openclaw.json` (`$OPENCLAW_CONFIG_PATH`, else
+`$OPENCLAW_STATE_DIR` or `~/.openclaw`; its JSON5 comments and trailing commas
+are accepted, and a config that still can't be read brings no tools).
+OpenClaw's `transport: "sse"` stays SSE; `streamable-http` comes in as HTTP.
+Neither tool's `.env`, `auth.json`, `mcp-tokens/`, `secrets.json`,
+`credentials/`, sessions, state databases or memory files are ever opened. Each server goes through the import parser, switched off;
 one already here by command or address is left alone, a different server
 under a name already taken is skipped and named in the result, a name
 OpenMyBot keeps for itself (`browser`, `computer`, `data`…) gets an `mcp-`
@@ -272,7 +280,9 @@ Claude bots already run them. Token variables (Codex `bearer_token_env_var`)
 are not resolved: add the token as a header when you test the server.
 
 The step also brings in the person's own skills (`~/.claude/skills`,
-`~/.codex/skills`). Each one is copied once, read-only except on Windows, into
+`~/.codex/skills`, Hermes Agent's `skills/` with its category folders, and
+OpenClaw's `skills/` and `workspace/skills/`). The skills Hermes ships itself,
+listed in its `skills/.bundled_manifest`, are left out. Each one is copied once, read-only except on Windows, into
 `<data>/imported-skills` (`server/imported-skills.ts`), and every bot uses
 that copy on every engine that works with files: the bot the tour sets up,
 and any bot made later with New bot, the API, a template, a Chief
@@ -413,6 +423,22 @@ tool search used by bots that cannot search tools themselves, two minutes).
 An HTTP 401 tells the bot to send the message again (a sign-in is refreshed
 when a message starts) and, if that fails, to sign in again or check the
 server's header values in Plugins → MCP servers.
+
+### Which bot made a call, on a server that runs on a lent computer
+
+A server saved on a Cloud to run on a computer lent to it is started by that
+computer. Each tool call it gets names the bot and conversation that made it,
+in the call's `_meta`:
+
+```json
+{ "_meta": { "openmausbot/caller": { "botId": "…", "threadId": "…", "verified": false } } }
+```
+
+It is a hint for the server's own logs or per-bot settings, never proof of
+who called: the Cloud says it, the computer passes it on as it is, and
+OpenMyBot never uses it to allow or refuse anything. The Cloud sends it
+only to a desktop app new enough to pass it on, so an older one keeps running
+calls as before; a listing of the server's tools never carries it.
 
 ## What a Claude bot sees, and the "Also use my Claude Code MCP servers" switch
 

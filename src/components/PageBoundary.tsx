@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from "react";
 
+import { initAnalytics, track } from "@/lib/analytics";
 import { t } from "@/lib/i18n";
 import { reportRendererDiagnostic } from "@/lib/renderer-diagnostics";
 
@@ -18,6 +19,8 @@ export class PageBoundary extends Component<{ children: ReactNode }, { error: Er
       origin: "error-boundary",
       error: { name: error?.name || "Error" },
     });
+    void initAnalytics();
+    track("app_load", { stage: "error" });
   }
 
   render() {

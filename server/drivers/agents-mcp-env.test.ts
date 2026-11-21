@@ -18,7 +18,7 @@ describe("the agents server's settings", () => {
   it("list every setting the turn's stdio launch hands the server, bar the ones the URL route carries another way", () => {
     const conversation: AgentsConversation = {
       threadId: "t1", bot: { id: "b1" }, room: false, teamComputer: false,
-      host: { skillAuthoring: true, sharedComputers: true, cloudHome: true, team: true, voiceNotes: true, x: true, research: true, imageGeneration: true, meetings: true, appHosting: true },
+      host: { skillAuthoring: true, sharedComputers: true, cloudHome: true, team: true, voiceNotes: true, x: true, research: true, imageGeneration: true, meetings: true, appHosting: true, localVm: true },
     };
     const launched = Object.keys(agentsServerEnv(conversation, { generation: "g", depth: 0, skillAuthoring: true }, () => "token", "http://127.0.0.1:1"));
     expect(launched.length).toBeGreaterThan(10);

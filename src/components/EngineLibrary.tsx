@@ -2,10 +2,11 @@ import { useContext, useState, type ReactNode } from "react";
 import { SettingsLook } from "./SettingsPrimitives";
 import { useUpdatedOnce } from "@/hooks/use-updated-once";
 import { ArrowUpRight, Check, ChevronDown, RefreshCw } from "lucide-react";
-import { useStore, type InstanceInfo } from "@/state/store";
+import { type InstanceInfo } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { InstanceProviderMark } from "./ProviderIcons";
+import { useStoreActions } from "@/state/store-select";
 
 export function engineReady(instance: InstanceInfo): boolean {
   if (instance.driverKind === "clineAgent") {
@@ -19,7 +20,7 @@ const providers: Record<string, string> = {
   claudeAgent: "Anthropic", codex: "OpenAI", grok: "xAI", grokAgent: "xAI",
   kimiAgent: "Moonshot AI", droidAgent: "Factory", cursorAgent: "Cursor",
   antigravityAgent: "Google", opencodeGo: "OpenCode", qwenAgent: "Qwen",
-  hermesAgent: "Nous Research", clineAgent: "Cline", copilotAgent: "GitHub", commandCodeAgent: "Command Code", kiroAgent: "Amazon Web Services", piAgent: "pi.dev", mistral: "Mistral AI", cerebras: "Cerebras", groq: "Groq", greenference: "Greenference", modelgo: "ModelGo", meta: "Meta", museCode: "Meta", deepseekAgent: "DeepSeek",
+  hermesAgent: "Nous Research", clineAgent: "Cline", copilotAgent: "GitHub", commandCodeAgent: "Command Code", kiroAgent: "Amazon Web Services", devinAgent: "Cognition", piAgent: "pi.dev", mistral: "Mistral AI", mistralVibeAgent: "Mistral AI", cerebras: "Cerebras", groq: "Groq", greenference: "Greenference", modelgo: "ModelGo", meta: "Meta", museCode: "Meta", deepseekAgent: "DeepSeek",
 };
 
 export function providerName(instance: InstanceInfo): string {
@@ -101,7 +102,7 @@ export function EngineSections({ instances, renderEngine, isReady = engineReady 
 }
 
 export function RefreshEngines() {
-  const { refreshInstances } = useStore();
+  const { refreshInstances } = useStoreActions();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
