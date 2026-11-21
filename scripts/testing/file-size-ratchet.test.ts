@@ -21,7 +21,7 @@ const LINES: Record<string, number> = {
   "electron/main.mjs": 3124,
   "server/store.ts": 2265,
   "src/components/Sidebar.tsx": 1672,
-  "server/drivers/claude.ts": 2069,
+  "server/drivers/claude.ts": 2074,
   "server/drivers/acp/core.ts": 1644,
   "server/drivers/codex.ts": 1593,
   "server/routines.ts": 1553,
@@ -44,6 +44,8 @@ const LINES: Record<string, number> = {
   "server/cli.ts": 1053,
   "src/components/AttachmentPreview.tsx": 1034,
   "server/meetings/meetbot.ts": 1047,
+  "server/workspace-backup.ts": 1009,
+  "packages/phone-protocol/src/wire.ts": 1004,
   "electron/data-dir-lease.node-test.mjs": 846, // the data-folder lease's own tests: many platform cases (Windows probes in data-dir-lease-windows.node-test.mjs)
 };
 
