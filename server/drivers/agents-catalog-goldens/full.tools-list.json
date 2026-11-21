@@ -383,6 +383,22 @@
           "report_back": {
             "type": "boolean",
             "description": "True: its result resumes you here; end your turn. Not in a room."
+          },
+          "worktree": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "branch": {
+                "type": "string"
+              },
+              "base": {
+                "type": "string"
+              },
+              "repo": {
+                "type": "string"
+              }
+            },
+            "description": "Optional: isolate this thread in a new Git worktree under this bot's repository."
           }
         },
         "required": [

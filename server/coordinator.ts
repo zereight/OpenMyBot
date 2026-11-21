@@ -26,7 +26,7 @@ export type CoordinateBotsCall = {
   /** Files that travel with the work, already in the attachment store (server/host/handoff-files.ts). */
   files?: readonly PassedFile[];
   /** start_thread's report_back: the one target is the sender's own new thread, run on this model. */
-  ownThread?: { modelSelection?: ModelSelection; approvalMode?: "ask" };
+  ownThread?: { modelSelection?: ModelSelection; approvalMode?: "ask"; cwd?: string };
   /** post_to_thread: one message into this existing thread; wake starts a run there, else it waits for the next one. */
   post?: { deliveryId: string; wake: boolean };
 };

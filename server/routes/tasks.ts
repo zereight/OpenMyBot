@@ -14,6 +14,7 @@ import { isProjectEmoji, type BotRecord, type Store, type TaskRecord } from "../
 import { parseSurface } from "../surface.ts";
 import type { ThreadStarters } from "../thread-starters.ts";
 import { titleConversationExcerpt, type ThreadTitleSource } from "../thread-title.ts";
+import { cleanupDeletedThreadWorktree } from "../worktrees.ts";
 import type { MessagePage } from "./channels.ts";
 import { bulkDeleteThreadIds, type BulkDeleteRefusal } from "./bulk-delete.ts";
 import { forkMessageId } from "./fork-request.ts";
@@ -114,6 +115,7 @@ export function createTaskRoutes(deps: TaskRouteDeps): RouteHandler & { deleteTa
       handoffs.forget(threadId);
       settleDirectFollowup(directTurnGenerationByThread.get(threadId));
       rejectDeletedThreadSkillStages(stagedSkillCleanups.get(threadId) ?? []);
+      void cleanupDeletedThreadWorktree(threadId);
     }
     return result;
   };
