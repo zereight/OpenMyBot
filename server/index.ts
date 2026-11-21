@@ -358,7 +358,7 @@ import {
   beginMemoryTurn,
   endMemoryTurn,
   flushAllMemoryJournals,
-  journalTurnWrite,
+  journalBotMemoryUpdate, journalTurnWrite,
   type MemoryJournalEntry,
 } from "./memory-journal.ts";
 import {
@@ -12935,8 +12935,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (method === "POST" && path === "/api/internal/memory") {
         const body = await readInternalBody();
         const ownersAsk = CLOUD_TEAM || (!store.groupByThread(internalCapability.threadId) && ownersOwnAsk(store.activePath(internalCapability.threadId)));
-        const result = ownersWrite(() => botMemoryUpdate(teamHost.layer(internalSender.id, internalCapability.threadId), body, { source: memorySource(), aboutMe: ownersAsk ? aboutMeFacts : null,
-          prefer: body?.action === "prefer" ? personPreference.target(internalCapability, internalSender) : null }));
+        const layer = teamHost.layer(internalSender.id, internalCapability.threadId);
+        const result = ownersWrite(() => journalBotMemoryUpdate(layer, internalCapability.threadId, () => botMemoryUpdate(layer, body, { source: memorySource(), aboutMe: ownersAsk ? aboutMeFacts : null, prefer: body?.action === "prefer" ? personPreference.target(internalCapability, internalSender) : null })));
         return json(res, result.ok ? 200 : result.code === "conflict" ? 409 : 400, result);
       }
       if (method === "POST" && path === "/api/internal/memory/log") {
