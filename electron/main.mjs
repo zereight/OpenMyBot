@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildErrorPage, desktopViewerErrorPage, showBootFailure } from "./error-pages.mjs";
+import { attachRendererRecovery, isLiveWebContents, resolveRecoveryTarget, safeSend } from "./renderer-recovery.mjs";
 import { startCua, stopCua, registerCuaIpc, requestComputerUse, setCuaStateListener, grantLocalComputer } from "./cua.mjs";
 import { createAndroidDeviceController } from "./android-device.mjs";
 import { finishSpeech, speechBusy, startSpeech, stopSpeech } from "./speech.mjs";
@@ -199,8 +200,7 @@ function sendToPage(win, channel, value) {
     if (home) void showHome({ place: "cloud" }); else if (activeRemote(environmentsState)) void workspaceMenuAction(() => switchEnvironment(LOCAL_ID));
     return false;
   }
-  win.webContents.send(channel, value);
-  return true;
+  return safeSend(win.webContents, channel, value);
 }
 
 function deliverPackageInstall(win = mainWindow) {
@@ -810,8 +810,8 @@ function ensureCloudAccount() {
       void includedX.onState(state); void includedPages.onState(state); updatesConsent?.accountChanged(state); accounts.tell();
       refreshCloudMenus();
       announceCloudReady(state);
-      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.mainFrame.url.startsWith(`${rendererOrigin()}/`) &&
-        !activeRemote(environmentsState) && !desktopRemoteAccess) mainWindow.webContents.send("cloud-account:state-changed", state);
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.mainFrame?.url?.startsWith(`${rendererOrigin()}/`) &&
+        !activeRemote(environmentsState) && !desktopRemoteAccess) safeSend(mainWindow.webContents, "cloud-account:state-changed", state);
     },
   });
   return cloudAccount;
@@ -908,9 +908,9 @@ function ensureManagedDesktop() {
       }
       companyBackupSchedule?.reconcile();
       // Remote pages never receive local identity events, even in a window that once subscribed locally.
-      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.mainFrame.url.startsWith(`${rendererOrigin()}/`) &&
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.mainFrame?.url?.startsWith(`${rendererOrigin()}/`) &&
           !activeRemote(environmentsState) && !desktopRemoteAccess) {
-        mainWindow.webContents.send("organization:state-changed", state);
+        safeSend(mainWindow.webContents, "organization:state-changed", state);
       }
     },
   });
@@ -996,7 +996,7 @@ function receiveCompanyBackupClientState(event, input) {
 function publishCompanyBackupState(value) {
   companyBackupState = { ...value, ...(companyBackupSchedule ? { schedule: companyBackupSchedule.state() } : {}) };
   if (mainWindow && !mainWindow.isDestroyed() && !activeRemote(environmentsState) && !desktopRemoteAccess &&
-      mainWindow.webContents.mainFrame.url.startsWith(`${rendererOrigin()}/`)) mainWindow.webContents.send("company-backups:state-changed", companyBackupState);
+      mainWindow.webContents.mainFrame?.url?.startsWith(`${rendererOrigin()}/`)) safeSend(mainWindow.webContents, "company-backups:state-changed", companyBackupState);
 }
 
 function localBackupRequest(proc, route, init = {}) {
@@ -1360,9 +1360,7 @@ function ensureDesktopWorkspace(owner) {
     createView: (options) => new WebContentsView(options),
     partitionPrefix: `openmausbot-desktop-workspace-${randomUUID()}`,
     notify: (state) => {
-      if (!owner.isDestroyed() && !owner.webContents.isDestroyed()) {
-        owner.webContents.send("desktop-workspace:state", state);
-      }
+      if (!owner.isDestroyed()) safeSend(owner.webContents, "desktop-workspace:state", state);
     },
   });
   desktopWorkspaceManager = manager;
@@ -2015,6 +2013,11 @@ function createWindow({ deferNavigation = false } = {}) {
     }
   });
   desktopDiagnostics.attachWindow(win);
+  attachRendererRecovery(win, {
+    powerMonitor, isQuitting: () => desktopShutdownStarted, log: slog, recoverHome: () => showHome(),
+    resolveTarget: () => resolveRecoveryTarget({ currentUrl: win.webContents.getURL(), activeOrigin: activeRemote(environmentsState)?.origin ?? null, localOrigin: rendererOrigin(), isRemote: Boolean(activeRemote(environmentsState)), serverReady, isPackaged: app.isPackaged, desktopRemoteAccess: Boolean(desktopRemoteAccess), devUrl: DEV_URL, homeActive: Boolean(homeWindow.placeOrigin() || homeWindow.asking()), buildErrorPage: () => buildErrorPage({ allPortsOccupied: serverStartConflictOnly, logDir: LOG_DIR, keepTrying: !desktopRemoteAccess && alwaysOnHome.on() }, nativeText) }),
+    onCircuitOpen: ({ resetAndReload }) => { void dialog.showMessageBox(win, { type: "error", message: "The app window stopped responding repeatedly.", buttons: [nativeT("native.role.reload"), nativeT("native.common.cancel")], defaultId: 0, cancelId: 1 }).then(({ response }) => { if (response === 0) void resetAndReload(); }).catch(() => {}); },
+  });
   win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame || errorCode === -3 /* aborted by a newer navigation */) return; if (validatedURL.startsWith(`${rendererOrigin()}/`)) launchAnalytics.stage("page_load_failed");
     const remote = activeRemote(environmentsState);
@@ -2576,7 +2579,7 @@ const homeWindow = createHomeWindow({ clean: cleanWorkspace, journal: oneHome.jo
   localOrigin: rendererOrigin, cookieFetch: (...args) => session.defaultSession.fetch(...args), power: cloudPower, splash: () => startupScreen, lastInput: oneHome.lastInput, rehomed: () => talk.homeChanged(), log: slog, t: nativeT,
   hosts: () => session.defaultSession, readyStore: jsonFile(path.join(app.getPath("userData"), "cloud-ready.json")), ownMove: () => ownHome?.underWay() ?? null,
   remembered: homePlaces.remembered, remember: homePlaces.remember, left: homePlaces.left, drop: homePlaces.drop,
-  publish: view => { placeSwitch.waking(view?.screen === "waking"); if (mainWindow && !mainWindow.isDestroyed() && senderIsLocal({ sender: mainWindow.webContents })) mainWindow.webContents.send("home:state-changed", view); },
+  publish: view => { placeSwitch.waking(view?.screen === "waking"); if (mainWindow && !mainWindow.isDestroyed() && senderIsLocal({ sender: mainWindow.webContents })) safeSend(mainWindow.webContents, "home:state-changed", view); },
   go: (url, origin, place) => { if (place?.kind === "team" || place?.kind === "own") { activatePlace(place); if (place.kind === "team") { teamProfileSeeds.opened(place.origin); teamLinks.opened(place.id); } } else if (origin) activateCloud(origin); else if (activeEnvironment(environmentsState)) persistEnvironments(withActive(environmentsState, LOCAL_ID)); return navigateMainWindow(url, true); },
   reopen: (place, still) => reopenSavedServer(place, { still, saved: () => environmentsState.environments.filter(handSaved), fetch: (...args) => session.defaultSession.fetch(...args), opened: async (entry) => { homePlaces.remember(null); persistEnvironments(withActive(environmentsState, entry.id)); return navigateMainWindow(activeOrigin(), true); } }),
   showLocal: leaving => { if (!mainWindow || mainWindow.isDestroyed()) return createWindow(); if (!leaving) return; persistEnvironments(withActive(environmentsState, LOCAL_ID)); return navigateMainWindow(rendererOrigin()); } });
@@ -2594,12 +2597,12 @@ const placeSwitch = createPlaceSwitch({ changed: () => railChanged(), stop: () =
   url: () => `${rendererOrigin()}${CHROME_RAIL_PATH}`, wanted: () => !desktopRemoteAccess && (serverReady || placeSwitch.target() !== null) && railList().length > 0 });
 chromeRail.install(ipcMain);
 function railChanged() { chromeRail.refresh(); rail.changed(); }
-const accountPages = [() => (mainWindow && !mainWindow.isDestroyed() && senderIsLocal({ sender: mainWindow.webContents }) ? mainWindow.webContents : null), () => ({ send: channel => chromeRail.send(channel) })];
+const accountPages = [() => (mainWindow && !mainWindow.isDestroyed() && isLiveWebContents(mainWindow.webContents) && senderIsLocal({ sender: mainWindow.webContents }) ? mainWindow.webContents : null), () => ({ send: channel => chromeRail.send(channel) })];
 const accountRing = createDesktopRing({ allowed: () => app.isPackaged && !desktopRemoteAccess, active: cloudAccountStore, savedStore: () => createCloudAccountStore({ file: path.join(app.getPath("userData"), cloudTarget(process.env).saved), encryption: cloudEncryption }), stash: () => jsonFile(path.join(app.getPath("userData"), cloudTarget(process.env).places)), client: ensureCloudAccount, origin: cloudTarget(process.env).origin, makeClient: ({ store, onState }) => createCloudAccountClient({ store, onState, platform: process.platform, deviceName: os.hostname().slice(0, 100) || nativeT("native.accounts.myComputer"), appVersion: app.getVersion(), origin: cloudTarget(process.env).origin, openBrowser: url => shell.openExternal(url) }), saved: () => environmentsState, persist: persistEnvironments, session: () => session.defaultSession, mine: () => myCloud(), leaveWindow: () => (mainWindow && !mainWindow.isDestroyed() && !senderIsLocal({ sender: mainWindow.webContents }) ? navigateMainWindow(rendererOrigin()) : null), rows: () => railList(), holding: () => oneHome.holding(), letGo: id => { homeWindow.accountLeaving(); homePlaces.remember(null); computerSharing?.leaveAccount(id); }, lendingDone: () => computerSharing?.goodbyesDone(), settled: () => showHome(), forgetLending: env => sharingController().forget(env), tell: () => { accounts.tell(); railChanged(); }, log: slog }); const accounts = installAccounts({ ipcMain, ownPage: event => chromeRail.owns(event) || cloudPageAsking(event) === "local", placePage: event => cloudPageAsking(event) !== null || ownCloudPage(event) !== null || homeWindow.homePage(event) || (Boolean(ownHome?.home()) && activeEnvironment(environmentsState)?.origin === ownHome.home().origin && workspaceSenderAllowed(event, mainWindow?.webContents, environmentsState, rendererOrigin())), account: () => (app.isPackaged && !desktopRemoteAccess ? cloudAccount : null), client: ensureCloudAccount, ring: accountRing, t: nativeT, holdSheet: open => chromeRail.holdOpen(open), tellSheet: () => chromeRail.send("accounts:open-sheet"), tell: () => { for (const page of accountPages) page()?.send("accounts:changed"); } });
 const rail = installCloudRail({ t: nativeT, ipcMain, clipboard, openCloud: openOwnCloud, switchAccount: id => accountRing().switchTo(id), account: () => (app.isPackaged && !desktopRemoteAccess ? cloudAccount : null),
   guard: handler => (event, ...args) => (chromeRail.owns(event) ? handler(event, ...args) : workspaceOnly(handler)(event, ...args)),
   lists: event => chromeRail.owns(event), trusted: event => chromeRail.owns(event) || senderIsLocal(event), beside: () => chromeRail.shown(),
-  targets: () => [mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null, { send: channel => chromeRail.send(channel), isDestroyed: () => false }],
+  targets: () => [mainWindow && !mainWindow.isDestroyed() && isLiveWebContents(mainWindow.webContents) ? mainWindow.webContents : null, { send: channel => chromeRail.send(channel), isDestroyed: () => false }],
   places: railList, ask: placeSwitch.ask, switching: placeSwitch.target, open: openPlace, makeHome: id => ownHome.start(id), forget: id => forgetEnvironment(id, false, true), openProfile: (id, stale = () => false) => workspaceMenuAction(async () => { await cleanWorkspace.settled(); if (stale()) return; const opened = await localProfiles.open(id); railChanged(); if (opened === false) throw new Error(nativeT("native.places.profileFailed")); }), local: localProfiles,
   add: { choices: () => ({ cloud: cloudOffersAllowed(), link: !desktopRemoteAccess, address: !desktopRemoteAccess && !homeWindow.cloudOrigin(), account: !desktopRemoteAccess && Boolean(accounts.view().active) }),
     probe: serverConnect.probe, run: (choice, link, code) => (choice === "link" ? (link ? (code === null ? connectHostedWorkspace(link) : serverConnect.connect(link, code)) : addServerFromClipboard()) : choice === "address" ? openWorkspaceSettings() : homeWindow.cloudOrigin() ? undefined : openCloudAdd("app_menu")) } });
@@ -2618,7 +2621,7 @@ const serverLending = installServerLending({ ipcMain, guard: localWorkspaceOnly,
 const cloudSync = installCloudFiles({ t: nativeT,
   app, ipcMain, dialog, shell, powerMonitor, localWorkspaceOnly, localDataDir: desktopDataDir(),
   fetch: (...args) => session.defaultSession.fetch(...args),
-  send: (channel, value) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, value); },
+  send: (channel, value) => { if (mainWindow && !mainWindow.isDestroyed()) safeSend(mainWindow.webContents, channel, value); },
   cloudOrigin: () => myCloud(), cloudAccount: () => ensureCloudAccount(), stateDir: cloudTarget(process.env).sync, power: cloudPower, lending: { environment: lendingTarget.environment, sharing: sharingController, validate: validateSharedFolders },
 });
 
@@ -2658,7 +2661,7 @@ ipcMain.handle("environments:add-from-link", localWorkspaceOnly("environments:ad
 }));
 ipcMain.handle("environments:forget", localWorkspaceOnly("environments:forget", (_event, id, purge) => forgetEnvironment(typeof id === "string" ? id : "", purge === true)));
 const savedServerStatus = createServerStatus({ entries: () => environmentsState.environments.filter((e) => e.kind === "remote" && !e.home && !e.team && !e.cloud), check: (origin) => checkServer(origin, (...args) => session.defaultSession.fetch(...args)),
-  appVersion: app.getVersion(), onChange: () => { if (mainWindow && !mainWindow.isDestroyed() && senderIsLocal({ sender: mainWindow.webContents })) mainWindow.webContents.send("environments:status-changed"); } });
+  appVersion: app.getVersion(), onChange: () => { if (mainWindow && !mainWindow.isDestroyed() && senderIsLocal({ sender: mainWindow.webContents })) safeSend(mainWindow.webContents, "environments:status-changed"); } });
 installServerStatus({ ipcMain, guard: localWorkspaceOnly, status: savedServerStatus, app, powerMonitor, online: () => net.isOnline() });
 
 // A cloud page may open the native chooser, never choose a destination or edit the saved list.
@@ -2761,7 +2764,7 @@ async function broadcastDesktopCapabilities() {
       isLocal = new URL(window.webContents.getURL()).origin === rendererOrigin();
     } catch {}
     if (!isLocal) redacted ??= build(true);
-    window.webContents.send("desktop:capabilities-changed", isLocal ? local : redacted);
+    safeSend(window.webContents, "desktop:capabilities-changed", isLocal ? local : redacted);
   }
 }
 
@@ -2922,7 +2925,7 @@ app.whenReady().then(async () => {
   updatesConsent = registerDesktopPrefs({ ipcMain, cloudAccount: () => cloudAccount, prefs: desktopPrefs, localConfig: jsonFile(path.join(desktopDataDir(), "config.json")).read, cloudOffered: () => cloudAccountRestored().then(cloudOffersReady),
     frame: { made: () => windowFrameMade, restarts: process.platform === "win32", changed: () => void broadcastDesktopCapabilities() },
     languageChanged: (language, sender) => {
-      for (const win of appWindows()) if (!win.isDestroyed() && win.webContents !== sender) win.webContents.send("desktop-language:changed", language);
+      for (const win of appWindows()) if (!win.isDestroyed() && win.webContents !== sender) safeSend(win.webContents, "desktop-language:changed", language);
       chromeRail.send("desktop-language:changed", language);
     },
     onLanguage: language => { if (nativeText.set(language)) { applyNativeLanguage(); talk.relabel(); } }, onShown: (language, sender) => { if (sender === mainWindow?.webContents && nativeText.follow(language)) { applyNativeLanguage(); talk.relabel(); } },
