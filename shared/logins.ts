@@ -5,9 +5,12 @@
  * secrets.
  */
 import { getDomain } from "tldts";
+import { browserMatesOf } from "./browser-mates.ts";
+
+export { browserMatesOf };
 
 /** Where a login came from: the sign-in card's Save, Settings, or the person's
- * 1Password vault (read-only here). */
+ * 1Password or Bitwarden vault (read-only here). */
 export type LoginSource = "card" | "settings" | "1password" | "bitwarden";
 
 /** Which bots may use a login: every bot, or the ones named. */
@@ -67,36 +70,28 @@ export interface OnePasswordStatus {
   error?: string;
 }
 
-/** A Bitwarden id: a GUID, never the words `null` or `notnull`, which `bw list --folderid` reads as "no folder" and
- * "any folder". */
-export const BITWARDEN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
-
-/** The one Bitwarden folder bots may read, and which bots. Kept across restarts; the vault itself is not. */
-export interface BitwardenChoice {
-  folderId: string;
-  folderName: string;
-  bots: LoginBots;
-}
-
-/** Bitwarden, read through the `bw` CLI on this computer. Its items stay in memory only from an unlock until the app
- * stops or the person locks it again; the master password and the session key are never kept. */
+/** Bitwarden, connected through its command line tool with an account's API key and master password, none of which
+ * leaves the server. `server`: the Bitwarden server's host; `account`: the address the account signs in with. */
 export interface BitwardenStatus {
-  /** This server can use Bitwarden: the desktop app on the person's own computer. */
-  available: boolean;
-  /** The `bw` CLI was found. Unknown until it is first run. */
-  installed?: boolean;
-  folder?: { id: string; name: string };
-  bots?: LoginBots;
-  /** Folders seen at the last unlock, for choosing one. Names and ids only. */
-  folders?: Array<{ id: string; name: string }>;
-  /** Items are loaded from the folder now. */
-  unlocked: boolean;
-  /** Logins with a website and a password, and secrets, loaded from the folder. */
-  logins?: number;
-  secrets?: number;
-  unlockedAt?: number;
+  connected: boolean;
+  server?: string;
+  account?: string;
+  /** How many logins and secrets it lists. */
+  items?: number;
   error?: string;
 }
+
+/** What an admin connects Bitwarden with: the server's https address, the account's personal API key and its master
+ * password. Sent once, kept sealed on the server, never sent back. */
+export interface BitwardenCredentials {
+  serverUrl: string;
+  clientId: string;
+  clientSecret: string;
+  password: string;
+}
+
+/** The Bitwarden servers an admin picks from; anything else is a self-hosted (or Vaultwarden) address. */
+export const BITWARDEN_SERVERS = ["https://vault.bitwarden.com", "https://vault.bitwarden.eu"] as const;
 
 /** The longest username or password a form takes. */
 export const LOGIN_FIELD_MAX = 512;
@@ -171,13 +166,6 @@ export function loginOriginCheck(pageUrl: string, login: LoginPlace): { ok: true
   const page = loginPageCheck(pageUrl);
   if (!page.ok) return page;
   return loginMatchesHost(login, page.pageHost) ? page : { ok: false, pageHost: page.pageHost, reason: "host" };
-}
-
-/** The other bots that use this bot's named browser profile, and so share what it is signed in to. A guest browser is
- * the bot's own temporary one (server/host/browser.ts sessionFor), so it has none. */
-export function browserMatesOf(bots: ReadonlyArray<{ id: string; browserProfile?: string | null }>, botId: string): string[] {
-  const profile = bots.find((bot) => bot.id === botId)?.browserProfile;
-  return profile && profile !== "guest" ? bots.filter((bot) => bot.id !== botId && bot.browserProfile === profile).map((bot) => bot.id) : [];
 }
 
 /** The bots a login is kept to that it is still not filled for, because they share a browser with a bot it isn't kept to. */

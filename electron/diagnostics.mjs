@@ -28,6 +28,7 @@ export const CREDENTIAL_ENV_NAMES = [
   "OMB_JEV_API_KEY",
   "OMB_OPENROUTER_DECIDER_KEY",
   "OMB_WORKERS_AI_TOKEN",
+  "OMB_CUSTOM_DECIDER_KEY",
   "OMB_OPENAI_IMAGE_KEY",
   "OMB_CUSTOM_IMAGE_KEY",
   "OMB_GEMINI_IMAGE_KEY",
@@ -465,6 +466,7 @@ export function buildDiagnosticsReport({
   desktopLogTail,
   updaterLogTail,
   logTail,
+  performance,
   now = new Date().toISOString(),
 } = {}) {
   const lines = [];
@@ -487,6 +489,14 @@ export function buildDiagnosticsReport({
     shown += 1;
   }
   if (!shown) lines.push("(no configuration summary available)");
+  lines.push("");
+  // The server's timings (GET /api/diagnostics/performance): numbers, fixed codes and opaque ids, scrubbed again here.
+  if (typeof performance === "string" && performance.trim()) {
+    for (const line of redactSecretsInLine(performance).split(/\r?\n/)) lines.push(line);
+  } else {
+    lines.push("## Performance");
+    lines.push("(server timings unavailable)");
+  }
   lines.push("");
   lines.push("## Desktop crash events — privacy-safe metadata only");
   if (desktopLogTail && desktopLogTail.trim()) {

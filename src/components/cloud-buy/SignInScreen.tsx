@@ -2,8 +2,8 @@
 import type { ClipboardEvent, FormEvent, KeyboardEvent } from "react";
 import { Check, ExternalLink, Loader2 } from "lucide-react";
 import { cn } from "@/lib/cn";
-type CloudSignInProblem = "invalid-email" | "rate-limited" | "failed" | "wrong-code" | "expired" | "signup-closed" | "device-limit" | "sso" | "two-factor" | "browser";
-type CloudSignInPhase =
+export type CloudSignInProblem = "invalid-email" | "rate-limited" | "failed" | "wrong-code" | "expired" | "signup-closed" | "device-limit" | "sso" | "two-factor" | "browser" | "saved" | "saved-wait" | "connecting" | "busy" | "signed-in";
+export type CloudSignInPhase =
   | { step: "email"; intent: boolean; problem: CloudSignInProblem | null }
   | { step: "code"; intent: boolean; email: string; resendAt: number; problem: CloudSignInProblem | null; triesLeft: number | null; signupOpen?: boolean }
   | { step: "done"; intent: boolean };
@@ -25,6 +25,11 @@ export function problemLine(problem: CloudSignInProblem, triesLeft: number | nul
     case "two-factor": return t("cloudBuy.signIn.twoFactor");
     case "browser": return t("cloudBuy.signIn.browser");
     case "failed": return t("cloudBuy.signIn.failed");
+    case "saved": return t("cloudBuy.signIn.saved");
+    case "saved-wait": return t("cloudBuy.signIn.savedWait");
+    case "connecting": return t("cloudBuy.signIn.connecting");
+    case "busy": return t("cloudBuy.signIn.busy");
+    case "signed-in": return t("cloudBuy.signIn.signedIn");
   }
   return t("cloudBuy.signIn.failed");
 }
@@ -35,10 +40,12 @@ export function codeDigits(value: string): string {
 }
 const clock = (ms: number) => { const seconds = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`; };
 
-export function SignInScreen({ phase, email, code, profileEmail, busy, now, onBack, onEmail, onSend, onChangeEmail, onCode, onResend, onBrowser }: {
+/** `onReset`: a saved sign-in this computer can't read is cleared and a code sent; `onCancelBrowser`: the sign-in under way in
+ * the browser ends and a code is sent instead. Each is the problem's one action, where the page offers it. */
+export function SignInScreen({ phase, email, code, profileEmail, busy, now, onBack, onEmail, onSend, onChangeEmail, onCode, onResend, onBrowser, onReset, onCancelBrowser }: {
   phase: CloudSignInPhase; email: string; code: string; profileEmail: string | null; busy: boolean; now: number;
   onBack: () => void; onEmail: (email: string) => void; onSend: () => void; onChangeEmail: () => void;
-  onCode: (code: string) => void; onResend: () => void; onBrowser: () => void;
+  onCode: (code: string) => void; onResend: () => void; onBrowser: () => void; onReset?: () => void; onCancelBrowser?: () => void;
 }) {
   const problem = phase.step === "done" ? null : phase.problem;
   const browser = problem !== null && BROWSER_PROBLEMS.has(problem);
@@ -107,6 +114,8 @@ export function SignInScreen({ phase, email, code, profileEmail, busy, now, onBa
       <p>{problemLine(problem, phase.step === "code" ? phase.triesLeft : null)}</p>
       {browser && <button type="button" className={PRIMARY} onClick={onBrowser}>{t("cloudBuy.signIn.continueBrowser")}<ExternalLink size={14} aria-hidden="true" /></button>}
       {problem === "expired" && phase.step === "code" && <button type="button" className={QUIET} disabled={busy} onClick={onResend}>{t("cloudBuy.signIn.newCode")}</button>}
+      {problem === "saved" && onReset && <button type="button" data-cloud-reset className={PRIMARY} disabled={busy} onClick={onReset}>{t("cloudBuy.signIn.reset")}</button>}
+      {problem === "connecting" && onCancelBrowser && <button type="button" data-cloud-cancel-browser className={QUIET} disabled={busy} onClick={onCancelBrowser}>{t("cloudBuy.signIn.cancelBrowser")}</button>}
     </div>}
     {phase.step !== "done" && !browser && <p className="text-[13px] leading-[18px] text-ink-tertiary">{t("cloudBuy.signIn.ssoHint")}{" "}
       <button type="button" className={LINK} onClick={onBrowser}>{t("cloudBuy.signIn.continueBrowser")}</button></p>}

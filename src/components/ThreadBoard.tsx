@@ -150,7 +150,7 @@ export function ThreadBoard({ bots, teams }: { bots: Bot[]; teams: Array<{ key: 
   const actions: CardActions = {
     selected: chosen ? selected : null,
     onOpen: (card) => (wide ? setSelected({ botId: card.botId, threadId: card.threadId }) : open(card)),
-    onArchive: (card) => threadRowActions(card.botId, dispatch, false).onArchive(card, card.archived ? null : Date.now()),
+    onArchive: (card) => threadRowActions(card.botId, dispatch).onArchive(card, card.archived ? null : Date.now()),
     onDelete: (card) => setDeleting({ botId: card.botId, threadId: card.threadId }),
   };
   return (

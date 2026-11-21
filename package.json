@@ -1,7 +1,7 @@
 {
   "name": "openmausbot",
   "private": true,
-  "version": "0.1.157",
+  "version": "0.1.175",
   "description": "A local-first chat app for running a team of AI agents.",
   "homepage": "https://github.com/milind-soni/OpenMausBot",
   "repository": {
@@ -36,6 +36,7 @@
     "dev:server": "node --experimental-strip-types server/dev-server.ts",
     "mcp": "node --experimental-strip-types scripts/mcp-server.ts",
     "control:omb": "node --experimental-strip-types scripts/control-omb.ts",
+    "shots": "node --experimental-strip-types scripts/shots.ts",
     "eval": "node --experimental-strip-types evals/runners/run-evals.ts",
     "eval:analyze": "node --experimental-strip-types scripts/eval-analyze.ts",
     "dev:desktop": "node scripts/prepare-cloudflared.mjs --current && electron .",
@@ -46,6 +47,8 @@
     "test:electron": "node --test \"electron/*.node-test.mjs\"",
     "bench:observation": "node --experimental-strip-types scripts/bench-observation.ts",
     "bench:persistence": "node --experimental-strip-types scripts/bench-persistence.ts",
+    "bench:registry": "node --experimental-strip-types scripts/bench-registry.ts",
+    "bench:runtime-reads": "node --experimental-strip-types scripts/bench-runtime-reads.ts",
     "bench:today": "node --experimental-strip-types scripts/bench-today.ts",
     "bench:browser-stream": "node --experimental-strip-types scripts/bench-browser-stream.ts",
     "bench:desktop": "node --experimental-strip-types scripts/bench-desktop.ts",
