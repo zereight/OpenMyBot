@@ -17,6 +17,7 @@
 // few seconds to offer it, and the rail comes back beside one that doesn't, or that stops responding.
 
 import { TRAFFIC_LIGHTS } from "./window-chrome.mjs";
+import { isLiveWebContents, safeSend } from "./renderer-recovery.mjs";
 
 export const CHROME_RAIL_WIDTH = 36;
 export const CHROME_RAIL_PATH = "/rail";
@@ -55,9 +56,9 @@ export function createChromeRail({ createView, preload, args, url, wanted, prefs
     const [width, height] = win.getContentSize();
     view.setBounds({ x: 0, y: 0, width: expanded ? width : Math.min(CHROME_RAIL_WIDTH, width), height });
   };
-  const page = () => (alive() && !win.webContents.isDestroyed() ? win.webContents : null);
+  const page = () => (alive() && isLiveWebContents(win.webContents) ? win.webContents : null);
   /** The page beside the rail moves over by its width (0: it has the whole window again). */
-  const tellPage = () => page()?.send("rail:beside", shown ? CHROME_RAIL_WIDTH : 0);
+  const tellPage = () => safeSend(page(), "rail:beside", shown ? CHROME_RAIL_WIDTH : 0);
   const choseHidden = () => prefs()?.railHidden() === true;
   /** Hidden by the person's choice, beside a document that can bring it back. */
   const hidden = () => choseHidden() && !hung && (offered || grace !== null);
@@ -67,7 +68,7 @@ export function createChromeRail({ createView, preload, args, url, wanted, prefs
     const state = pageState(), key = JSON.stringify(state);
     if (!offered || key === told) return;
     told = key;
-    page()?.send("rail:state", state);
+    safeSend(page(), "rail:state", state);
   };
   const stopGrace = () => { clearTimeout(grace); grace = null; };
   const startGrace = () => {

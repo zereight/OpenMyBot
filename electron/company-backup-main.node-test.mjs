@@ -7,6 +7,7 @@ import localOrigin from "./local-origin.cjs";
 import environments from "./environments.cjs";
 import { randomUUID } from "node:crypto";
 import { createCompanyBackupSchedule } from "./company-backup-schedule.mjs";
+import { safeSend } from "./renderer-recovery.mjs";
 
 // Production main functions without importing Electron main (which would start the app); all IO is synthetic.
 // Windows checkouts can have CRLF line endings; the source checks below match "\n".
@@ -72,7 +73,7 @@ function fixture() {
     companyBackupSchedule: null, companyBackupClientStateRequest: null, companyRestoreCommitting: false, desktopShutdownStarted: false, companyBackupConfigurationRevision: 0,
     desktopDataDir: () => "/synthetic-fixture-workspace",
     companyBackupState: { busy: false }, serverProc: {}, serverReady: true,
-    desktopRemoteAccess: null, mainWindow: { webContents: contents, isDestroyed: () => false },
+    desktopRemoteAccess: null, mainWindow: { webContents: contents, isDestroyed: () => false }, safeSend,
     rendererOrigin: () => ORIGIN, environmentsState: { environments: [], activeId: "local" },
     activeEnvironment: environments.activeEnvironment, activeRemote: environments.activeRemote, workspaceSenderAllowed: environments.workspaceSenderAllowed,
     localOnly: localOrigin.localOnly, ipcMain: { handle: (channel, handler) => handlers.set(channel, handler), on: (channel, handler) => handlers.set(channel, handler) },
