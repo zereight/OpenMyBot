@@ -1,4 +1,4 @@
-// A memory/<topic>.md may begin with YAML frontmatter: `title`, `description`, `aliases`.
+// A memory/<topic>.md may begin with YAML frontmatter: `title`, `description`, `symptom`, `aliases`.
 import { closeSync, openSync, readSync } from "node:fs";
 
 import { hasCjk } from "./cjk-search.ts";
@@ -6,10 +6,12 @@ import { hasCjk } from "./cjk-search.ts";
 const HEAD_BYTES = 2_048;
 export const TOPIC_INDEX_MAX_TOPICS = 40;
 export const TOPIC_INDEX_MAX_CHARS = 2_000;
+export const TOPIC_INDEX_FIX_SLOTS = 8;
 
 export interface TopicHeader {
   title?: string;
   description?: string;
+  symptom?: string;
   aliases: string[];
 }
 
@@ -17,6 +19,19 @@ function unquote(value: string): string {
   const v = value.trim();
   if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) return v.slice(1, -1).trim();
   return v;
+}
+
+function stripControlChars(value: string): string {
+  let out = "";
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    out += code < 0x20 || code === 0x7f ? " " : value[i]!;
+  }
+  return out;
+}
+
+function cleanSingleLine(value: string): string {
+  return stripControlChars(unquote(value)).replace(/\s+/g, " ").trim().slice(0, 160);
 }
 
 export function parseTopicHeader(text: string): TopicHeader {
@@ -30,11 +45,16 @@ export function parseTopicHeader(text: string): TopicHeader {
   }
   const lines = m[1].split(/\r?\n/);
   for (let i = 0; i < lines.length; i += 1) {
-    const field = /^(title|description|aliases|tags)\s*:\s*(.*)$/.exec(lines[i]);
+    const field = /^(title|description|symptom|aliases|tags)\s*:\s*(.*)$/.exec(lines[i]);
     if (!field) continue;
     const [, key, value] = field;
     if (key === "title" || key === "description") {
       if (value.trim()) header[key] = unquote(value).slice(0, 160);
+      continue;
+    }
+    if (key === "symptom") {
+      const cleaned = cleanSingleLine(value);
+      if (cleaned) header.symptom = cleaned;
       continue;
     }
     const items: string[] = [];
@@ -54,9 +74,17 @@ export function parseTopicHeader(text: string): TopicHeader {
   return header;
 }
 
+function tokenizeWords(text: string): string[] {
+  return [...new Set(text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word.length >= (hasCjk(word) ? 2 : 3)))];
+}
+
 export function topicWords(name: string, header: TopicHeader): string[] {
   const text = [name.replace(/\.md$/i, "").replace(/[-_.]+/g, " "), header.title ?? "", header.description ?? "", ...header.aliases].join(" ");
-  return [...new Set(text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word.length >= (hasCjk(word) ? 2 : 3)))];
+  return tokenizeWords(text);
+}
+
+export function symptomWords(header: TopicHeader): string[] {
+  return header.symptom ? tokenizeWords(header.symptom) : [];
 }
 
 export function topicBody(text: string): string {
@@ -79,9 +107,32 @@ export function readTopicHead(path: string): string {
   }
 }
 
-export function renderTopicIndex(topics: ReadonlyArray<{ name: string; header: TopicHeader }>): string {
+function formatTopicLine(name: string, header: TopicHeader, includeSymptom: boolean): string {
+  const about = name === "archive.md"
+    ? "older notes moved out of MEMORY.md, kept for the record"
+    : [header.title, header.description].filter(Boolean).join(" — ");
+  const symptom = includeSymptom && name !== "archive.md" && header.symptom ? ` [symptom: ${header.symptom}]` : "";
+  const also = header.aliases.length ? ` (also: ${header.aliases.join(", ")})` : "";
+  return `- memory/${name}${about ? ` — ${about}` : ""}${symptom}${also}`.replace(/\s+/g, " ");
+}
+
+export function renderTopicIndex(
+  topics: ReadonlyArray<{ name: string; header: TopicHeader }>,
+  opts: { reserveSymptoms?: boolean } = {},
+): string {
   if (!topics.length) return "";
-  const ordered = [...topics].sort((a, b) => Number(a.name === "archive.md") - Number(b.name === "archive.md") || a.name.localeCompare(b.name));
+  const byName = (a: { name: string }, b: { name: string }) =>
+    Number(a.name === "archive.md") - Number(b.name === "archive.md") || a.name.localeCompare(b.name);
+  const reserve = Boolean(opts.reserveSymptoms);
+  const ordered = reserve
+    ? [
+        ...topics.filter((t) => t.name !== "archive.md" && Boolean(t.header.symptom)).sort(byName).slice(0, TOPIC_INDEX_FIX_SLOTS),
+        ...[
+          ...topics.filter((t) => t.name !== "archive.md" && Boolean(t.header.symptom)).sort(byName).slice(TOPIC_INDEX_FIX_SLOTS),
+          ...topics.filter((t) => t.name === "archive.md" || !t.header.symptom),
+        ].sort(byName),
+      ]
+    : [...topics].sort(byName);
   const lines: string[] = [];
   let length = 0;
   let omitted = 0;
@@ -90,11 +141,7 @@ export function renderTopicIndex(topics: ReadonlyArray<{ name: string; header: T
       omitted += 1;
       continue;
     }
-    const about = name === "archive.md"
-      ? "older notes moved out of MEMORY.md, kept for the record"
-      : [header.title, header.description].filter(Boolean).join(" — ");
-    const also = header.aliases.length ? ` (also: ${header.aliases.join(", ")})` : "";
-    const line = `- memory/${name}${about ? ` — ${about}` : ""}${also}`.replace(/\s+/g, " ");
+    const line = formatTopicLine(name, header, reserve);
     if (length + line.length + 1 > TOPIC_INDEX_MAX_CHARS) {
       omitted += 1;
       continue;

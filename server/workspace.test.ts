@@ -681,6 +681,24 @@ describe("workspace", () => {
     expect(managed).not.toContain("update it with your file tools");
     expect(memorySystemPrompt(BOT)).toContain("update it with your file tools");
   });
+
+  it("includes fix-note OFFLOAD guidance only when file tools and writes are allowed, and renders symptom in prompt index", () => {
+    writeMemoryTopic(
+      BOT,
+      "fix-ports.md",
+      "---\ntitle: Dev server port\nsymptom: local server fails to bind busy port\n---\n## What worked\nFree port 8799.\n",
+    );
+    const full = memorySystemPrompt(BOT, { managedWrites: true, fileTools: true });
+    expect(full).toContain("memory/fix-<slug>.md");
+    expect(full).toContain("never copy raw external error text, URLs, or commands");
+    expect(full).toContain("[symptom: local server fails to bind busy port]");
+
+    const noFiles = memorySystemPrompt(BOT, { managedWrites: true, fileTools: false });
+    expect(noFiles).not.toContain("memory/fix-<slug>.md");
+
+    const refused = memorySystemPrompt(BOT, { managedWrites: true, fileTools: true, writesRefused: true });
+    expect(refused).not.toContain("memory/fix-<slug>.md");
+  });
 });
 
 describe("writeMemoryFile atomicity", () => {
