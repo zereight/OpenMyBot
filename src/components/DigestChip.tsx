@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { ClipboardList } from "lucide-react";
+import { BookMarked, ClipboardList, RotateCcw } from "lucide-react";
 
 import { t } from "@/lib/i18n";
 import { memoInLocale } from "@/lib/locale-memo";
+import { fileLabel, revertMemoryChange } from "@/lib/memory";
 import type { LocaleKey } from "@/locales";
 import { formatDuration } from "@/lib/usage-trace";
 import type { Message } from "@/state/store";
@@ -17,6 +18,68 @@ const WORK_KEY: Record<"noFiles" | "oneFile" | "files", Record<"oneTool" | "tool
 };
 const one = (count: number | string) => String(count) === "1";
 
+export function MemoryReceipt({ message }: { message: Message }) {
+  const [reverted, setReverted] = useState<ReadonlySet<string>>(() => new Set());
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const digest = message.digest;
+  if (!digest?.memory.length) return null;
+  const { botId, memory, memoryDropped: dropped } = digest;
+
+  const undo = async (journalId: string) => {
+    if (busyId || reverted.has(journalId)) return;
+    setBusyId(journalId);
+    setError(null);
+    try {
+      await revertMemoryChange(botId, journalId);
+      setReverted((prev) => new Set([...prev, journalId]));
+    } catch (cause) {
+      setError(cause instanceof Error && cause.message ? cause.message : t("chat.memoryReceipt.revertFailed"));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5" data-testid="memory-receipt">
+      {memory.map((item, index) => {
+        const key = item.journalId ?? `${item.path}:${index}`;
+        const delta = [
+          item.added ? `+${item.added}` : null,
+          item.removed ? `-${item.removed}` : null,
+        ].filter(Boolean).join("/");
+        const isRestored = item.via === "deletion-guard";
+        const isUndone = Boolean(item.journalId && reverted.has(item.journalId));
+        return (
+          <span key={key} data-memory-receipt-item={item.path}
+            className="ui-chip max-w-[min(420px,100%)] border border-hairline/40 bg-panel text-ink-secondary">
+            <BookMarked size={11} aria-hidden="true" className="shrink-0" />
+            <span className="truncate">{fileLabel(item.path)}</span>
+            {isRestored && <span className="rounded bg-warning/15 px-1 text-[11px] font-medium text-warning">{t("chat.memoryReceipt.restored")}</span>}
+            {!isRestored && delta && <span className="shrink-0 text-[11px] tabular-nums text-ink-secondary/80">{delta}</span>}
+            {item.journalId && item.canRevert && (
+              isUndone ? (
+                <span className="shrink-0 text-[11px] text-ink-secondary/70" data-memory-reverted={item.journalId}>{t("chat.memoryReceipt.reverted")}</span>
+              ) : (
+                <button type="button" disabled={busyId !== null} onClick={() => void undo(item.journalId!)}
+                  data-memory-revert={item.journalId}
+                  className="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-accent hover:underline disabled:opacity-50">
+                  <RotateCcw size={10} aria-hidden="true" />
+                  {busyId === item.journalId ? t("memory.undoing") : t("memory.undo")}
+                </button>
+              )
+            )}
+          </span>
+        );
+      })}
+      {Boolean(dropped && dropped > 0) && (
+        <span className="text-[11px] text-ink-secondary/80">{t("chat.run.more", { count: dropped! })}</span>
+      )}
+      {error && <span role="alert" className="text-[11px] text-danger">{error}</span>}
+    </div>
+  );
+}
+
 export const DigestChip = memoInLocale(function DigestChip({ message }: { message: Message }) {
   const [tracing, setTracing] = useState(false);
   const digest = message.digest;
@@ -30,7 +93,7 @@ export const DigestChip = memoInLocale(function DigestChip({ message }: { messag
   ].filter(Boolean).join(" · ");
   if (!label) return null;
   return (
-    <div className="flex justify-start" data-testid="digest-chip">
+    <div className="flex flex-col items-start gap-1" data-testid="digest-chip">
       <span
         title={message.text ?? t("chat.digestTitle")}
         className="ui-chip max-w-[min(520px,100%)] border border-hairline/40 bg-panel text-ink-secondary"
@@ -41,6 +104,7 @@ export const DigestChip = memoInLocale(function DigestChip({ message }: { messag
           {t("trace.view")}
         </button>
       </span>
+      <MemoryReceipt message={message} />
       {tracing && <TraceDialog id={traceRootId(digest.threadId, digest.turnId)} at={digest.at} onClose={() => setTracing(false)} />}
     </div>
   );

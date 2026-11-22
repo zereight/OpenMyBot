@@ -100,7 +100,9 @@ export async function fetchMemoryJournal(botId: string, limit = 50): Promise<Mem
 }
 
 export function revertMemoryChange(botId: string, entryId: string): Promise<MemoryDoc & { overview: MemoryOverview }> {
-  return api(`/api/bots/${botId}/memory/journal/${encodeURIComponent(entryId)}/revert`, { method: "POST" });
+  return api<MemoryDoc & { overview: MemoryOverview }>(`/api/bots/${botId}/memory/journal/${encodeURIComponent(entryId)}/revert`, { method: "POST" }).catch((error: unknown) => {
+    throw error instanceof ApiError && error.status === 409 ? new ApiError(t("memory.revertConflict"), 409, error.body) : error;
+  });
 }
 
 export function fetchSoulChanges(botId: string): Promise<{ rows: MemoryJournalRow[]; revision: string }> {

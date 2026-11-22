@@ -23,7 +23,7 @@ import { ThreadChip } from "./ThreadChip";
 import { ToolActivity } from "./ToolActivity";
 import { TurnPresence } from "./TurnPresence";
 import { showToolCallsEnabled } from "@/lib/feature-flags";
-import { CompactionChip, DigestChip } from "./DigestChip";
+import { CompactionChip, DigestChip, MemoryReceipt } from "./DigestChip";
 import { roomActivityVisible } from "@/lib/room-activity";
 import { StatusActivityRow } from "@/components/StatusActivityRow";
 import { normalizeState } from "@/lib/mascot";
@@ -285,7 +285,7 @@ export const Transcript = memo(function Transcript({
           ) : m.kind === "compaction" ? (
             <CompactionChip message={m} />
           ) : m.kind === "digest" ? (
-            showToolCalls ? <DigestChip message={m} /> : null
+            showToolCalls ? <DigestChip message={m} /> : <MemoryReceipt message={m} />
           ) : (m.kind === "app" || m.kind === "widget") && m.from ? <RoomRichRow message={m} from={m.from} threadId={group.threadId} /> : m.template ? <TemplateChatCard message={m} /> : m.publishedPage ? <PublishedPageCard message={m} /> : m.kind === "text" && (m.text || m.attachments?.length || isLiveReply(m)) ? (
             !user && isPureLeakedSystemHarnessMessage(m.text) && !m.attachments?.length ? null : (
               textRow(m, m.id === emergingId, m.id === newestMessageId || m.id === newestUserMessageId)

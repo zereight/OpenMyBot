@@ -17,6 +17,16 @@ export interface DigestTool {
   sample?: string;
 }
 
+export interface DigestMemory {
+  path: string;
+  kind: "created" | "updated" | "deleted";
+  journalId?: string;
+  added?: number;
+  removed?: number;
+  via?: string;
+  canRevert?: boolean;
+}
+
 export interface TurnDigest {
   turnId: string;
   botId: string;
@@ -29,7 +39,7 @@ export interface TurnDigest {
   /** Tools beyond the busiest MAX_TOOLS, dropped from `tools`. */
   toolsDropped?: number;
   files?: DigestFiles;
-  memory: Array<{ path: string; kind: "created" | "updated" | "deleted" }>;
+  memory: DigestMemory[];
   memoryDropped?: number;
   /** First sentence of the terminal assistant text, at most REPLY_CHARS. */
   reply: string;

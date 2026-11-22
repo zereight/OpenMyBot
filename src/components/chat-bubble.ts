@@ -59,11 +59,11 @@ export function isBotTextRow(message: Message, botId: string): boolean {
   return bubbleGroup(message, botId) === "bot";
 }
 
-/** A transcript row that draws nothing: a reaction, MausBot's follow-up (drawn under its intro), or a tool step or work
- * summary while tool calls are hidden. */
+/** A transcript row that draws nothing: a reaction, MausBot's follow-up (drawn under its intro), or a tool step or a work
+ * summary without memory changes while tool calls are hidden. */
 export function quietRow(message: Message, showToolCalls: boolean): boolean {
   if (message.reaction || message.helperFollowup) return true;
-  if (message.kind === "digest") return !showToolCalls;
+  if (message.kind === "digest") return !showToolCalls && !message.digest?.memory.length;
   if (message.kind !== "activity" || showToolCalls) return false;
   if (message.dataResult || message.comm || message.threadRef || message.relay || message.checkBack || isStatusActivity(message)) return false;
   return !(message.tool && failedTurnCause(message.tool.name) !== null);

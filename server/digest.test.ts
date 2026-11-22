@@ -111,8 +111,8 @@ describe("buildTurnDigest", () => {
       files: { changed: ["src/retry.ts"], added: ["docs/notes.md"], deleted: [] },
     });
     expect(d.memory).toEqual([
-      { path: "MEMORY.md", kind: "updated" },
-      { path: "memory/clients.md", kind: "created" },
+      { path: "MEMORY.md", kind: "updated", journalId: "j1", added: 1, via: "turn", canRevert: true },
+      { path: "memory/clients.md", kind: "created", journalId: "j1", added: 1, via: "turn", canRevert: true },
     ]);
     expect(d.files).toEqual({ changed: ["src/retry.ts"], added: ["docs/notes.md"], deleted: [] });
   });
