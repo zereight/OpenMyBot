@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 import { writeFileAtomic } from "./atomic.ts";
 import { DATA_DIR } from "./config.ts";
+import { factIdentity, parseMemoryEntries } from "./memory-entries.ts";
 import {
   MEMORY_INDEX,
   MemoryStoreError,
@@ -17,7 +18,7 @@ import {
   writeMemoryDoc,
 } from "./memory-store.ts";
 import { redactSecretsInText } from "./redact.ts";
-import { memoryFilesOnDisk, readMemoryText, workspaceDir } from "./workspace.ts";
+import { isMemorySeed, memoryFilesOnDisk, readMemoryText, workspaceDir } from "./workspace.ts";
 
 export type MemoryActor = "bot" | "person" | "import" | "upkeep";
 export type MemoryChangeKind = "created" | "edited" | "deleted";
@@ -274,6 +275,7 @@ function advanceBaseline(botId: string, path: string, after: string | null): voi
   const baseline = baselineFor(botId);
   if (after === null) baseline.delete(path);
   else baseline.set(path, after);
+  baselineStats.get(botId)?.delete(path);
 }
 
 export function recordMemoryChange(botId: string, change: MemoryChangeInput): MemoryJournalEntry | null {
@@ -386,7 +388,47 @@ function statsFor(botId: string): Map<string, { mtimeMs: number; bytes: number }
   return stats;
 }
 
-function currentDocs(botId: string): Map<string, string> {
+export function findMissingMemoryEntries(before: string, after: string): string[] {
+  const beforeEntries = parseMemoryEntries(before);
+  if (!beforeEntries.length) return [];
+  const afterIdentities = new Set(parseMemoryEntries(after).map((entry) => factIdentity(entry.body)));
+  const beforeLines = before.split("\n").map((line) => line.replace(/\r$/, ""));
+  const missing: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of beforeEntries) {
+    const id = factIdentity(entry.body);
+    if (!id || afterIdentities.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    missing.push(beforeLines.slice(entry.line, entry.end).join("\n"));
+  }
+  return missing;
+}
+
+function restoreMissingMemoryEntries(botId: string, before: string, threadId: string | undefined): MemoryJournalEntry | null {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const latest = readMemoryDoc(botId, MEMORY_INDEX);
+    const currentText = latest.exists ? latest.text : "";
+    const missing = findMissingMemoryEntries(before, currentText);
+    if (!missing.length) return null;
+    const base = isMemorySeed(currentText) ? "" : currentText.trimEnd();
+    const merged = base ? `${base}\n${missing.join("\n")}\n` : `${missing.join("\n")}\n`;
+    try {
+      const written = journalMemoryWrite(botId, MEMORY_INDEX, merged, {
+        actor: "bot",
+        via: "deletion-guard",
+        threadId,
+        expectedHash: latest.exists ? latest.hash : undefined,
+      });
+      return written.entry;
+    } catch (error) {
+      if (error instanceof MemoryStoreError && error.status === 409 && attempt === 0) continue;
+      throw error;
+    }
+  }
+  return null;
+}
+
+function currentDocs(botId: string, bypassCache = false): Map<string, string> {
   const docs = new Map<string, string>();
   const stats = statsFor(botId);
   const baseline = baselines.get(botId);
@@ -396,7 +438,7 @@ function currentDocs(botId: string): Map<string, string> {
     const mtimeMs = Math.trunc(file.mtimeMs);
     const cached = stats.get(file.path);
     const known = baseline?.get(file.path);
-    if (cached && known !== undefined && cached.bytes === file.bytes && cached.mtimeMs === mtimeMs) {
+    if (!bypassCache && cached && known !== undefined && cached.bytes === file.bytes && cached.mtimeMs === mtimeMs) {
       docs.set(file.path, known);
       continue;
     }
@@ -420,6 +462,7 @@ function reconcile(botId: string, actor: MemoryActor, via: string, threadId: str
   const baseline = baselineFor(botId);
   const docs = currentDocs(botId);
   const rows: MemoryJournalEntry[] = [];
+  let guardedBefore: string | null = null;
   for (const [path, text] of docs) {
     const known = baseline.get(path);
     if (known === text) continue;
@@ -428,15 +471,46 @@ function reconcile(botId: string, actor: MemoryActor, via: string, threadId: str
       continue;
     }
     const row = recordMemoryChange(botId, { path, actor, via, threadId, before: known ?? null, after: text });
-    if (row) rows.push(row);
+    if (row) {
+      rows.push(row);
+      if (via === "turn" && path === MEMORY_INDEX && known !== undefined) guardedBefore = known;
+    }
   }
-  // deleting the current key mid-iteration is defined for a Map
   for (const path of baseline.keys()) {
     if (docs.has(path)) continue;
-    const row = recordMemoryChange(botId, { path, actor, via, threadId, before: baseline.get(path) ?? null, after: null });
-    if (row) rows.push(row);
+    const known = baseline.get(path) ?? null;
+    const row = recordMemoryChange(botId, { path, actor, via, threadId, before: known, after: null });
+    if (row) {
+      rows.push(row);
+      if (via === "turn" && path === MEMORY_INDEX && known !== null) guardedBefore = known;
+    }
+  }
+  if (guardedBefore !== null) {
+    const restored = restoreMissingMemoryEntries(botId, guardedBefore, threadId);
+    if (restored) rows.push(restored);
   }
   return rows;
+}
+
+export function journalBotMemoryUpdate<T>(botId: string, threadId: string, write: () => T): T {
+  if (baselines.has(botId)) {
+    reconcile(botId, "bot", "turn", threadId, true);
+  }
+  const before = currentDocs(botId, true);
+  const result = write();
+  const after = currentDocs(botId, true);
+  for (const [path, text] of after) {
+    const prev = before.get(path) ?? null;
+    if (prev !== text) {
+      recordMemoryChange(botId, { path, actor: "bot", via: "memory_update", threadId, before: prev, after: text });
+    }
+  }
+  for (const [path, prev] of before) {
+    if (!after.has(path)) {
+      recordMemoryChange(botId, { path, actor: "bot", via: "memory_update", threadId, before: prev, after: null });
+    }
+  }
+  return result;
 }
 
 export function beginMemoryTurn(botId: string, threadId: string): void {
