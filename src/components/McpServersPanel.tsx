@@ -139,6 +139,7 @@ export function McpServersPanel({ embedded = false, hostedCards, hideHosted = fa
   const [cardFailure, setCardFailure] = useState<{ id: HostedMcpAppId; message: string } | null>(null);
   const [keys, setKeys] = useState<Partial<Record<HostedMcpAppId, string>>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [testingAll, setTestingAll] = useState(false);
   const loadGeneration = useRef(0);
   const mounted = useRef(true);
   const hostedOf = (server: McpServerListing) => isRemoteMcpListing(server) ? hostedMcpApp(server) : undefined;
@@ -643,6 +644,28 @@ export function McpServersPanel({ embedded = false, hostedCards, hideHosted = fa
 
   const visibleServers = servers?.filter((server) => !hideHosted || ownMcpServer(server));
   const panelError = loadError ?? error;
+  const switchedOnServers = visibleServers?.filter((server) => server.enabled) ?? [];
+
+  const testAll = async () => {
+    setTestingAll(true);
+    loadGeneration.current += 1;
+    setError(null);
+    setNotice(null);
+    let failed = 0;
+    for (const server of switchedOnServers) {
+      if (!mounted.current) return;
+      setBusy(`test:${server.name}`);
+      forgetProbe(server.name);
+      const result = await toolsCheck(server.name, api);
+      if (!result.ok) failed += 1;
+      setProbe((current) => ({ ...current, [server.name]: result }));
+    }
+    setBusy(null);
+    setTestingAll(false);
+    const params = { total: switchedOnServers.length, failed };
+    if (failed) setError({ key: "mcp.testAll.failed", params });
+    else setNotice({ key: "mcp.testAll.passed", params });
+  };
 
   return (
     <section
@@ -667,6 +690,15 @@ export function McpServersPanel({ embedded = false, hostedCards, hideHosted = fa
               aria-label={t("mcp.refreshAria")}
             >
               <RefreshCw size={16} className={cn(busy === "load" && "animate-spin")} />
+            </button>
+            <button
+              type="button"
+              data-mcp-test-all
+              onClick={() => void testAll()}
+              disabled={busy !== null || signingIn !== null || switchedOnServers.length === 0}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40"
+            >
+              {testingAll ? <Loader2 size={14} className="animate-spin" /> : <FlaskConical size={14} />} {t("mcp.testAll")}
             </button>
             <button
               type="button"
