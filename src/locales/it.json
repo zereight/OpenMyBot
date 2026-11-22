@@ -6982,5 +6982,6 @@
   "backup.scopeFullHint": "L’intera cartella dati, con cartelle di lavoro, cloni di progetti e checkpoint. Può superare il limite di 10 GB o 100.000 file.",
   "backup.scopeShown": "Contenuto",
   "backup.scopeEssentialsShort": "Solo l’essenziale",
-  "backup.scopeFullShort": "Tutto"
+  "backup.scopeFullShort": "Tutto",
+  "sidebar.nav.workflows": "Flussi di lavoro"
 }

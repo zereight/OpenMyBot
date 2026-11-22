@@ -11346,5 +11346,6 @@
   "board.team": "Equipe",
   "board.unread": "Não lida",
   "canvas.view.board": "Quadro",
-  "canvas.view.map": "Mapa"
+  "canvas.view.map": "Mapa",
+  "sidebar.nav.workflows": "Fluxos de trabalho"
 }

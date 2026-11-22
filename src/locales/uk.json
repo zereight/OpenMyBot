@@ -4096,5 +4096,6 @@
   "backup.scopeFullHint": "Уся тека даних, разом із робочими теками, клонами проєктів і контрольними точками. Може перевищити ліміт 10 ГБ або 100 000 файлів.",
   "backup.scopeShown": "Вміст",
   "backup.scopeEssentialsShort": "Лише головне",
-  "backup.scopeFullShort": "Усе"
+  "backup.scopeFullShort": "Усе",
+  "sidebar.nav.workflows": "Робочі процеси"
 }

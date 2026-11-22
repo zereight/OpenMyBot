@@ -7968,5 +7968,6 @@
   "backup.scopeFullHint": "作業フォルダ、プロジェクトのクローン、チェックポイントを含むデータフォルダ全体。10 GB または 10 万ファイルの上限を超えることがあります。",
   "backup.scopeShown": "内容",
   "backup.scopeEssentialsShort": "必要なものだけ",
-  "backup.scopeFullShort": "すべて"
+  "backup.scopeFullShort": "すべて",
+  "sidebar.nav.workflows": "ワークフロー"
 }

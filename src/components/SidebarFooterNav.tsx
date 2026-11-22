@@ -1,4 +1,4 @@
-import { AppWindow, FolderOpen, FolderTree, Globe, Puzzle, Rocket, UsersRound, Zap } from "lucide-react";
+import { AppWindow, FolderOpen, FolderTree, GitBranch, Globe, Puzzle, Rocket, UsersRound, Zap } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 
 import { useAppTriggers } from "@/lib/app-triggers";
@@ -162,6 +162,14 @@ export function SidebarFooterNav({
   const rows = (
     <>
       {automationsRow}
+      <NavRow
+        id="workflows"
+        label={t("sidebar.nav.workflows")}
+        iconsOnly={iconsOnly || toolbar}
+        active={state.activeView === "workflows"}
+        icon={(active) => <GitBranch size={iconSize} className={tone(active)} />}
+        onClick={() => dispatch({ type: "showWorkflows" })}
+      />
       {appsRow}
       {(advanced || iconsOnly) && (
         <NavRow

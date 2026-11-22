@@ -10100,5 +10100,6 @@
   "backup.scopeFullHint": "整个数据文件夹，包括工作文件夹、项目克隆和检查点。可能超过 10 GB 或 10 万个文件的上限。",
   "backup.scopeShown": "内容",
   "backup.scopeEssentialsShort": "仅必要内容",
-  "backup.scopeFullShort": "全部"
+  "backup.scopeFullShort": "全部",
+  "sidebar.nav.workflows": "工作流"
 }

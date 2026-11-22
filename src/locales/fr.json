@@ -3822,5 +3822,6 @@
   "backup.scopeFullHint": "Tout le dossier de données, avec les dossiers de travail, les clones de projets et les points de reprise. Il peut dépasser la limite de 10 Go ou 100 000 fichiers.",
   "backup.scopeShown": "Contenu",
   "backup.scopeEssentialsShort": "L’essentiel",
-  "backup.scopeFullShort": "Tout"
+  "backup.scopeFullShort": "Tout",
+  "sidebar.nav.workflows": "Flux de travail"
 }

@@ -11363,5 +11363,6 @@
   "settings.browser.chromePhaseVerifying": "Verifying downloaded Chrome…",
   "settings.browser.chromePhaseSwitching": "Applying updated Chrome to idle sessions…",
   "settings.browser.chromeUpdateDone": "Updated to Chrome {version}.",
-  "settings.browser.chromeUpdateDoneDeferred": "Updated to Chrome {version}. {count} active browser session(s) will switch on next restart."
+  "settings.browser.chromeUpdateDoneDeferred": "Updated to Chrome {version}. {count} active browser session(s) will switch on next restart.",
+  "sidebar.nav.workflows": "Workflows"
 }

@@ -7699,5 +7699,6 @@
   "settings.browser.chromePhaseVerifying": "다운로드한 Chrome 검증 중…",
   "settings.browser.chromePhaseSwitching": "유휴 브라우저 세션에 새 버전을 적용하는 중…",
   "settings.browser.chromeUpdateDone": "Chrome {version} 버전으로 업데이트되었습니다.",
-  "settings.browser.chromeUpdateDoneDeferred": "Chrome {version} 버전으로 업데이트되었습니다. 실행 중인 세션 {count}개는 다음 재시작 시 적용됩니다."
+  "settings.browser.chromeUpdateDoneDeferred": "Chrome {version} 버전으로 업데이트되었습니다. 실행 중인 세션 {count}개는 다음 재시작 시 적용됩니다.",
+  "sidebar.nav.workflows": "워크플로우"
 }

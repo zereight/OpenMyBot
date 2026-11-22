@@ -5915,5 +5915,6 @@
   "backup.scopeFullHint": "Çalışma klasörleri, proje kopyaları ve kontrol noktalarıyla birlikte tüm veri klasörü. 10 GB veya 100.000 dosya sınırını aşabilir.",
   "backup.scopeShown": "İçerik",
   "backup.scopeEssentialsShort": "Temel olanlar",
-  "backup.scopeFullShort": "Her şey"
+  "backup.scopeFullShort": "Her şey",
+  "sidebar.nav.workflows": "İş akışları"
 }
