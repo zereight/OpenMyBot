@@ -1,4 +1,7 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { FileHandle } from "node:fs/promises";
+import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse } from "node:http";
+import type { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 import { sendTunnelJson } from "./tunnel-gzip.ts";
 
@@ -33,6 +36,34 @@ export function json(res: ServerResponse, status: number, body: unknown) {
   if (sendTunnelJson(res, status, headers, data)) return;
   res.writeHead(status, headers);
   res.end(data);
+}
+
+/** Streams `[start, end]` from an open FileHandle to `res` without leaking errors after headers are sent; the caller owns closing `handle`. */
+export async function streamFileHandle(
+  res: ServerResponse,
+  handle: FileHandle,
+  options: {
+    status: number;
+    headers: OutgoingHttpHeaders;
+    start: number;
+    end: number;
+    headOnly?: boolean;
+  },
+): Promise<void> {
+  if (res.destroyed || res.writableEnded) return;
+  let stream: Readable | undefined;
+  try {
+    res.writeHead(options.status, options.headers);
+    if (options.headOnly || options.end < options.start) {
+      res.end();
+      return;
+    }
+    stream = handle.createReadStream({ start: options.start, end: options.end, autoClose: false });
+    await pipeline(stream, res);
+  } catch {
+    stream?.destroy();
+    if (!res.destroyed) res.destroy();
+  }
 }
 
 export function readBody(req: IncomingMessage, limit = 1_000_000): Promise<any> {

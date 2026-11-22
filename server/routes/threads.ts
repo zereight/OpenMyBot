@@ -1,4 +1,5 @@
 import { userError } from "../user-errors.ts";
+import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 
 import type { BotsResponse, SearchResponse, WireBot, WireGroup } from "../../shared/wire.ts";
@@ -25,6 +26,7 @@ import { resolveRequestAuth, type RequestAuth, type ResolveOptions } from "../re
 import type { queuedSteerSnapshot } from "../steer-queue.ts";
 import type { BotRecord, GroupRecord, Message, Store } from "../store.ts";
 import { answerAsleep, backgroundWhileAsleep } from "../cloud-power.ts";
+import { streamFileHandle } from "../harness/http.ts";
 import { heldTail } from "../host/snapshot-tail.ts";
 import { createJobRoutes } from "./jobs.ts";
 import { PASS, type RouteContext, type RouteHandler } from "./table.ts";
@@ -329,85 +331,79 @@ export function createThreadRoutes(deps: ThreadRouteDeps): RouteHandler {
           return json(res, 200, listing);
         }
       }
-      if (hasImageRef) {
-        const isMarkdown = file.mime.startsWith("text/markdown") || /^\.(?:md|markdown)$/i.test(extname(downloadName ?? file.name));
-        if (!isMarkdown) {
-          await file.handle.close();
-          return json(res, 415, { error: "imageRef is only supported for markdown files" });
-        }
-        let markdownBytes: Buffer;
-        try {
-          markdownBytes = await file.handle.readFile();
-        } finally {
+      let activeHandle: FileHandle | null = file.handle;
+      try {
+        if (hasImageRef) {
+          const isMarkdown = file.mime.startsWith("text/markdown") || /^\.(?:md|markdown)$/i.test(extname(downloadName ?? file.name));
+          if (!isMarkdown) {
+            return json(res, 415, { error: "imageRef is only supported for markdown files" });
+          }
+          const markdownBytes = await file.handle.readFile();
           await file.handle.close().catch(() => undefined);
+          activeHandle = null;
+          const markdownText = decodeMarkdownPreviewBytes(markdownBytes);
+          const imageTarget = messageImageTargetAt(markdownText, markdownImageRef);
+          if (!imageTarget) return json(res, 404, { error: "the linked image is unavailable" });
+          const sourcePath = botAttachment ? (botAttachment.kind !== "audio" ? (botAttachment.source ?? null) : null) : (deliveredSource !== undefined ? deliveredSource : file.path);
+          const baseDir = sourcePath ? dirname(sourcePath) : null;
+          file = await openMarkdownImage(imageTarget, baseDir, botWorkspaceRoots, MESSAGE_FILE_MAX_BYTES);
+          activeHandle = file.handle;
+          if (!extensionForMime(file.mime)) {
+            return json(res, 415, { error: "only images can be previewed here" });
+          }
+          downloadName = undefined;
         }
-        const markdownText = decodeMarkdownPreviewBytes(markdownBytes);
-        const imageTarget = messageImageTargetAt(markdownText, markdownImageRef);
-        if (!imageTarget) return json(res, 404, { error: "the linked image is unavailable" });
-        const sourcePath = botAttachment ? (botAttachment.kind !== "audio" ? (botAttachment.source ?? null) : null) : (deliveredSource !== undefined ? deliveredSource : file.path);
-        const baseDir = sourcePath ? dirname(sourcePath) : null;
-        file = await openMarkdownImage(imageTarget, baseDir, botWorkspaceRoots, MESSAGE_FILE_MAX_BYTES);
-        if (!extensionForMime(file.mime)) {
-          await file.handle.close();
+        if ((streamsMessageImage || botAttachment?.kind === "image") && !file.mime.startsWith("image/")) {
           return json(res, 415, { error: "only images can be previewed here" });
         }
-        downloadName = undefined;
+        if ((asksMediaLink || mediaGrant) && !STREAMABLE_MEDIA_MIMES.has(file.mime)) {
+          return json(res, 415, { error: "only videos and audio can be played here" });
+        }
+        if (asksMediaLink) {
+          const id = mediaLinks.issue({ threadId, messageId: message.id, path: href, ...(folderEntry ? { entry: folderEntry } : {}) }, auth);
+          res.setHeader("x-openmausbot-media", "1");
+          res.setHeader("cache-control", "private, no-store");
+          return json(res, 200, { url: `/api/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(message.id)}/file?media=${id}`, mime: file.mime, bytes: file.bytes });
+        }
+        const inline = streamsMessageImage || Boolean(mediaGrant) || hasImageRef;
+        const rawRange = Array.isArray(req.headers.range) ? req.headers.range[0] : req.headers.range;
+        const range = mediaGrant ? cappedMediaRange(parseAudioRange(rawRange, file.bytes)) : { kind: "none" as const };
+        if (range.kind === "unsatisfiable") {
+          if (res.destroyed || res.writableEnded) return;
+          res.writeHead(416, { "content-range": `bytes */${file.bytes}`, "cache-control": "private, no-store", "x-content-type-options": "nosniff" });
+          return res.end();
+        }
+        const [start, end] = range.kind === "range" ? [range.start, range.end] : [0, file.bytes - 1];
+        await streamFileHandle(res, file.handle, {
+          status: range.kind === "range" ? 206 : 200,
+          headers: {
+            "content-type": file.mime,
+            "content-length": String(end - start + 1),
+            ...(range.kind === "range" ? { "content-range": `bytes ${start}-${end}/${file.bytes}` } : {}),
+            ...(mediaGrant ? { "accept-ranges": "bytes" } : {}),
+            "content-disposition": mediaGrant
+              ? messageFileDisposition(messageFileDownloadName(downloadName, file.name), "inline")
+              : inline ? "inline" : messageFileDisposition(messageFileDownloadName(downloadName, file.name)),
+            "cache-control": "private, no-store",
+            "cdn-cache-control": "no-store",
+            "cloudflare-cdn-cache-control": "no-store",
+            pragma: "no-cache",
+            vary: "Authorization",
+            "x-content-type-options": "nosniff",
+            ...(inline
+              ? {
+                  "cross-origin-resource-policy": "same-origin",
+                  "referrer-policy": "no-referrer",
+                }
+              : {}),
+          },
+          start,
+          end,
+        });
+        return;
+      } finally {
+        await activeHandle?.close().catch(() => undefined);
       }
-      if ((streamsMessageImage || botAttachment?.kind === "image") && !file.mime.startsWith("image/")) {
-        await file.handle.close();
-        return json(res, 415, { error: "only images can be previewed here" });
-      }
-      if ((asksMediaLink || mediaGrant) && !STREAMABLE_MEDIA_MIMES.has(file.mime)) {
-        await file.handle.close();
-        return json(res, 415, { error: "only videos and audio can be played here" });
-      }
-      if (asksMediaLink) {
-        await file.handle.close();
-        const id = mediaLinks.issue({ threadId, messageId: message.id, path: href, ...(folderEntry ? { entry: folderEntry } : {}) }, auth);
-        res.setHeader("x-openmausbot-media", "1");
-        res.setHeader("cache-control", "private, no-store");
-        return json(res, 200, { url: `/api/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(message.id)}/file?media=${id}`, mime: file.mime, bytes: file.bytes });
-      }
-      const inline = streamsMessageImage || Boolean(mediaGrant) || hasImageRef;
-      const rawRange = Array.isArray(req.headers.range) ? req.headers.range[0] : req.headers.range;
-      // Without a Range header (Save As) the whole file streams; a player's range never ties up more than one chunk.
-      const range = mediaGrant ? cappedMediaRange(parseAudioRange(rawRange, file.bytes)) : { kind: "none" as const };
-      if (range.kind === "unsatisfiable") {
-        await file.handle.close();
-        res.writeHead(416, { "content-range": `bytes */${file.bytes}`, "cache-control": "private, no-store", "x-content-type-options": "nosniff" });
-        return res.end();
-      }
-      const [start, end] = range.kind === "range" ? [range.start, range.end] : [0, file.bytes - 1];
-      res.writeHead(range.kind === "range" ? 206 : 200, {
-        "content-type": file.mime,
-        "content-length": String(end - start + 1),
-        ...(range.kind === "range" ? { "content-range": `bytes ${start}-${end}/${file.bytes}` } : {}),
-        ...(mediaGrant ? { "accept-ranges": "bytes" } : {}),
-        "content-disposition": mediaGrant
-          ? messageFileDisposition(messageFileDownloadName(downloadName, file.name), "inline")
-          : inline ? "inline" : messageFileDisposition(messageFileDownloadName(downloadName, file.name)),
-        "cache-control": "private, no-store",
-        "cdn-cache-control": "no-store",
-        "cloudflare-cdn-cache-control": "no-store",
-        pragma: "no-cache",
-        vary: "Authorization",
-        "x-content-type-options": "nosniff",
-        ...(inline
-          ? {
-              "cross-origin-resource-policy": "same-origin",
-              "referrer-policy": "no-referrer",
-            }
-          : {}),
-      });
-      if (file.bytes === 0) {
-        await file.handle.close();
-        return res.end();
-      }
-      const stream = file.handle.createReadStream({ start, end, autoClose: true });
-      stream.on("error", () => res.destroy());
-      res.on("close", () => stream.destroy());
-      stream.pipe(res);
-      return;
     }
 
     // Raw bytes, not base64 JSON; retrying a UUID uploadId returns the same committed path.
