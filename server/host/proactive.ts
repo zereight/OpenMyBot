@@ -87,6 +87,8 @@ export interface ProactiveDeps {
   counted?(kind: ValueKind, count: number): void;
   /** A new Cloud's first look, confined like a read-and-draft run. */
   look?: ReadAndDraftDeps["look"];
+  /** A look-around suggestion thread, confined like a read-and-draft run (strictly read-only). */
+  lookAround?: ReadAndDraftDeps["lookAround"];
   morning?: MorningDeps;
 }
 
@@ -187,6 +189,7 @@ export function createProactive(deps: ProactiveDeps) {
     stale: deps.stale, decide: deps.decide, release: deps.release,
     mayDraft: checks.mayDraft, drafted: checks.drafted,
     ...(deps.look ? { look: deps.look } : {}),
+    ...(deps.lookAround ? { lookAround: deps.lookAround } : {}),
     wroteDrafts: (botId, count) => { if (botId === owner()?.id) deps.counted?.("drafted", count); },
   });
 

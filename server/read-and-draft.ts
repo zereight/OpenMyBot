@@ -64,6 +64,8 @@ export interface ReadAndDraftDeps {
   drafted(checkKey: string, threadId: string): void;
   /** A first look running in this conversation: what it may draft. */
   look?(threadId: string): { draft(reply: DraftReply): boolean } | null;
+  /** A look-around suggestion thread: confined by the same allow-only fence, strictly read-only (never drafts). */
+  lookAround?(threadId: string): boolean;
   /** Drafts a confined conversation was let write, by its bot. */
   wroteDrafts?(botId: string, count: number): void;
 }
@@ -133,8 +135,9 @@ export function createReadAndDraft(deps: ReadAndDraftDeps) {
     const run = deps.runFor(threadId);
     return run?.access === "read-and-draft" && run.threadId === threadId ? run : null;
   };
-  /** This conversation is a read-and-draft run's own, finished or not. */
-  const confines = (threadId: string): boolean => runOf(threadId) !== null;
+  const isLookAround = (threadId: string): boolean => deps.lookAround?.(threadId) === true;
+  /** This conversation is a read-and-draft run's or look-around's own, finished or not. */
+  const confines = (threadId: string): boolean => runOf(threadId) !== null || isLookAround(threadId);
   const refuse = (bot: Pick<Bot, "id" | "name">, threadId: string, tool: string): true => {
     deps.decide({ threadId, botId: bot.id, botName: bot.name, tool, decision: "auto-denied", source: "routine", rule: RULE });
     return true;
@@ -167,10 +170,12 @@ export function createReadAndDraft(deps: ReadAndDraftDeps) {
   /** True when the frame was refused; an allowed draft is counted, so a retry of the run never writes it twice. */
   function refusesConnectorCall(bot: Pick<Bot, "id" | "name">, threadId: string, frame: unknown): boolean {
     const run = runOf(threadId);
-    const looking = run ? null : deps.look?.(threadId) ?? null;
-    if (!run && !looking) return false;
+    const lookAroundOnly = !run && isLookAround(threadId);
+    const looking = run || lookAroundOnly ? null : deps.look?.(threadId) ?? null;
+    if (!run && !lookAroundOnly && !looking) return false;
     const drafts: DraftReply[] = [];
     const refused = refusedConnectorCall(frame, (reply) => {
+      if (lookAroundOnly) return false;
       if (drafts.some((one) => one.threadId === reply.threadId)) return false;
       const ok = run ? run.checkKey !== undefined && deps.mayDraft(run.checkKey, reply.threadId, reply.to) : looking!.draft(reply);
       if (ok) drafts.push(reply);
