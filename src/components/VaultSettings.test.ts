@@ -282,13 +282,17 @@ describe("Settings → Vault: logins", () => {
     await click("Connect Bitwarden");
     const dialog = () => document.body.querySelector("[data-settings-dialog]")!;
     expect(dialog().querySelector("[data-bitwarden-guide]")!.textContent).toMatch(/^Use a dedicated Bitwarden account that can only see one collection\./u);
+    expect(dialog().querySelectorAll("[data-bitwarden-steps] li")).toHaveLength(3);
+    expect(dialog().querySelector<HTMLAnchorElement>("[data-bitwarden-web-link]")!.getAttribute("href")).toBe("https://vault.bitwarden.com");
     expect(dialog().querySelector('input[name="bitwardenServerUrl"]'), "no address field for bitwarden.com").toBeNull();
     await act(async () => {
       const select = dialog().querySelector<HTMLSelectElement>('select[name="bitwardenServer"]')!;
       select.value = "self-hosted";
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
+    expect(dialog().querySelector("[data-bitwarden-web-link]")).toBeNull();
     await type("bitwardenServerUrl", "https://vw.example.test");
+    expect(dialog().querySelector<HTMLAnchorElement>("[data-bitwarden-web-link]")!.getAttribute("href")).toBe("https://vw.example.test");
     await type("bitwardenClientId", "user.fake-id");
     await type("bitwardenClientSecret", "fake-client-secret");
     await type("bitwardenPassword", "fake-master");
