@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Code2, Download, Eye, LoaderCircle, RotateCcw } from "lucide-react";
-import { requestMessageFile, useLocalFileSave, type MessageAttachmentContext } from "./AttachmentPreview";
+import { requestMessageFile, useLocalFileSave, type MarkdownFileContext, type MessageAttachmentContext } from "./AttachmentPreview";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { previewHeight } from "./HtmlFilePreview";
 import { readTableResponse } from "./TableFilePreview";
@@ -49,13 +49,13 @@ export default function MarkdownFileContent({ path, name, message, fill = false 
       <button type="button" className="table-action" aria-label={t("attach.saveAria", { name })} title={t("attach.saveAria", { name })} disabled={save.state === "saving"} onClick={() => void save.save()}><Download size={14} /></button>
     </div>
     {save.state === "failed" && <p role="alert" className="text-end text-[12px] text-danger">{save.reason}</p>}
-    <MarkdownFileView source={source} showSource={showSource} fill={fill} />
+    <MarkdownFileView source={source} showSource={showSource} fill={fill} markdownFile={{ path, message }} />
   </div>;
 }
 
 /** The file itself: drawn as Markdown, or its raw text. */
-export function MarkdownFileView({ source, showSource, fill }: { source: string; showSource: boolean; fill?: boolean }) {
+export function MarkdownFileView({ source, showSource, fill, markdownFile }: { source: string; showSource: boolean; fill?: boolean; markdownFile?: MarkdownFileContext }) {
   return showSource
     ? <pre className={cn(previewHeight(fill), "overflow-auto rounded-lg border border-hairline/40 bg-inset p-3 text-[12px] leading-5 whitespace-pre-wrap break-words text-ink")}>{source}</pre>
-    : <div data-markdown-file className={cn(previewHeight(fill), "overflow-auto rounded-lg border border-hairline/40 bg-panel px-5 py-4 text-[14px] leading-6 text-ink")}><ChatMarkdown text={source} /></div>;
+    : <div data-markdown-file className={cn(previewHeight(fill), "overflow-auto rounded-lg border border-hairline/40 bg-panel px-5 py-4 text-[14px] leading-6 text-ink")}><ChatMarkdown text={source} markdownFile={markdownFile} /></div>;
 }

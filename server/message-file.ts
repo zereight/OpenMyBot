@@ -5,7 +5,8 @@ import { lstat, open, readdir, realpath, stat, type FileHandle } from "node:fs/p
 import { basename, dirname, extname, isAbsolute, join, posix, relative, resolve, sep, win32 } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { fromMarkdown } from "mdast-util-from-markdown";
+import { fromMarkdown, type Options as MarkdownParseOptions } from "mdast-util-from-markdown";
+import remarkGfm from "remark-gfm";
 
 import { windowsPathDestinations } from "../shared/markdown-windows-paths.ts";
 import { linkPlainPaths } from "../shared/markdown-plain-paths.ts";
@@ -16,6 +17,17 @@ import { userErrorThrown } from "./user-errors.ts";
 export const MESSAGE_FILE_MAX_BYTES = PREVIEW_MAX_BYTES;
 /** Saving a linked file streams it to the person, so it may be larger than anything read into memory or previewed. */
 export const MESSAGE_FILE_DOWNLOAD_MAX_BYTES = 500 * 1024 * 1024;
+export const MARKDOWN_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
+
+const gfmParseData: {
+  micromarkExtensions?: MarkdownParseOptions["extensions"];
+  fromMarkdownExtensions?: MarkdownParseOptions["mdastExtensions"];
+} = {};
+remarkGfm.call({ data: () => gfmParseData }, { singleTilde: false });
+const MARKDOWN_IMAGE_PARSE_OPTIONS: MarkdownParseOptions = {
+  extensions: gfmParseData.micromarkExtensions,
+  mdastExtensions: [...(gfmParseData.fromMarkdownExtensions ?? []), windowsPathDestinations],
+};
 
 export interface OpenedMessageFile {
   handle: FileHandle;
@@ -207,7 +219,7 @@ export function messageImageTargetAt(text: string, sourceOffset: number): string
   let direct: string | null = null;
   let reference: string | null = null;
 
-  walkMarkdown(fromMarkdown(text, { mdastExtensions: [windowsPathDestinations] }), (node) => {
+  walkMarkdown(fromMarkdown(text, MARKDOWN_IMAGE_PARSE_OPTIONS), (node) => {
     if (node.type === "definition" && node.identifier && node.url) {
       if (!definitions.has(node.identifier)) definitions.set(node.identifier, node.url);
       return;
@@ -218,6 +230,35 @@ export function messageImageTargetAt(text: string, sourceOffset: number): string
   });
 
   return direct ?? (reference ? definitions.get(reference) ?? null : null);
+}
+
+export function decodeMarkdownPreviewBytes(bytes: Uint8Array): string {
+  if (bytes.includes(0)) throw statusError(415, "markdown file is not plain text");
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder("windows-1252").decode(bytes);
+  }
+}
+
+export async function openMarkdownImage(
+  target: string,
+  baseDir: string | null,
+  roots: readonly string[],
+  maxBytes = MESSAGE_FILE_MAX_BYTES,
+): Promise<OpenedMessageFile> {
+  const trimmed = target.trim();
+  if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("//")) {
+    throw statusError(400, "image target must be a local file");
+  }
+  const requested = referencedPath(trimmed, false, false);
+  if (isAbsolute(requested) || /^[a-z]:[\\/]/i.test(requested) || requested.startsWith("\\\\")) {
+    return openMessageFile(trimmed, roots, maxBytes);
+  }
+  if (!baseDir) {
+    throw statusError(404, "the linked image is unavailable");
+  }
+  return openMessageFile(pathToFileURL(resolve(baseDir, requested)).href, roots, maxBytes);
 }
 
 /** iOS delivers a percent-encoded file href as a decoded path; only rendered link targets are normalised, never prose. */
