@@ -353,7 +353,7 @@ import {
   workspaceDir,
   botSettingsFile,
 } from "./workspace.ts";
-import { memoryDate, writeMemoryFile, writeMemoryTopic } from "./workspace.ts";
+import { memoryDate, writeMemoryFile, writeMemoryTopic } from "./workspace.ts"; import { prepareWorktreeForThread, registerThreadWorktree, removeThreadWorktree } from "./worktrees.ts";
 import {
   beginMemoryTurn,
   endMemoryTurn,
@@ -13606,7 +13606,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             if (!room) {
               const opened = { botId: internalSender.id, name: internalSender.name, threadId: address.threadId, at: Date.now(), ...(lends ? { forOwner: true as const } : {}) }, startedFor = (created: { threadId: string }) => threadStarters.set(created.threadId, opener);
               const task = continued ?? (fresh
-                ? store.createTask(target.botId, call.title ?? (call.message.replace(/\s+/g, " ").trim().slice(0, 60) || `From ${internalSender.name}`), false, call.projectId, opened, call.ownThread?.approvalMode, call.ownThread?.modelSelection, folder.cwd, startedFor)
+                ? store.createTask(target.botId, call.title ?? (call.message.replace(/\s+/g, " ").trim().slice(0, 60) || `From ${internalSender.name}`), false, call.projectId, opened, call.ownThread?.approvalMode, call.ownThread?.modelSelection, call.ownThread?.cwd ?? folder.cwd, startedFor)
                 : store.createTask(target.botId, `@${internalSender.name} · work`, false, undefined, { ...opened, kind: "work" }, undefined, undefined, folder.cwd, startedFor));
               if (!task) throw new Error("The recipient no longer exists");
               target.threadId = task.threadId;
@@ -13925,35 +13925,26 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         const sourceTitle = owner.group ? owner.group.name : (store.taskByThread(from.id, fromThreadId)?.title ?? "");
         const picked = body.modelSelection === undefined ? null : checkedModelSelection(body.modelSelection, undefined, true); const refused = !picked ? null : target.id !== from.id ? "model_selection is only for threads on yourself" : !picked.ok ? picked.error : ownThreads.refusal(picked.selection, from); if (refused) return json(res, 400, { error: refused });
+        if (target.id !== from.id && body.worktree !== undefined) return json(res, 400, { error: "worktree is only for threads on yourself" });
         if (target.id === from.id) { const selfRefused = selfThreadRefusal({ handoff: Boolean(internalCapability.roomHandoffId), requestLine: store.activePath(fromThreadId).findLast((line) => line.role === "user" && line.kind === "text") }); if (selfRefused) return json(res, 409, { error: selfRefused });
+          if (body.reportBack === true && owner.group) return json(res, 400, { error: "report_back works only from your own conversation, not a room. Leave it out; the thread's result then stays in that thread." });
           const inherited = picked?.ok ? { modelSelection: picked.selection, approvalMode: undefined } : ownThreads.inherited(from.id, fromThreadId);
-          if (body.reportBack === true) { if (owner.group) return json(res, 400, { error: "report_back works only from your own conversation, not a room. Leave it out; the thread's result then stays in that thread." });
-            const result = await coordinateBots({ botIds: [from.id], message, rework: false, thread: "new", reply: "resume", consult: false, title, projectId, ownThread: inherited }), receipt = (result.body.receipts as PeerDeliveryReceipt[] | undefined)?.[0];
-            return json(res, result.status === 200 ? 201 : result.status, { ...result.body, self: true, reportBack: true, title, botId: from.id, botName: from.name, threadId: receipt?.threadId, requestId: receipt?.requestId }); }
-          const task = store.createTask(from.id, title, false, projectId, { botId: from.id, name: from.name, at: Date.now() }, inherited.approvalMode, inherited.modelSelection, undefined,
+          const wt = await prepareWorktreeForThread(from.id, store.taskByThread(from.id, fromThreadId)?.cwd ?? from.cwd, body.worktree); if (!wt.ok) return json(res, 400, { error: wt.error });
+          if (body.reportBack === true) {
+            const result = await coordinateBots({ botIds: [from.id], message, rework: false, thread: "new", reply: "resume", consult: false, title, projectId, ownThread: { ...inherited, ...(wt.worktree ? { cwd: wt.worktree.path } : {}) } }), receipt = (result.body.receipts as PeerDeliveryReceipt[] | undefined)?.[0];
+            if (wt.worktree) { if (result.status === 200 && receipt?.threadId) registerThreadWorktree(receipt.threadId, wt.worktree); else await removeThreadWorktree(wt.worktree, { force: true }); }
+            return json(res, result.status === 200 ? 201 : result.status, { ...result.body, self: true, reportBack: true, title, botId: from.id, botName: from.name, threadId: receipt?.threadId, requestId: receipt?.requestId, ...(wt.worktree ? { worktree: wt.worktree } : {}) }); }
+          const task = store.createTask(from.id, title, false, projectId, { botId: from.id, name: from.name, at: Date.now() }, inherited.approvalMode, inherited.modelSelection, wt.worktree?.path,
             (created) => threadStarters.set(created.threadId, (CLOUD_TEAM ? teamConnections.handOnFor(internalCapability.threadId, internalCapability.generation) : null) ?? openerFrom(fromThreadId)));
-          if (!task) return json(res, 500, { error: "couldn't create that thread" });
+          if (!task) { if (wt.worktree) await removeThreadWorktree(wt.worktree, { force: true }); return json(res, 500, { error: "couldn't create that thread" }); }
+          if (wt.worktree) registerThreadWorktree(task.threadId, wt.worktree);
           internalCapability.openedThreads += 1;
-          const chip: Omit<Message, "id" | "at"> = {
-            role: "bot",
-            kind: "activity",
-            tool: { name: serverLine(threadLanguage(fromThreadId), "server.rooms.openedThread", { title: task.title }), ok: true },
-            threadRef: { botId: from.id, threadId: task.threadId, title: task.title },
-          };
+          const chip: Omit<Message, "id" | "at"> = { role: "bot", kind: "activity", tool: { name: serverLine(threadLanguage(fromThreadId), "server.rooms.openedThread", { title: task.title }), ok: true }, threadRef: { botId: from.id, threadId: task.threadId, title: task.title } };
           if (owner.group) chip.from = { botId: from.id, name: from.name, color: from.color };
           store.appendMessage(fromThreadId, chip);
-          // Mark the bot's own words, so a later turn never mistakes the request for the person's.
           const opening = `[Thread you opened yourself${sourceTitle ? ` from #${sourceTitle}` : ""}. The request below is your own words, not the person's: do the work here and end with a clear result they can read.]\n\n${message}`;
           const outcome = await startOrQueueOpenedThread(from.id, task.threadId, opening, isUnattended(from.id, fromThreadId), withPerson(turnOrigin(internalCapability), actingPeople.requester(internalCapability.threadId, internalCapability.generation)));
-          return json(res, 201, {
-            threadId: task.threadId,
-            title: task.title,
-            botId: from.id,
-            botName: from.name,
-            self: true,
-            limit: maxConcurrentBotThreads(cfg, botThreadsHost(cloudPlanTier.starter())),
-            ...outcome,
-          });
+          return json(res, 201, { threadId: task.threadId, title: task.title, botId: from.id, botName: from.name, self: true, limit: maxConcurrentBotThreads(cfg, botThreadsHost(cloudPlanTier.starter())), ...(wt.worktree ? { worktree: wt.worktree } : {}), ...outcome });
         }
         const result = await coordinateBots({ botIds: [target.id], message, rework: false, thread: "new", reply: "resume", consult: false, title, projectId });
         return json(res, result.status, result.body);

@@ -270,6 +270,16 @@ const TOOL_DEFINITIONS = [
           description: "Optional: ids (and effort) exactly as list_models gives them. Default: this conversation's model.",
         },
         report_back: { type: "boolean", description: "True: its result resumes you here; end your turn. Not in a room." },
+        worktree: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            branch: { type: "string", minLength: 1 },
+            base: { type: "string", minLength: 1 },
+            repo: { type: "string", minLength: 1 },
+          },
+          description: "Optional: isolate this thread in a new Git worktree under this bot's repository.",
+        },
       },
       required: ["title", "message"],
     },

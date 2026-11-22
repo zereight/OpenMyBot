@@ -450,16 +450,18 @@ export async function callTool(called: string, input: Json, context: ToolCallCon
       body.modelSelection = { instanceId: fields.instanceId.trim(), model: fields.model.trim(), ...(typeof fields.effort === "string" ? { effort: fields.effort.trim() } : {}) };
     }
     if (args.report_back === true) body.reportBack = true;
+    if (args.worktree !== undefined) body.worktree = args.worktree;
     const r = await api("/api/internal/threads", { method: "POST", body: JSON.stringify(body) });
     if (r.error && r.state !== "failed") return { text: `Couldn't open that thread: ${String(r.error)}`, isError: true };
+    const wt = jsonRecord(r.worktree) ? ` (worktree: ${String(r.worktree.path ?? "")}, branch: ${String(r.worktree.branch ?? "")})` : "";
     if (r.reportBack === true) {
-      return { text: `Opened thread #${String(r.title ?? title)} on yourself [thread id: ${String(r.threadId ?? "")}]. It starts when this turn ends, and its result comes back to this conversation and resumes you automatically (assignment id: ${String(r.requestId ?? "unknown")}). Mention it to the person as #${String(r.title ?? title)} and finish your turn; do not check or wait for it in this turn. To steer it or send it a follow-up, while it runs or after, use coordinate_bots with bot_ids ["${BOT_ID}"] and thread "${String(r.threadId ?? "")}".` };
+      return { text: `Opened thread #${String(r.title ?? title)} on yourself [thread id: ${String(r.threadId ?? "")}]${wt}. It starts when this turn ends, and its result comes back to this conversation and resumes you automatically (assignment id: ${String(r.requestId ?? "unknown")}). Mention it to the person as #${String(r.title ?? title)} and finish your turn; do not check or wait for it in this turn. To steer it or send it a follow-up, while it runs or after, use coordinate_bots with bot_ids ["${BOT_ID}"] and thread "${String(r.threadId ?? "")}".` };
     }
     const receipt = r.self !== true && Array.isArray(r.receipts) && jsonRecord(r.receipts[0]) ? r.receipts[0] : undefined;
     const threadTitle = String(r.title ?? receipt?.title ?? title);
     const threadId = String(r.threadId ?? receipt?.threadId ?? "");
     const where = r.self === true ? "on yourself" : `on @${String(r.botName ?? receipt?.botName ?? "that bot")}`;
-    const opened = `Opened thread #${threadTitle} ${where} [thread id: ${threadId}].`;
+    const opened = `Opened thread #${threadTitle} ${where} [thread id: ${threadId}]${wt}.`;
     if (r.self === true) {
       if (r.state === "running") {
         return { text: `${opened} It is running now, in parallel with this conversation, and its result stays in that thread — it will not be delivered here. Mention it to the person as #${threadTitle}; use list_threads in a later turn to see how it is going.` };
