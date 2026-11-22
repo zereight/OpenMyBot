@@ -94,4 +94,26 @@ describe("DigestChip", () => {
     expect(html).toContain("Did 12+ tool calls");
     expect(html).not.toContain("files changed");
   });
+
+  it("renders inline memory receipt items with delta, deletion-guard badge, and undo button", () => {
+    const html = renderToStaticMarkup(createElement(DigestChip, {
+      message: {
+        ...message,
+        digest: {
+          ...message.digest!,
+          memory: [
+            { path: "MEMORY.md", kind: "updated", journalId: "j-add", added: 2, removed: 1, via: "turn", canRevert: true },
+            { path: "MEMORY.md", kind: "updated", journalId: "j-guard", added: 1, via: "deletion-guard", canRevert: false },
+          ],
+          memoryDropped: 1,
+        },
+      },
+    }));
+    expect(html).toContain('data-testid="memory-receipt"');
+    expect(html).toContain("+2/-1");
+    expect(html).toContain('data-memory-revert="j-add"');
+    expect(html).toContain("Restored");
+    expect(html).not.toContain('data-memory-revert="j-guard"');
+    expect(html).toContain("+1 more");
+  });
 });

@@ -359,6 +359,10 @@ export function revertMemoryChange(botId: string, entryId: string, opts: { threa
   const entry = readMemoryJournal(botId, MAX_ROWS).find((row) => row.id === entryId);
   if (!entry) return { ok: false, status: 404, error: "no such memory change" };
   if (!entry.canRevert) return { ok: false, status: 400, error: entry.revertUnavailableReason ?? "this change cannot be reverted" };
+  const current = readMemoryDoc(botId, entry.path);
+  if ((current.exists ? current.hash : null) !== entry.afterHash) {
+    return { ok: false, status: 409, error: "This file changed after that edit, so undoing it now would also erase the newer changes. Undo the newer changes first." };
+  }
   try {
     if (entry.kind === "created") {
       if (entry.path === MEMORY_INDEX) {

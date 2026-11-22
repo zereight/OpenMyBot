@@ -249,10 +249,21 @@ describe("revertMemoryChange", () => {
     const bot = freshBot();
     const row = recordMemoryChange(bot, { path: MEMORY_INDEX, actor: "bot", via: "turn", before: null, after: "hello" });
     ensureWorkspace(bot);
+    writeFileSync(join(workspaceDir(bot), "MEMORY.md"), "hello");
     await flushMemoryJournal(bot);
     expect(revertMemoryChange(bot, row!.id).ok).toBe(true);
     expect(existsSync(join(workspaceDir(bot), "MEMORY.md"))).toBe(true);
     expect(readMemoryDoc(bot, MEMORY_INDEX).text).toBe("");
+  });
+
+  it("refuses (409) to undo an edit the file has changed since, keeping the newer text", async () => {
+    const bot = freshBot();
+    journalMemoryWrite(bot, "memory/z.md", "first\n", { actor: "person", via: "ui" });
+    const older = journalMemoryWrite(bot, "memory/z.md", "first\nsecond\n", { actor: "bot", via: "turn", threadId: "t1" });
+    journalMemoryWrite(bot, "memory/z.md", "first\nsecond\nthird\n", { actor: "bot", via: "turn", threadId: "t2" });
+    await flushMemoryJournal(bot);
+    expect(revertMemoryChange(bot, older.entry!.id)).toMatchObject({ ok: false, status: 409 });
+    expect(readMemoryDoc(bot, "memory/z.md").text).toBe("first\nsecond\nthird\n");
   });
 
   it("answers 404 for an unknown row", () => {

@@ -3,7 +3,7 @@
 import type { MemoryJournalEntry } from "./memory-journal.ts";
 import type { Message } from "./store.ts";
 
-import type { DigestFiles, DigestTool, HookCoverage, TurnDigest } from "../shared/digest.ts";
+import type { DigestFiles, DigestMemory, DigestTool, HookCoverage, TurnDigest } from "../shared/digest.ts";
 import { redactSecretsInText } from "../shared/redact.ts";
 import { toolIdentity } from "../shared/tool-name.ts";
 import { toolResultPrefix } from "./tool-results.ts";
@@ -64,9 +64,14 @@ export function buildTurnDigest(input: DigestInput): TurnDigest {
   const tools = ranked.slice(0, MAX_TOOLS);
   const toolsDropped = ranked.length - tools.length;
 
-  const memory = input.memory.slice(0, MAX_MEMORY).map((row) => ({
+  const memory: DigestMemory[] = input.memory.slice(0, MAX_MEMORY).map((row) => ({
     path: fitBytes(row.path, 512),
     kind: (row.kind === "edited" ? "updated" : row.kind) as "created" | "updated" | "deleted",
+    ...(row.id ? { journalId: row.id } : {}),
+    ...(row.added > 0 ? { added: row.added } : {}),
+    ...(row.removed > 0 ? { removed: row.removed } : {}),
+    ...(row.via ? { via: row.via } : {}),
+    ...(row.canRevert ? { canRevert: true } : {}),
   }));
 
   const digest: TurnDigest = {
