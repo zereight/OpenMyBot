@@ -236,6 +236,8 @@
   "server.mcp.signIn.failed": "로그인이 완료되지 않았어요. 다시 시도하세요.",
   "server.notify.approval": "{who}에서 승인이 필요해요",
   "server.notify.question": "{who}에게 질문이 있어요",
+  "server.notify.stillWaiting": "아직 답변을 기다리고 있어요: {detail}",
+  "server.notify.stillWaitingFallback": "아직 답변을 기다리고 있어요.",
   "server.notify.signIn": "{who}이(가) {site} 로그인을 요청해요",
   "server.notify.signInWebsite": "{who}이(가) 웹사이트 로그인을 요청해요",
   "server.notify.routineFailed": "{who}의 루틴이 실패했어요",
