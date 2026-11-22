@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, ExternalLink, X } from "lucide-react";
+import { ArrowUp, ExternalLink, Link2, X } from "lucide-react";
+import { threadLinkDisplayLabel } from "../../shared/thread-link";
 import { cn } from "@/lib/cn";
 import { useCanWriteIn } from "@/lib/cloud-guest";
 import { t } from "@/lib/i18n";
@@ -100,6 +101,17 @@ export function ThreadBoardPanel({ card, column, bot, onOpen, onClose }: {
         <button type="button" data-board-panel-close onClick={onClose} aria-label={t("common.close")} title={t("common.close")}
           className="flex size-7 items-center justify-center rounded-md text-ink-secondary hover:bg-control hover:text-ink"><X size={14} aria-hidden="true" /></button>
       </header>
+      {card.links.length > 0 && (
+        <div data-board-panel-links className="flex shrink-0 flex-wrap gap-1.5 border-b border-hairline/40 px-4 py-2">
+          {card.links.map((url) => (
+            <a key={url} href={url} target="_blank" rel="noopener noreferrer" data-board-panel-link={url} title={url}
+              className="inline-flex max-w-full items-center gap-1 rounded-md bg-control px-2 py-0.5 text-[11px] text-ink-secondary hover:text-ink">
+              <Link2 size={11} aria-hidden="true" className="shrink-0" />
+              <span className="truncate">{threadLinkDisplayLabel(url)}</span>
+            </a>
+          ))}
+        </div>
+      )}
       <div ref={listRef} className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-3">
         {messages !== null && shown.length === 0 && waiting.length === 0 && <p className="py-6 text-center text-[12px] text-ink-secondary">{t("board.panel.empty")}</p>}
         {shown.map((message) => (

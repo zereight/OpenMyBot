@@ -1,4 +1,5 @@
 import { isSnoozed } from "../../shared/wire";
+import { threadLinksOf } from "../../shared/thread-link";
 import type { Bot, Task } from "@/state/store";
 
 export const BOARD_COLUMNS = ["attention", "working", "teammates", "idle", "done", "archived"] as const;
@@ -6,6 +7,7 @@ export type BoardColumn = (typeof BOARD_COLUMNS)[number];
 
 /** A closed thread stays in the Done column this long. */
 export const BOARD_DONE_WINDOW_MS = 86_400_000;
+export const BOARD_STALE_WINDOW_MS = 5 * 86_400_000;
 
 export interface BoardCard {
   botId: string;
@@ -16,6 +18,8 @@ export interface BoardCard {
   at: number;
   /** The engine stopped or went silent while the thread was meant to be working. */
   stalled: boolean;
+  stale: boolean;
+  links: string[];
   unread: boolean;
   archived: boolean;
   /** A running or queued turn: archiving or deleting the thread now would cut it off. A stalled thread is not locked, so it can still be cleared. */
@@ -69,10 +73,13 @@ export function buildThreadBoard(bots: readonly Bot[], now: number, queued: Queu
       else if (task.closedBy) column = now - task.closedBy.at <= BOARD_DONE_WINDOW_MS ? "done" : null;
       else column = isSnoozed(task, now) ? null : "idle";
       if (!column) continue;
+      const at = recency(task);
+      const locked = busy || activity === "working" || hasQueued;
+      const stale = !archived && !task.closedBy && !locked && at > 0 && now - at >= BOARD_STALE_WINDOW_MS;
       const card: BoardCard = {
         botId: bot.id, botName: bot.name, threadId: task.threadId, title: task.title,
-        at: recency(task), stalled, unread: task.unread === true,
-        archived, locked: busy || activity === "working" || hasQueued,
+        at, stalled, stale, links: threadLinksOf(task), unread: task.unread === true,
+        archived, locked,
       };
       if (archived) archivedAt.set(card, task.archivedAt!);
       board[column].push(card);

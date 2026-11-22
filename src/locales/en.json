@@ -11343,6 +11343,8 @@
   "board.panel.send": "Send",
   "board.panel.sending": "Sending…",
   "board.showMore": "Show {count} more",
+  "board.stale": "Stale",
+  "board.staleFilter": "Stale ({count})",
   "board.stalled": "No signal",
   "board.team": "Team",
   "board.unread": "Unread",

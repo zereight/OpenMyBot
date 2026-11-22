@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Archive, ArchiveRestore, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Link2, Trash2 } from "lucide-react";
+import { threadLinkDisplayLabel } from "../../shared/thread-link";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { BOARD_COLUMNS, buildThreadBoard, type BoardCard, type BoardColumn, type ThreadBoard as ThreadBoardColumns } from "@/lib/thread-board";
@@ -55,9 +56,17 @@ function Card({ card, bot, now, actions }: { card: BoardCard; bot: Bot | undefin
           {bot && <BotAvatar bot={bot} size={16} motion="none" motionKey={0} animated={false} />}
           <span className="min-w-0 flex-1 truncate">{card.botName}</span>
           {card.stalled && <span className="rounded-full bg-danger/15 px-1.5 py-0.5 font-medium text-danger">{t("board.stalled")}</span>}
+          {!card.stalled && card.stale && <span data-board-stale={card.threadId} className="rounded-full bg-warning/15 px-1.5 py-0.5 font-medium text-warning">{t("board.stale")}</span>}
           {card.unread && <span aria-label={t("board.unread")} className="size-1.5 shrink-0 rounded-full bg-accent" />}
           {card.at > 0 && <span className="shrink-0">{threadUpdatedLabel(card.at, now)}</span>}
         </span>
+        {card.links.length > 0 && (
+          <span data-board-links={card.threadId} className="flex items-center gap-1 text-[11px] text-ink-secondary">
+            <Link2 size={11} aria-hidden="true" className="shrink-0" />
+            <span className="truncate">{threadLinkDisplayLabel(card.links[0]!)}</span>
+            {card.links.length > 1 && <span className="shrink-0 text-ink-secondary/80">+{card.links.length - 1}</span>}
+          </span>
+        )}
       </button>
       {editable && (
         <div className="absolute right-1.5 top-1.5 flex gap-0.5 rounded-lg bg-card/95 opacity-0 shadow-sm ring-1 ring-hairline/40 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100">
@@ -107,6 +116,7 @@ export function ThreadBoard({ bots, teams }: { bots: Bot[]; teams: Array<{ key: 
   const showThreads = useShowThreads();
   const now = useRelativeNow();
   const [team, setTeam] = useState<string | null>(null);
+  const [staleOnly, setStaleOnly] = useState(false);
   const byId = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
   // A deleted thread leaves the board at once; the server's answer follows a moment later, and a refused delete brings it back.
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
@@ -121,11 +131,20 @@ export function ThreadBoard({ bots, teams }: { bots: Bot[]; teams: Array<{ key: 
       .map((entry) => ({ key: entry.key, name: entry.name, bots: bots.filter((bot) => sectionOf(bot) === entry.key) }))
       .filter((lane) => lane.bots.length > 0);
   }, [bots, team, teams]);
-  const laneBoards = useMemo(() => lanes.map((lane) => {
+  const rawLaneBoards = useMemo(() => lanes.map((lane) => {
     const built = buildThreadBoard(lane.bots, now, pendingQueued);
     if (removed.size === 0) return built;
     return Object.fromEntries(BOARD_COLUMNS.map((column) => [column, built[column].filter((card) => !removed.has(cardKey(card)))])) as ThreadBoardColumns;
   }), [lanes, now, pendingQueued, removed]);
+  const staleCount = useMemo(
+    () => rawLaneBoards.reduce((sum, board) => sum + BOARD_COLUMNS.reduce((colSum, column) => colSum + board[column].filter((card) => card.stale).length, 0), 0),
+    [rawLaneBoards],
+  );
+  const laneBoards = useMemo(() => {
+    if (!staleOnly) return rawLaneBoards;
+    return rawLaneBoards.map((board) =>
+      Object.fromEntries(BOARD_COLUMNS.map((column) => [column, board[column].filter((card) => card.stale)])) as ThreadBoardColumns);
+  }, [rawLaneBoards, staleOnly]);
   const everyCard = laneBoards.flatMap((board) => BOARD_COLUMNS.map((column) => ({ column, cards: board[column] })).flatMap(({ column, cards }) => cards.map((card) => ({ card, column, siblings: cards }))));
   const [deleting, setDeleting] = useState<{ botId: string; threadId: string } | null>(null);
   // The open dialog follows the board, so a thread that started working or went away since it was asked about is not deleted.
@@ -160,13 +179,24 @@ export function ThreadBoard({ bots, teams }: { bots: Bot[]; teams: Array<{ key: 
   };
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {teams.length > 1 && (
+      {(teams.length > 1 || staleCount > 0 || staleOnly) && (
         <div className="flex shrink-0 items-center gap-2 px-6 pt-4 text-[12px] text-ink-secondary">
-          <label htmlFor="board-team">{t("board.team")}</label>
-          <Select id="board-team" size="sm" value={team ?? ""} onChange={(event) => setTeam(event.target.value === "" ? null : event.target.value)}>
-            <option value="">{t("board.allTeams")}</option>
-            {teams.map((entry) => <option key={entry.key} value={entry.key}>{entry.name}</option>)}
-          </Select>
+          {teams.length > 1 && (
+            <>
+              <label htmlFor="board-team">{t("board.team")}</label>
+              <Select id="board-team" size="sm" value={team ?? ""} onChange={(event) => setTeam(event.target.value === "" ? null : event.target.value)}>
+                <option value="">{t("board.allTeams")}</option>
+                {teams.map((entry) => <option key={entry.key} value={entry.key}>{entry.name}</option>)}
+              </Select>
+            </>
+          )}
+          {(staleCount > 0 || staleOnly) && (
+            <button type="button" data-board-filter-stale aria-pressed={staleOnly} onClick={() => setStaleOnly((current) => !current)}
+              className={cn("rounded-lg px-2.5 py-1 text-[12px] font-medium transition",
+                staleOnly ? "bg-warning/15 text-warning ring-1 ring-warning/40" : "bg-control text-ink-secondary hover:text-ink")}>
+              {t("board.staleFilter", { count: staleCount })}
+            </button>
+          )}
         </div>
       )}
       <div className="flex min-h-0 flex-1">
