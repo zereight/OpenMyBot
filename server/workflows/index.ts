@@ -2,8 +2,8 @@ import type { ProviderAdapter } from "../contracts.ts";
 import type { Decider } from "../decider/index.ts";
 import type { RouteHandler } from "../routes/table.ts";
 import { createWorkflowRoutes } from "../routes/workflows.ts";
-import { createWorkflowRunner, type WorkflowAdapterEntry } from "./runner.ts";
-import { createWorkflowStore } from "./store.ts";
+import { createWorkflowRunner, type WorkflowAdapterEntry, type WorkflowRunner } from "./runner.ts";
+import { createWorkflowStore, type WorkflowStore } from "./store.ts";
 
 export interface WorkflowRegistryLike {
   get(instanceId: string): { instanceId: string; adapter: ProviderAdapter; defaultModel?: string } | null | undefined;
@@ -14,7 +14,7 @@ export function createWorkflowFeature(deps: {
   dataDir: string;
   registry: WorkflowRegistryLike;
   decider: Pick<Decider, "choose">;
-}): RouteHandler {
+}): { routes: RouteHandler; store: WorkflowStore; runner: WorkflowRunner } {
   const store = createWorkflowStore(deps.dataDir);
   store.recoverInterruptedRuns();
   const runner = createWorkflowRunner({
@@ -26,5 +26,5 @@ export function createWorkflowFeature(deps: {
       return { instanceId: found.instanceId, adapter: found.adapter, defaultModel: found.defaultModel };
     },
   });
-  return createWorkflowRoutes({ store, runner });
+  return { routes: createWorkflowRoutes({ store, runner }), store, runner };
 }

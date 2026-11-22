@@ -2005,6 +2005,100 @@
       }
     },
     {
+      "name": "workflow_info",
+      "description": "The person's workflows (Workflows in the sidebar). No ids: the list. workflow_id: its settings, graph, problems and runs. run_id: each step's state and output.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workflow_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "workflow",
+      "description": "Create, update, run or cancel a workflow the person asked for. graph is {nodes:[{id,kind,name,prompt,question,options:[{id,label}],threshold,instance_id,model,effort,permission,continue_on_failure}],connections:[{from,to,when}]}, the shape workflow_info shows; it replaces the whole graph, so read with workflow_info first before updating and include all steps and connections to keep (kept ids keep their place). kind text is an AI turn: prompt, where {{trigger}} is the run's input and {{input}} the steps before; decision picks an option (when: its id); approval waits for the person (when: approve or reject). Steps never run above your own permission.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "run",
+              "cancel"
+            ]
+          },
+          "workflow_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string",
+            "description": "cancel."
+          },
+          "name": {
+            "type": "string"
+          },
+          "document": {
+            "type": "string",
+            "description": "Instructions every step gets."
+          },
+          "folder": {
+            "type": "string",
+            "description": "Absolute folder the steps work in; \"\" = its own."
+          },
+          "permission": {
+            "type": "string",
+            "enum": [
+              "full",
+              "edits",
+              "ask"
+            ]
+          },
+          "graph": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "input": {
+            "type": "string",
+            "description": "run: the {{trigger}}."
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "delete_workflow",
+      "description": "Remove a workflow and its run history, only when the person asks.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workflow_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id"
+        ]
+      }
+    },
+    {
       "name": "propose_profile",
       "description": "Change your own name, title, description, standing instructions (SOUL.md), working folder (cwd), notifications or speakReplies, as the person asked. Keep SOUL.md short: who you are and the rules you never break; put step-by-step procedure in a skill. A Chief of Staff may pass for_bot_id (from list_bots) for a requested change to another bot in its section. It applies at once, with an Undo where possible: read the result before saying it did. It never raises another bot's execution permissions.",
       "inputSchema": {
