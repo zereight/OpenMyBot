@@ -150,6 +150,7 @@ export function createWorkflowStore(dataDir: string): WorkflowStore {
   }
 
   function saveRun(run: WorkflowRun): void {
+    if (!workflows.some((workflow) => workflow.id === run.workflowId)) return;
     const dir = workflowRunsDir(run.workflowId);
     const filePath = join(dir, `${run.id}.json`);
     atomicWriteJson(filePath, run);

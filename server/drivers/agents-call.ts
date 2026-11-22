@@ -32,6 +32,7 @@ import { callPageTool, PAGE_TOOL_NAMES } from "./agents-pages-tools.ts";
 import { callShareTool, SHARE_TOOL_NAMES } from "./agents-share-tool.ts";
 import { callPersonTool, PERSON_TOOL_NAMES } from "./agents-person-tools.ts";
 import { callDevsTool, DEVS_TOOL_NAMES } from "./agents-devs-tools.ts";
+import { callWorkflowTool, WORKFLOW_TOOL_NAMES } from "./agents-workflow-tools.ts";
 
 export interface ToolCallContext {
   botId: string;
@@ -255,6 +256,7 @@ export async function callTool(called: string, input: Json, context: ToolCallCon
   if (PERSON_TOOL_NAMES.has(name)) return callPersonTool(name, args, context);
   if (DEVS_TOOL_NAMES.has(name)) return callDevsTool(name, args, context);
   if (TRIGGER_TOOL_NAMES.has(name)) return callTriggerTool(name, args, context);
+  if (WORKFLOW_TOOL_NAMES.has(name)) return callWorkflowTool(name, args, context);
   if (WAIT_TOOL_NAMES.has(name)) return callWaitTool(name, args, context); if (CHECK_BACK_TOOL_NAMES.has(name)) return callCheckBackTool(args, context);
   if (name === USAGE_LIMITS_TOOL) return callUsageLimitsTool(context);
   if (COMPUTER_ASK_TOOL_NAMES.has(name)) return callComputerAskTool(args, context);
