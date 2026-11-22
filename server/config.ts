@@ -294,6 +294,10 @@ const threadsConfigSchema = z.object({
   autoArchive: z.boolean().optional(),
   /** Days a thread must sit without a message before it is archived; absent means 5. */
   autoArchiveDays: z.number().int().min(1).max(3650).optional(),
+  /** Send a one-time reminder notification when a question card sits unanswered; on unless false. */
+  questionNudge: z.boolean().optional(),
+  /** Minutes a question card must wait unanswered before one reminder is sent; absent means 30. */
+  questionNudgeMinutes: z.number().int().min(1).max(24 * 60).optional(),
 }).strict();
 const newBotsConfigSchema = z.object({
   /** Effort for a new bot whose model selection names none. */
@@ -308,6 +312,8 @@ const threadsPatchSchema = threadsConfigSchema.extend({
   eventLogRetentionDays: threadsConfigSchema.shape.eventLogRetentionDays.nullable(),
   autoArchive: threadsConfigSchema.shape.autoArchive.nullable(),
   autoArchiveDays: threadsConfigSchema.shape.autoArchiveDays.nullable(),
+  questionNudge: threadsConfigSchema.shape.questionNudge.nullable(),
+  questionNudgeMinutes: threadsConfigSchema.shape.questionNudgeMinutes.nullable(),
 });
 const appConfigSchema = z.object({
   /** Set only by the verified domain endpoint, never by a config patch. */
@@ -487,7 +493,7 @@ export interface AppConfig extends HelperConfig {
   profile?: { name?: string; email?: string; aboutMe?: string; avatarUrl?: string }; everyBotRules?: string;
   rooms?: { turnTimeoutMinutes: number };
   mcp?: { callTimeoutMinutes?: number };
-  threads?: { maxConcurrentPerBot: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number; autoArchive?: boolean; autoArchiveDays?: number }; burst?: { maxParallel?: number };
+  threads?: { maxConcurrentPerBot: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number; autoArchive?: boolean; autoArchiveDays?: number; questionNudge?: boolean; questionNudgeMinutes?: number }; burst?: { maxParallel?: number };
   context?: { rebuildBytes?: number; compactAt?: number; autoCompact?: boolean; roomCompactAt?: number; roomSessions?: boolean; replayToolHistory?: boolean };
   memory?: { captureQuietMs?: number; tidyHour?: number };
   localVm?: { mode?: "shared" | "per-bot" | "pool"; maxInstances?: number; idleTimeoutMinutes?: number; preserveInstalledApps?: boolean; memoryGb?: number; cpus?: number };
@@ -624,6 +630,12 @@ export const DEFAULT_AUTO_ARCHIVE_DAYS = 5;
 
 export function threadAutoArchiveDays(cfg: AppConfig): number | null {
   return cfg.threads?.autoArchive === false ? null : cfg.threads?.autoArchiveDays ?? DEFAULT_AUTO_ARCHIVE_DAYS;
+}
+
+export const DEFAULT_QUESTION_NUDGE_MINUTES = 30;
+
+export function threadQuestionNudgeMs(cfg: AppConfig): number | null {
+  return cfg.threads?.questionNudge === false ? null : (cfg.threads?.questionNudgeMinutes ?? DEFAULT_QUESTION_NUDGE_MINUTES) * 60_000;
 }
 
 export function skillAuthoringEnabled(cfg: AppConfig): boolean {

@@ -309,6 +309,8 @@
   "server.notify.workingFor": "{who}, trabalhando para {other}",
   "server.notify.approval": "{who} precisa de aprovação",
   "server.notify.question": "{who} tem uma pergunta",
+  "server.notify.stillWaiting": "Ainda aguardando sua resposta: {detail}",
+  "server.notify.stillWaitingFallback": "Ainda aguardando sua resposta.",
   "server.notify.signIn": "{who} precisa que você faça login em {site}",
   "server.notify.signInWebsite": "{who} precisa que você faça login em um site",
   "server.notify.secret": "{who} precisa que você informe: {label}",
