@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Loader2 } from "lucide-react";
+import { ExternalLink, Loader2 } from "lucide-react";
 
 import { BITWARDEN_SERVERS, type BitwardenStatus } from "../../shared/logins";
 import { t } from "@/lib/i18n";
@@ -11,6 +11,15 @@ import { SettingsDialog } from "./settings/SettingsDialog";
 // Security: the API key and master password are typed here once and never come back; the form forgets them once sent.
 
 const SELF_HOSTED = "self-hosted";
+
+function safeWebVaultUrl(raw: string): string | null {
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.origin : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Bitwarden in Settings → Vault, beside 1Password: one row with its state, and a small dialog to connect it. */
 export function BitwardenConnection({ status, disabled, team, onChange }: {
@@ -38,6 +47,7 @@ export function BitwardenConnection({ status, disabled, team, onChange }: {
     finally { setBusy(null); }
   };
   const serverUrl = server === SELF_HOSTED ? ownServer.trim() : server;
+  const webVaultUrl = safeWebVaultUrl(serverUrl);
   const ready = Boolean(serverUrl && clientId.trim() && clientSecret.trim() && password);
   const connect = (event: FormEvent) => {
     event.preventDefault();
@@ -72,6 +82,28 @@ export function BitwardenConnection({ status, disabled, team, onChange }: {
           </>}>
           <form id="bitwarden-connect" className="flex flex-col gap-3" onSubmit={connect}>
             <p className="text-[13px] leading-[18px] text-ink-secondary" data-bitwarden-guide>{t("settings.vault.bitwarden.guide")}</p>
+            <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-surface-muted/40 px-3 py-2.5" data-bitwarden-steps>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[12px] font-medium leading-4 text-ink">{t("settings.vault.bitwarden.stepsTitle")}</span>
+                {webVaultUrl && (
+                  <a
+                    href={webVaultUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[12px] leading-4 text-accent hover:underline"
+                    data-bitwarden-web-link
+                  >
+                    {t("settings.vault.bitwarden.openWebVault")}
+                    <ExternalLink size={11} />
+                  </a>
+                )}
+              </div>
+              <ol className="list-decimal space-y-1 pl-4 text-[12px] leading-4 text-ink-secondary">
+                <li>{t("settings.vault.bitwarden.step1")}</li>
+                <li>{t("settings.vault.bitwarden.step2")}</li>
+                <li>{t("settings.vault.bitwarden.step3")}</li>
+              </ol>
+            </div>
             <SettingsField label={t("settings.vault.bitwarden.server")}>
               <Select name="bitwardenServer" value={server} onChange={(event) => setServer(event.target.value)} disabled={busy !== null}>
                 <option value={BITWARDEN_SERVERS[0]}>bitwarden.com</option>
@@ -86,7 +118,7 @@ export function BitwardenConnection({ status, disabled, team, onChange }: {
               </SettingsField>
             )}
             <SettingsField label="client_id">
-              <input name="bitwardenClientId" type="text" autoComplete="off" spellCheck={false} maxLength={200} value={clientId}
+              <input name="bitwardenClientId" type="text" autoComplete="off" spellCheck={false} placeholder="user.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" maxLength={200} value={clientId}
                 onChange={(event) => setClientId(event.target.value)} disabled={busy !== null} className={SETTINGS_INPUT} />
             </SettingsField>
             <SettingsField label="client_secret">
