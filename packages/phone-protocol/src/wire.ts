@@ -149,8 +149,7 @@ export interface WireTask extends InboxTask, HandoffStatusField {
   restoredAt?: number;
   /** Only true is stored; absent means unpinned. */
   pinned?: boolean;
-  link?: string;
-  linkAuto?: boolean;
+  link?: string; linkAuto?: boolean; links?: string[];
   /** Epoch ms of the newest message, or createdAt when the thread has none.
    * Server-derived. Clients must not write it. */
   updatedAt?: number;

@@ -7697,6 +7697,8 @@
   "board.panel.send": "보내기",
   "board.panel.sending": "보내는 중…",
   "board.showMore": "{count}개 더 보기",
+  "board.stale": "방치됨",
+  "board.staleFilter": "방치됨 ({count})",
   "board.stalled": "응답 없음",
   "board.team": "팀",
   "board.unread": "읽지 않음",

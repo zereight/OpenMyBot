@@ -11347,6 +11347,8 @@
   "board.panel.send": "Enviar",
   "board.panel.sending": "Enviando…",
   "board.showMore": "Mostrar mais {count}",
+  "board.stale": "Parada",
+  "board.staleFilter": "Paradas ({count})",
   "board.stalled": "Sem sinal",
   "board.team": "Equipe",
   "board.unread": "Não lida",

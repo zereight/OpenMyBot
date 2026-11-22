@@ -224,8 +224,7 @@ export interface Task extends Pick<WireTask, "private" | "shared" | "sharedWith"
   projectId?: string;
   title: string;
   createdAt: number;
-  pinned?: boolean;
-  link?: string;
+  pinned?: boolean; link?: string; links?: string[];
   updatedAt?: number;
   lastThreadOrderAt?: number;
   usage?: TaskUsage;
@@ -384,19 +383,18 @@ export type TaskUpdatePatch = Partial<Pick<Task, "modelSelection" | "approvalMod
   archivedAt?: number | null;
   snoozedUntil?: number | null;
   surface?: Task["surface"] | null;
-  pinned?: boolean;
-  link?: string | null;
+  pinned?: boolean; link?: string | null; links?: string[] | null;
 };
 
 function taskPatchFields(patch: TaskUpdatePatch): Partial<Task> {
-  const { acknowledgeLocalAuto: _localAck, updateBotDefault: _modelDefault, resetApprovalToAsk, projectId, archivedAt, snoozedUntil, surface, pinned, link, ...fields } = patch;
+  const { acknowledgeLocalAuto: _localAck, updateBotDefault: _modelDefault, resetApprovalToAsk, projectId, archivedAt, snoozedUntil, surface, pinned, link, links, ...fields } = patch;
   return { ...fields, ...(resetApprovalToAsk ? { approvalMode: "ask", autoApprove: false, alwaysAllow: [] } : {}),
     ...(projectId === undefined ? {} : { projectId: projectId ?? undefined }),
     ...(archivedAt === undefined ? {} : { archivedAt: archivedAt ?? undefined }),
     ...(snoozedUntil === undefined ? {} : { snoozedUntil: snoozedUntil ?? undefined }),
     ...(surface === undefined ? {} : { surface: surface ?? undefined, surfaceAuto: undefined }),
     ...(pinned === undefined ? {} : { pinned: pinned ? true : undefined }),
-    ...(link === undefined ? {} : { link: link ?? undefined }) };
+    ...(link === undefined ? {} : { link: link ?? undefined }), ...(links === undefined ? {} : { links: links && links.length > 0 ? links : undefined }) };
 }
 
 function openedUnreadDivider(state: AppState, threadId: string, unread: boolean, messages: readonly Message[], lastReadMessageId?: string, hasMore?: boolean): AppState["unreadDivider"] {
