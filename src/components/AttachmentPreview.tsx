@@ -38,6 +38,8 @@ import { CopyImageButton } from "./CopyImageButton";
 import { FilePreviewButton } from "./FilePreviewButton";
 import { chipNameAction, SaveIconButton, useHtmlPreview } from "./HtmlFilePreview";
 import { ImageLoading } from "./ImageLoading"; import { openLinkedFolder } from "./RevealOriginalMenu";
+import { MarkdownImagePreviewView, type MarkdownFileContext, type MarkdownImagePreviewProps } from "./MarkdownImagePreview";
+export type { MarkdownFileContext };
 
 export interface PreviewImage {
   src: string;
@@ -224,14 +226,14 @@ export async function requestMessageFile(
   filePath: string,
   message: MessageAttachmentContext,
   signal: AbortSignal,
-  options?: { entry?: string; list?: boolean; mediaLink?: boolean },
+  options?: { entry?: string; list?: boolean; mediaLink?: boolean; imageRef?: number },
 ): Promise<Response> {
   const response = await fetch(`/api/threads/${encodeURIComponent(message.threadId)}/messages/${encodeURIComponent(message.messageId)}/file`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       path: filePath,
-      ...(options?.entry !== undefined ? { entry: options.entry } : options?.list ? { listFolder: true } : options?.mediaLink ? { media: true } : {}),
+      ...(options?.imageRef !== undefined ? { imageRef: options.imageRef } : options?.entry !== undefined ? { entry: options.entry } : options?.list ? { listFolder: true } : options?.mediaLink ? { media: true } : {}),
     }),
     signal,
   });
@@ -797,98 +799,8 @@ export function AttachedImageGallery({
   );
 }
 
-export function MarkdownImagePreview({
-  src,
-  name,
-  openUrl,
-  message,
-  filePath,
-  sourceOffset,
-}: {
-  src: string;
-  name: string;
-  openUrl?: string;
-  message?: MessageAttachmentContext;
-  filePath?: string;
-  sourceOffset?: number;
-}) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLSpanElement>(null);
-  const threadId = message?.threadId;
-  const messageId = message?.messageId;
-  const localSourceOffset = typeof sourceOffset === "number" && Number.isSafeInteger(sourceOffset) && sourceOffset >= 0
-    ? sourceOffset
-    : null;
-  const localMessageImage = Boolean(
-    filePath && threadId && messageId && localSourceOffset !== null,
-  );
-  const localImageKey = localMessageImage ? `${threadId}\u0000${messageId}\u0000${localSourceOffset}` : null;
-  const [visibleLocalImageKey, setVisibleLocalImageKey] = useState<string | null>(null);
-  const external = !filePath && isExternalImageSource(src);
-  const [approvedExternalSource, setApprovedExternalSource] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!localImageKey) return;
-    const element = containerRef.current;
-    if (!element || typeof IntersectionObserver === "undefined") {
-      setVisibleLocalImageKey(localImageKey);
-      return;
-    }
-    setVisibleLocalImageKey(null);
-    const observer = new IntersectionObserver(([entry]) => {
-      if (!entry?.isIntersecting) return;
-      setVisibleLocalImageKey(localImageKey);
-      observer.disconnect();
-    }, { rootMargin: "320px 0px" });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [localImageKey]);
-
-  const shouldLoadLocalImage = localMessageImage && (visibleLocalImageKey === localImageKey || open);
-  const externalAllowed = !external || approvedExternalSource === src;
-  const visibleSource = externalAllowed
-    ? localMessageImage
-      ? shouldLoadLocalImage && filePath && threadId && messageId && localSourceOffset !== null
-        ? messageImagePreviewUrl({ threadId, messageId }, localSourceOffset)
-        : null
-      : src
-    : null;
-  const image: PreviewImage = {
-    src: visibleSource ?? "",
-    name,
-    openUrl,
-    downloadUrl: localMessageImage ? visibleSource ?? undefined : undefined,
-    downloadName: localMessageImage
-      ? canonicalDownloadFilename({ fallback: name, source: filePath })
-      : undefined,
-  };
-  return (
-    <>
-      <span ref={containerRef} className="my-2 block w-[min(36rem,70vw)] max-w-full">
-        {external && !externalAllowed ? (
-          <span className="flex aspect-[4/3] max-h-96 flex-col items-center justify-center gap-2 rounded-xl border border-hairline/40 bg-inset px-4 text-center text-[12px] text-ink-secondary">
-            <ImageOff size={20} />
-            <span>{t("attach.externalHidden")}</span>
-            <button type="button" className="rounded-md border border-hairline/50 bg-panel px-2.5 py-1 text-ink hover:bg-raised" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setApprovedExternalSource(src); }}>{t("attach.loadImage")}</button>
-          </span>
-        ) : filePath && (!threadId || !messageId || localSourceOffset === null) ? (
-          <span className="flex aspect-[4/3] max-h-96 items-center justify-center gap-2 rounded-xl border border-hairline/40 bg-inset text-[12px] text-ink-secondary" role="alert">
-            <ImageOff size={17} /> {t("attach.oldImage")}
-          </span>
-        ) : visibleSource ? (
-          <AttachmentThumbnail key={image.src} image={image} onPreview={() => setOpen(true)} className="max-h-96" eager explainRefusal={localMessageImage} />
-        ) : (
-          <ImageLoading name={name} className="aspect-[4/3] max-h-96 rounded-xl border border-hairline/40 bg-inset" />
-        )}
-        {openUrl && (
-          <a href={openUrl} target="_blank" rel="noreferrer" className="mt-1 inline-flex text-[11px] text-accent hover:underline">
-            {t("attach.openOriginal")}
-          </a>
-        )}
-      </span>
-      {open && visibleSource && <AttachmentPreviewDialog image={image} onClose={() => setOpen(false)} />}
-    </>
-  );
+export function MarkdownImagePreview(props: MarkdownImagePreviewProps) {
+  return <MarkdownImagePreviewView {...props} />;
 }
 
 export function AttachedFileChip({ file, message, linked = false, compact = false, className }: {

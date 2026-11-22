@@ -26,7 +26,7 @@ import { githubRefFromProps, remarkGithubRefs } from "@/lib/github-refs";
 import { GITHUB_REF_ICONS, LinkHoverCard } from "@/components/LinkHoverCard";
 import { useThreadLinkMenu } from "@/components/ThreadLinkMenu";
 import { looksLikeThreadRefUrl, parseThreadRefUrl, resolveThreadRefAddress, remarkThreadRefs } from "../lib/thread-refs";
-import { MarkdownImagePreview, MessageFolderFiles, OutsideWorkspaceFile, saveFailureText, useLocalFileSave, type MessageAttachmentContext } from "./AttachmentPreview";
+import { MarkdownImagePreview, MessageFolderFiles, OutsideWorkspaceFile, saveFailureText, useLocalFileSave, type MarkdownFileContext, type MessageAttachmentContext } from "./AttachmentPreview";
 import { ThreadLink, ThreadRefsContext, threadLinkFromProps, type ThreadRefsValue } from "./ThreadRefs";
 import { MarkdownTable } from "./MarkdownTable";
 import { CodeBlock, CodePlate, codeHash } from "./CodeBlock";
@@ -616,6 +616,7 @@ export function messageNeedsKatex(text: string): boolean {
  */
 interface MessageScope {
   message?: MessageAttachmentContext;
+  markdownFile?: MarkdownFileContext;
   imageOffsets?: Map<number, number>;
   threads: ThreadRefsValue["threads"];
   currentBotId?: string;
@@ -648,7 +649,7 @@ function MarkdownCode({ node, children }: BlockProps) {
 }
 
 function MarkdownImage(props: ComponentProps<"img"> & ExtraProps) {
-  const { message, imageOffsets } = useContext(MessageScopeContext);
+  const { message, markdownFile, imageOffsets } = useContext(MessageScopeContext);
   const { src, alt } = props;
   if (!src) {
     return <span className="text-[12px] text-danger" role="alert">{t("attach.imageUnavailable")}</span>;
@@ -662,6 +663,7 @@ function MarkdownImage(props: ComponentProps<"img"> & ExtraProps) {
       openUrl={markdownImageOpenUrl(typeof (props as Record<string, unknown>)["data-open-url"] === "string" ? String((props as Record<string, unknown>)["data-open-url"]) : src)}
       filePath={filePath}
       message={filePath ? message : undefined}
+      markdownFile={filePath ? markdownFile : undefined}
       sourceOffset={sourceOffset === undefined ? undefined : imageOffsets?.get(sourceOffset) ?? sourceOffset}
     />
   );
@@ -856,8 +858,8 @@ function markdownParts(text: string, streaming: boolean): MarkdownPart[] {
   });
 }
 
-function ChatMarkdownComponent({ text, message, mentionPeers = NO_MENTION_PEERS, everyone = false, mentionPerson, delivered, originals }: {
-  text: string; message?: MessageAttachmentContext;
+function ChatMarkdownComponent({ text, message, markdownFile, mentionPeers = NO_MENTION_PEERS, everyone = false, mentionPerson, delivered, originals }: {
+  text: string; message?: MessageAttachmentContext; markdownFile?: MarkdownFileContext;
   mentionPeers?: readonly MentionPeer[]; everyone?: boolean; mentionPerson?: MentionPerson;
   /** Delivered copies by file name, and the originals those copies came from (copy path -> original). */
   delivered?: DeliveredFiles; originals?: DeliveredFiles;
@@ -916,7 +918,7 @@ function ChatMarkdownComponent({ text, message, mentionPeers = NO_MENTION_PEERS,
     return <StreamSourceContext value={whole}>{parse(whole, null)}</StreamSourceContext>;
   };
   // A message still streaming has no saved files to fetch yet.
-  const scope = { message: streaming ? undefined : message, imageOffsets: streaming ? undefined : parts[0]?.imageOffsets, threads, currentBotId, delivered, originals };
+  const scope = { message: streaming ? undefined : message, markdownFile: streaming ? undefined : markdownFile, imageOffsets: streaming ? undefined : parts[0]?.imageOffsets, threads, currentBotId, delivered, originals };
   return (
     <MessageScopeContext.Provider value={scope}>
       <div data-look="bot-text" className="chat-md min-w-0 [&>*+*]:mt-2">
@@ -944,6 +946,9 @@ export const ChatMarkdown = memo(ChatMarkdownComponent, (previous, next) => (
   && previous.everyone === next.everyone && sameMentionPerson(previous.mentionPerson, next.mentionPerson)
   && previous.message?.threadId === next.message?.threadId
   && previous.message?.messageId === next.message?.messageId
+  && previous.markdownFile?.path === next.markdownFile?.path
+  && previous.markdownFile?.message.threadId === next.markdownFile?.message.threadId
+  && previous.markdownFile?.message.messageId === next.markdownFile?.message.messageId
   && sameDelivered(previous.delivered, next.delivered) && sameDelivered(previous.originals, next.originals)
 ));
 

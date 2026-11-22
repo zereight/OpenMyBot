@@ -1,5 +1,5 @@
 import { userError } from "../user-errors.ts";
-import { basename, join } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 
 import type { BotsResponse, SearchResponse, WireBot, WireGroup } from "../../shared/wire.ts";
 import { NO_SUCH_BOT } from "../../shared/bot-read.ts";
@@ -18,8 +18,8 @@ import type { GroupUsageReader } from "../group-thread-usage.ts";
 import { readMessage, searchMessagesAsync } from "../message-db.ts";
 import { cappedMediaRange, MessageMediaLinks, STREAMABLE_MEDIA_MIMES } from "../message-media-links.ts";
 import {
-  listMessageFolder, MESSAGE_FILE_DOWNLOAD_MAX_BYTES, MESSAGE_FILE_MAX_BYTES, messageAttachmentName, messageFileDisposition, messageFileDownloadName, messageFolderEntryName,
-  messageImageTargetAt, messageReferencesFile, openMessageFile, openMessageFolderEntry, referencedFileName,
+  decodeMarkdownPreviewBytes, listMessageFolder, MARKDOWN_PREVIEW_MAX_BYTES, MESSAGE_FILE_DOWNLOAD_MAX_BYTES, MESSAGE_FILE_MAX_BYTES, messageAttachmentName, messageFileDisposition, messageFileDownloadName, messageFolderEntryName,
+  messageImageTargetAt, messageReferencesFile, openMarkdownImage, openMessageFile, openMessageFolderEntry, referencedFileName,
 } from "../message-file.ts";
 import { resolveRequestAuth, type RequestAuth, type ResolveOptions } from "../request-auth.ts";
 import type { queuedSteerSnapshot } from "../steer-queue.ts";
@@ -225,6 +225,16 @@ export function createThreadRoutes(deps: ThreadRouteDeps): RouteHandler {
       // Access may have been revoked while the body was in flight; ask again before any file is opened.
       if (body && !visibleTo(viewerFor(auth)).thread(threadId)) return json(res, 404, { error: "no such conversation" });
       const asksMediaLink = body?.media === true;
+      const hasImageRef = method === "POST" && body.imageRef !== undefined;
+      const markdownImageRef = hasImageRef ? body.imageRef : undefined;
+      if (hasImageRef) {
+        if (typeof markdownImageRef !== "number" || !Number.isSafeInteger(markdownImageRef) || markdownImageRef < 0) {
+          return json(res, 400, { error: "imageRef must identify a rendered image" });
+        }
+        if (body.entry !== undefined || body.listFolder !== undefined || body.media !== undefined) {
+          return json(res, 400, { error: "imageRef cannot be combined with other file options" });
+        }
+      }
       const rawReference = streamsMessageImage ? url.searchParams.get("ref") : null;
       if (streamsMessageImage && (!rawReference || !/^\d+$/.test(rawReference))) {
         return json(res, 400, { error: "ref must identify a rendered image" });
@@ -238,6 +248,7 @@ export function createThreadRoutes(deps: ThreadRouteDeps): RouteHandler {
 
       let roots: string[];
       let downloadName: string | undefined;
+      let botWorkspaceRoots: string[] = [];
       const botAttachment = message.role === "bot"
         ? message.attachments?.find((attachment) => attachment.path === href)
         : undefined;
@@ -249,22 +260,39 @@ export function createThreadRoutes(deps: ThreadRouteDeps): RouteHandler {
         if (!downloadName) {
           return json(res, 403, { error: "that message does not share this file" });
         }
+        if (hasImageRef) {
+          return json(res, 403, { error: "the linked file is outside this conversation's workspace", code: "outside_workspace" });
+        }
         roots = [ATTACHMENTS_DIR];
       } else if (botAttachment) {
         downloadName = botAttachment.kind === "file" ? botAttachment.name : undefined;
         roots = [ATTACHMENTS_DIR];
+        if (hasImageRef) {
+          const senderId = directBot?.id ?? message.from?.botId;
+          if (!senderId) {
+            return json(res, 403, { error: "the file's bot author could not be verified" });
+          }
+          const runThread = message.automation?.executionThreadId;
+          const fromRun = runThread && store.botByThread(runThread)?.id === senderId ? messageFileRootsForThread(senderId, runThread) : [];
+          const attachmentsRoot = resolve(ATTACHMENTS_DIR);
+          botWorkspaceRoots = [...new Set([...messageFileRootsForThread(senderId, threadId), ...fromRun])]
+            .filter((root) => resolve(root) !== attachmentsRoot);
+        }
       } else {
         if (!messageReferencesFile(messageText, href)) {
           return json(res, 403, { error: "that bot message does not link to this file" });
         }
         const senderId = directBot?.id ?? message.from?.botId;
-        // Membership is not consulted: removing a bot must not break files it already shared.
         if (!senderId) {
           return json(res, 403, { error: "the file's bot author could not be verified" });
         }
         const runThread = message.automation?.executionThreadId;
         const fromRun = runThread && store.botByThread(runThread)?.id === senderId ? messageFileRootsForThread(senderId, runThread) : [];
         roots = [...new Set([...messageFileRootsForThread(senderId, threadId), ...fromRun])];
+        if (hasImageRef) {
+          const attachmentsRoot = resolve(ATTACHMENTS_DIR);
+          botWorkspaceRoots = roots.filter((root) => resolve(root) !== attachmentsRoot);
+        }
       }
 
       const folderEntry = mediaGrant
@@ -274,8 +302,9 @@ export function createThreadRoutes(deps: ThreadRouteDeps): RouteHandler {
           : undefined;
       if (folderEntry === null) return json(res, 400, { error: "entry must be one file name" });
       // An inline image is read whole by the browser; a saved file is streamed below, so it may be larger.
-      const maxBytes = streamsMessageImage ? MESSAGE_FILE_MAX_BYTES : MESSAGE_FILE_DOWNLOAD_MAX_BYTES;
+      const maxBytes = hasImageRef ? MARKDOWN_PREVIEW_MAX_BYTES : (streamsMessageImage ? MESSAGE_FILE_MAX_BYTES : MESSAGE_FILE_DOWNLOAD_MAX_BYTES);
       let file: Awaited<ReturnType<typeof openMessageFile>>;
+      let deliveredSource: string | null | undefined;
       try {
         file = folderEntry
           ? await openMessageFolderEntry(href, folderEntry, roots, maxBytes)
@@ -290,6 +319,7 @@ export function createThreadRoutes(deps: ThreadRouteDeps): RouteHandler {
         if (copy) {
           file = await openMessageFile(copy.path, [ATTACHMENTS_DIR], maxBytes);
           downloadName = copy.name;
+          deliveredSource = copy.source ?? null;
         } else {
           // Only a client that asks for listings gets one; older clients keep the 400.
           if (body?.listFolder !== true || folderEntry || code !== "directory") throw error;
@@ -298,6 +328,30 @@ export function createThreadRoutes(deps: ThreadRouteDeps): RouteHandler {
           res.setHeader("cache-control", "private, no-store");
           return json(res, 200, listing);
         }
+      }
+      if (hasImageRef) {
+        const isMarkdown = file.mime.startsWith("text/markdown") || /^\.(?:md|markdown)$/i.test(extname(downloadName ?? file.name));
+        if (!isMarkdown) {
+          await file.handle.close();
+          return json(res, 415, { error: "imageRef is only supported for markdown files" });
+        }
+        let markdownBytes: Buffer;
+        try {
+          markdownBytes = await file.handle.readFile();
+        } finally {
+          await file.handle.close().catch(() => undefined);
+        }
+        const markdownText = decodeMarkdownPreviewBytes(markdownBytes);
+        const imageTarget = messageImageTargetAt(markdownText, markdownImageRef);
+        if (!imageTarget) return json(res, 404, { error: "the linked image is unavailable" });
+        const sourcePath = botAttachment ? (botAttachment.kind !== "audio" ? (botAttachment.source ?? null) : null) : (deliveredSource !== undefined ? deliveredSource : file.path);
+        const baseDir = sourcePath ? dirname(sourcePath) : null;
+        file = await openMarkdownImage(imageTarget, baseDir, botWorkspaceRoots, MESSAGE_FILE_MAX_BYTES);
+        if (!extensionForMime(file.mime)) {
+          await file.handle.close();
+          return json(res, 415, { error: "only images can be previewed here" });
+        }
+        downloadName = undefined;
       }
       if ((streamsMessageImage || botAttachment?.kind === "image") && !file.mime.startsWith("image/")) {
         await file.handle.close();
@@ -314,7 +368,7 @@ export function createThreadRoutes(deps: ThreadRouteDeps): RouteHandler {
         res.setHeader("cache-control", "private, no-store");
         return json(res, 200, { url: `/api/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(message.id)}/file?media=${id}`, mime: file.mime, bytes: file.bytes });
       }
-      const inline = streamsMessageImage || Boolean(mediaGrant);
+      const inline = streamsMessageImage || Boolean(mediaGrant) || hasImageRef;
       const rawRange = Array.isArray(req.headers.range) ? req.headers.range[0] : req.headers.range;
       // Without a Range header (Save As) the whole file streams; a player's range never ties up more than one chunk.
       const range = mediaGrant ? cappedMediaRange(parseAudioRange(rawRange, file.bytes)) : { kind: "none" as const };
