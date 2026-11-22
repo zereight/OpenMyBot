@@ -11632,6 +11632,7 @@ function configStatus() {
     billing: { currency: cfg.billing?.currency ?? "USD", prices: cfg.billing?.prices ?? {} },
     decisions: { retentionDays: decisionRetentionDays(cfg.decisions?.retentionDays) },
     safetyFloor: { enabled: safetyFloorOn() },
+    worktrees: { trustedRepos: cfg.worktrees?.trustedRepos ?? [] },
     openaiCompat: { ...keyStatus(cfg.openaiCompat?.key), url: cfg.openaiCompat?.url ?? "" },
     composio: {
       ...(composio.connectionMode(cfg) === "self-hosted" ? keyHint(cfg.composio?.apiKey) : {}),
@@ -13932,11 +13933,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (target.id === from.id) { const selfRefused = selfThreadRefusal({ handoff: Boolean(internalCapability.roomHandoffId), requestLine: store.activePath(fromThreadId).findLast((line) => line.role === "user" && line.kind === "text") }); if (selfRefused) return json(res, 409, { error: selfRefused });
           if (body.reportBack === true && owner.group) return json(res, 400, { error: "report_back works only from your own conversation, not a room. Leave it out; the thread's result then stays in that thread." });
           const inherited = picked?.ok ? { modelSelection: picked.selection, approvalMode: undefined } : ownThreads.inherited(from.id, fromThreadId);
-          const wt = await prepareWorktreeForThread(from.id, store.taskByThread(from.id, fromThreadId)?.cwd ?? from.cwd, body.worktree); if (!wt.ok) return json(res, 400, { error: wt.error });
+          const wt = await prepareWorktreeForThread(from.id, store.taskByThread(from.id, fromThreadId)?.cwd ?? from.cwd, body.worktree, cfg.worktrees?.trustedRepos); if (!wt.ok) return json(res, 400, { error: wt.error });
+          const wtMeta = wt.worktree ? { worktree: wt.worktree, ...(wt.setup ? { worktreeSetup: wt.setup } : {}), ...(wt.warning ? { worktreeWarning: wt.warning } : {}) } : {};
           if (body.reportBack === true) {
             const result = await coordinateBots({ botIds: [from.id], message, rework: false, thread: "new", reply: "resume", consult: false, title, projectId, ownThread: { ...inherited, ...(wt.worktree ? { cwd: wt.worktree.path } : {}) } }), receipt = (result.body.receipts as PeerDeliveryReceipt[] | undefined)?.[0];
             if (wt.worktree) { if (result.status === 200 && receipt?.threadId) registerThreadWorktree(receipt.threadId, wt.worktree); else await removeThreadWorktree(wt.worktree, { force: true }); }
-            return json(res, result.status === 200 ? 201 : result.status, { ...result.body, self: true, reportBack: true, title, botId: from.id, botName: from.name, threadId: receipt?.threadId, requestId: receipt?.requestId, ...(wt.worktree ? { worktree: wt.worktree } : {}) }); }
+            return json(res, result.status === 200 ? 201 : result.status, { ...result.body, self: true, reportBack: true, title, botId: from.id, botName: from.name, threadId: receipt?.threadId, requestId: receipt?.requestId, ...wtMeta }); }
           const task = store.createTask(from.id, title, false, projectId, { botId: from.id, name: from.name, at: Date.now() }, inherited.approvalMode, inherited.modelSelection, wt.worktree?.path,
             (created) => threadStarters.set(created.threadId, (CLOUD_TEAM ? teamConnections.handOnFor(internalCapability.threadId, internalCapability.generation) : null) ?? openerFrom(fromThreadId)));
           if (!task) { if (wt.worktree) await removeThreadWorktree(wt.worktree, { force: true }); return json(res, 500, { error: "couldn't create that thread" }); }
@@ -13947,7 +13949,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           store.appendMessage(fromThreadId, chip);
           const opening = `[Thread you opened yourself${sourceTitle ? ` from #${sourceTitle}` : ""}. The request below is your own words, not the person's: do the work here and end with a clear result they can read.]\n\n${message}`;
           const outcome = await startOrQueueOpenedThread(from.id, task.threadId, opening, isUnattended(from.id, fromThreadId), withPerson(turnOrigin(internalCapability), actingPeople.requester(internalCapability.threadId, internalCapability.generation)));
-          return json(res, 201, { threadId: task.threadId, title: task.title, botId: from.id, botName: from.name, self: true, limit: maxConcurrentBotThreads(cfg, botThreadsHost(cloudPlanTier.starter())), ...(wt.worktree ? { worktree: wt.worktree } : {}), ...outcome });
+          return json(res, 201, { threadId: task.threadId, title: task.title, botId: from.id, botName: from.name, self: true, limit: maxConcurrentBotThreads(cfg, botThreadsHost(cloudPlanTier.starter())), ...wtMeta, ...outcome });
         }
         const result = await coordinateBots({ botIds: [target.id], message, rework: false, thread: "new", reply: "resume", consult: false, title, projectId });
         return json(res, result.status, result.body);

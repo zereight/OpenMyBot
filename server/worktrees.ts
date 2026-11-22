@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { constants, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
 import { writeFileAtomic } from "./atomic.ts";
@@ -22,6 +22,13 @@ function hasUnsafeRefChars(value: string): boolean {
 }
 const GIT_TIMEOUT_MS = 15_000;
 const CLONE_TIMEOUT_MS = 30_000;
+const DEFAULT_SETUP_TIMEOUT_MS = 60_000;
+const MIN_SETUP_TIMEOUT_MS = 1_000;
+const MAX_SETUP_TIMEOUT_MS = 300_000;
+const MAX_SETUP_COMMANDS = 20;
+const MAX_ENV_FILES = 50;
+const ROOT_ENV_FILE = /^\.env($|\.)/;
+const HOOKS_CONFIG_REL = join(".openmybot", "worktree.json");
 
 export interface WorktreeRequest {
   branch?: string;
@@ -35,6 +42,21 @@ export interface ThreadWorktree {
   base: string;
   baseCommit: string;
   path: string;
+}
+
+export interface WorktreeHooksConfig {
+  copyEnv?: boolean;
+  envFiles?: string[];
+  setup?: string[];
+  timeoutMs?: number;
+}
+
+export interface WorktreeSetupReport {
+  trusted: boolean;
+  copiedEnv: string[];
+  commandsRun: number;
+  skippedReason?: string;
+  warning?: string;
 }
 
 function worktreesRoot(): string {
@@ -162,12 +184,329 @@ async function cloneNodeModulesBestEffort(repoRoot: string, targetPath: string):
   }
 }
 
+export function isTrustedWorktreeRepo(repoRoot: string, trustedRepos?: readonly string[]): boolean {
+  if (!trustedRepos?.length) return false;
+  let canonicalRepo: string;
+  try {
+    canonicalRepo = realpathSync(repoRoot);
+  } catch {
+    return false;
+  }
+  for (const entry of trustedRepos) {
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    try {
+      if (realpathSync(trimmed) === canonicalRepo) return true;
+    } catch {
+    }
+  }
+  return false;
+}
+
+function isInsideRoot(root: string, candidate: string): boolean {
+  return candidate === root || candidate.startsWith(`${root}${sep}`);
+}
+
+function hasSymlinkAncestor(root: string, relPath: string): boolean {
+  const segments = relPath.split(/[\\/]/).filter(Boolean);
+  let current = root;
+  for (const segment of segments.slice(0, -1)) {
+    current = join(current, segment);
+    try {
+      if (lstatSync(current).isSymbolicLink()) return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+export function readWorktreeHooksConfig(
+  repoRoot: string,
+): { ok: true; config: WorktreeHooksConfig | null } | { ok: false; error: string } {
+  const configPath = join(repoRoot, HOOKS_CONFIG_REL);
+  let stat;
+  try {
+    stat = lstatSync(configPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return { ok: true, config: null };
+    return { ok: false, error: `could not stat ${HOOKS_CONFIG_REL}` };
+  }
+  if (!stat.isFile()) {
+    return { ok: false, error: `${HOOKS_CONFIG_REL} must be a regular file` };
+  }
+  let realRepo: string;
+  let realConfig: string;
+  try {
+    realRepo = realpathSync(repoRoot);
+    realConfig = realpathSync(configPath);
+  } catch {
+    return { ok: false, error: `could not resolve ${HOOKS_CONFIG_REL}` };
+  }
+  if (!isInsideRoot(realRepo, realConfig)) {
+    return { ok: false, error: `${HOOKS_CONFIG_REL} escapes repository root` };
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(realConfig, "utf8"));
+  } catch {
+    return { ok: false, error: `${HOOKS_CONFIG_REL} contains invalid JSON` };
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, error: `${HOOKS_CONFIG_REL} must be a JSON object` };
+  }
+  const rec = raw as Record<string, unknown>;
+  const allowed = new Set(["copyEnv", "envFiles", "setup", "timeoutMs"]);
+  for (const key of Object.keys(rec)) {
+    if (!allowed.has(key)) return { ok: false, error: `${HOOKS_CONFIG_REL} has unknown field "${key}"` };
+  }
+  const config: WorktreeHooksConfig = {};
+  if (rec.copyEnv !== undefined) {
+    if (typeof rec.copyEnv !== "boolean") return { ok: false, error: `${HOOKS_CONFIG_REL} copyEnv must be a boolean` };
+    config.copyEnv = rec.copyEnv;
+  }
+  if (rec.envFiles !== undefined) {
+    if (!Array.isArray(rec.envFiles) || rec.envFiles.length > MAX_ENV_FILES) {
+      return { ok: false, error: `${HOOKS_CONFIG_REL} envFiles must be an array of up to ${MAX_ENV_FILES} relative paths` };
+    }
+    const envFiles: string[] = [];
+    for (const item of rec.envFiles) {
+      if (typeof item !== "string" || !item.trim()) {
+        return { ok: false, error: `${HOOKS_CONFIG_REL} envFiles entries must be non-empty strings` };
+      }
+      envFiles.push(item.trim());
+    }
+    config.envFiles = envFiles;
+  }
+  if (rec.setup !== undefined) {
+    const list = typeof rec.setup === "string" ? [rec.setup] : Array.isArray(rec.setup) ? rec.setup : null;
+    if (!list || list.length > MAX_SETUP_COMMANDS) {
+      return { ok: false, error: `${HOOKS_CONFIG_REL} setup must be a command string or array of up to ${MAX_SETUP_COMMANDS} commands` };
+    }
+    const commands: string[] = [];
+    for (const item of list) {
+      if (typeof item !== "string" || !item.trim()) {
+        return { ok: false, error: `${HOOKS_CONFIG_REL} setup commands must be non-empty strings` };
+      }
+      commands.push(item.trim());
+    }
+    config.setup = commands;
+  }
+  if (rec.timeoutMs !== undefined) {
+    if (
+      typeof rec.timeoutMs !== "number"
+      || !Number.isInteger(rec.timeoutMs)
+      || rec.timeoutMs < MIN_SETUP_TIMEOUT_MS
+      || rec.timeoutMs > MAX_SETUP_TIMEOUT_MS
+    ) {
+      return { ok: false, error: `${HOOKS_CONFIG_REL} timeoutMs must be an integer between ${MIN_SETUP_TIMEOUT_MS} and ${MAX_SETUP_TIMEOUT_MS}` };
+    }
+    config.timeoutMs = rec.timeoutMs;
+  }
+  return { ok: true, config };
+}
+
+function findRootEnvFiles(repoRoot: string): string[] {
+  try {
+    return readdirSync(repoRoot, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && ROOT_ENV_FILE.test(entry.name))
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+function copyEnvFiles(
+  repoRoot: string,
+  targetPath: string,
+  files: readonly string[],
+  explicit: boolean,
+): { copied: string[]; warnings: string[] } {
+  const copied: string[] = [];
+  const warnings: string[] = [];
+  let realRepo: string;
+  let realTarget: string;
+  try {
+    realRepo = realpathSync(repoRoot);
+    realTarget = realpathSync(targetPath);
+  } catch {
+    return { copied, warnings: ["could not resolve paths for .env copy"] };
+  }
+
+  for (const rel of files) {
+    if (!rel || isAbsolute(rel) || rel.split(/[\\/]/).includes("..")) {
+      warnings.push(`skipped unsafe env path "${rel}"`);
+      continue;
+    }
+    const src = resolve(realRepo, rel);
+    const dst = resolve(realTarget, rel);
+    const normalizedRel = relative(realRepo, src);
+    if (!normalizedRel || normalizedRel.startsWith("..") || isAbsolute(normalizedRel) || !isInsideRoot(realTarget, dst)) {
+      warnings.push(`skipped unsafe env path "${rel}"`);
+      continue;
+    }
+    let stat;
+    try {
+      stat = lstatSync(src);
+    } catch {
+      if (explicit) warnings.push(`env file not found: "${rel}"`);
+      continue;
+    }
+    if (!stat.isFile()) {
+      warnings.push(`skipped non-regular env file "${rel}"`);
+      continue;
+    }
+    try {
+      if (!isInsideRoot(realRepo, realpathSync(src))) {
+        warnings.push(`skipped env file escaping repository "${rel}"`);
+        continue;
+      }
+    } catch {
+      warnings.push(`skipped unreadable env file "${rel}"`);
+      continue;
+    }
+    if (hasSymlinkAncestor(realTarget, normalizedRel)) {
+      warnings.push(`skipped env file with symlinked target parent "${rel}"`);
+      continue;
+    }
+    if (existsSync(dst)) continue;
+    try {
+      mkdirSync(dirname(dst), { recursive: true });
+      if (!isInsideRoot(realTarget, realpathSync(dirname(dst)))) {
+        warnings.push(`skipped env file with escaping target parent "${rel}"`);
+        continue;
+      }
+      copyFileSync(src, dst, constants.COPYFILE_EXCL);
+      copied.push(rel);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      warnings.push(`failed to copy "${rel}": ${reason}`);
+    }
+  }
+  return { copied, warnings };
+}
+
+function formatCommandError(error: unknown): string {
+  if (error && typeof error === "object") {
+    const err = error as { stderr?: unknown; stdout?: unknown; message?: unknown; killed?: boolean; signal?: string };
+    if (err.killed && err.signal) return `timed out (${err.signal})`;
+    const detail = typeof err.stderr === "string" && err.stderr.trim()
+      ? err.stderr.trim()
+      : typeof err.message === "string"
+        ? err.message.trim()
+        : String(error);
+    return detail.length > 300 ? `${detail.slice(0, 300)}...` : detail;
+  }
+  return String(error);
+}
+
+async function runWorktreeSetupCommands(opts: {
+  repoRoot: string;
+  targetPath: string;
+  branch: string;
+  base: string;
+  commands: readonly string[];
+  timeoutMs: number;
+}): Promise<{ commandsRun: number; warning?: string }> {
+  const shell = process.platform === "win32" ? (process.env.ComSpec || "cmd.exe") : "/bin/sh";
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    OMB_WORKTREE_PATH: opts.targetPath,
+    OMB_WORKTREE_REPO: opts.repoRoot,
+    OMB_WORKTREE_BRANCH: opts.branch,
+    OMB_WORKTREE_BASE: opts.base,
+  };
+  let commandsRun = 0;
+  for (const command of opts.commands) {
+    const args = process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command];
+    try {
+      await execFileAsync(shell, args, {
+        cwd: opts.targetPath,
+        env,
+        timeout: opts.timeoutMs,
+        maxBuffer: 1024 * 1024,
+      });
+      commandsRun += 1;
+    } catch (error) {
+      return {
+        commandsRun,
+        warning: `worktree setup command failed (${command}): ${formatCommandError(error)}`,
+      };
+    }
+  }
+  return { commandsRun };
+}
+
+export async function runWorktreeHooks(opts: {
+  repoRoot: string;
+  targetPath: string;
+  branch: string;
+  base: string;
+  trustedRepos?: readonly string[];
+}): Promise<WorktreeSetupReport> {
+  const trusted = isTrustedWorktreeRepo(opts.repoRoot, opts.trustedRepos);
+  if (!trusted) {
+    const hasHookConfig = existsSync(join(opts.repoRoot, HOOKS_CONFIG_REL));
+    const hasUncopiedEnv = findRootEnvFiles(opts.repoRoot).some((file) => !existsSync(join(opts.targetPath, file)));
+    if (hasHookConfig || hasUncopiedEnv) {
+      return {
+        trusted: false,
+        copiedEnv: [],
+        commandsRun: 0,
+        skippedReason: "untrusted repository",
+        warning: `worktree setup hooks and .env* copy skipped for untrusted repo "${opts.repoRoot}" (add it to worktrees.trustedRepos in config.json to enable)`,
+      };
+    }
+    return { trusted: false, copiedEnv: [], commandsRun: 0 };
+  }
+
+  const parsed = readWorktreeHooksConfig(opts.repoRoot);
+  if (!parsed.ok) {
+    return { trusted: true, copiedEnv: [], commandsRun: 0, warning: parsed.error };
+  }
+  const config = parsed.config;
+  const warnings: string[] = [];
+  let copiedEnv: string[] = [];
+
+  if (config?.copyEnv ?? true) {
+    const explicit = config?.envFiles !== undefined;
+    const candidates = config?.envFiles ?? findRootEnvFiles(opts.repoRoot);
+    const envResult = copyEnvFiles(opts.repoRoot, opts.targetPath, candidates, explicit);
+    copiedEnv = envResult.copied;
+    warnings.push(...envResult.warnings);
+  }
+
+  let commandsRun = 0;
+  if (config?.setup?.length) {
+    const setupResult = await runWorktreeSetupCommands({
+      repoRoot: opts.repoRoot,
+      targetPath: opts.targetPath,
+      branch: opts.branch,
+      base: opts.base,
+      commands: config.setup,
+      timeoutMs: config.timeoutMs ?? DEFAULT_SETUP_TIMEOUT_MS,
+    });
+    commandsRun = setupResult.commandsRun;
+    if (setupResult.warning) warnings.push(setupResult.warning);
+  }
+
+  const warning = warnings.length > 0 ? warnings.join("; ") : undefined;
+  return {
+    trusted: true,
+    copiedEnv,
+    commandsRun,
+    ...(warning ? { warning } : {}),
+  };
+}
+
 export async function createThreadWorktree(opts: {
   botId: string;
   botCwd?: string;
   request: WorktreeRequest;
   id?: string;
-}): Promise<{ ok: true; worktree: ThreadWorktree; warning?: string } | { ok: false; error: string }> {
+  trustedRepos?: readonly string[];
+}): Promise<{ ok: true; worktree: ThreadWorktree; setup: WorktreeSetupReport; warning?: string } | { ok: false; error: string }> {
   const id = opts.id ?? randomUUID();
   if (!SAFE_SEGMENT.test(opts.botId) || !SAFE_SEGMENT.test(id)) {
     return { ok: false, error: "invalid bot or worktree identifier" };
@@ -210,10 +549,19 @@ export async function createThreadWorktree(opts: {
     return { ok: false, error: `could not create Git worktree: ${reason}` };
   }
 
-  const warning = await cloneNodeModulesBestEffort(repo.repoRoot, targetPath);
+  const cloneWarning = await cloneNodeModulesBestEffort(repo.repoRoot, targetPath);
+  const setup = await runWorktreeHooks({
+    repoRoot: repo.repoRoot,
+    targetPath,
+    branch,
+    base,
+    trustedRepos: opts.trustedRepos,
+  });
+  const warning = [cloneWarning, setup.warning].filter(Boolean).join("; ") || undefined;
   return {
     ok: true,
     worktree: { repo: repo.repoRoot, branch, base, baseCommit, path: targetPath },
+    setup,
     ...(warning ? { warning } : {}),
   };
 }
@@ -267,11 +615,12 @@ export async function prepareWorktreeForThread(
   botId: string,
   botCwd: string | undefined,
   raw: unknown,
-): Promise<{ ok: true; worktree?: ThreadWorktree; warning?: string } | { ok: false; error: string }> {
+  trustedRepos?: readonly string[],
+): Promise<{ ok: true; worktree?: ThreadWorktree; setup?: WorktreeSetupReport; warning?: string } | { ok: false; error: string }> {
   const parsed = parseWorktreeRequest(raw);
   if (!parsed.ok) return parsed;
   if (!parsed.value) return { ok: true };
-  return createThreadWorktree({ botId, botCwd, request: parsed.value });
+  return createThreadWorktree({ botId, botCwd, request: parsed.value, trustedRepos });
 }
 
 export async function cleanupDeletedThreadWorktree(threadId: string): Promise<{ removed: boolean; reason?: string } | null> {
