@@ -10199,5 +10199,6 @@
   "backup.scopeFullHint": "整個資料資料夾，包括工作資料夾、專案複本和檢查點。可能超過 10 GB 或 10 萬個檔案的上限。",
   "backup.scopeShown": "內容",
   "backup.scopeEssentialsShort": "僅必要內容",
-  "backup.scopeFullShort": "全部"
+  "backup.scopeFullShort": "全部",
+  "sidebar.nav.workflows": "工作流程"
 }

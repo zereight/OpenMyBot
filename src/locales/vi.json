@@ -5915,5 +5915,6 @@
   "backup.scopeFullHint": "Toàn bộ thư mục dữ liệu, gồm thư mục làm việc, bản sao dự án và điểm kiểm tra. Có thể vượt giới hạn 10 GB hoặc 100.000 tệp.",
   "backup.scopeShown": "Nội dung",
   "backup.scopeEssentialsShort": "Thiết yếu",
-  "backup.scopeFullShort": "Tất cả"
+  "backup.scopeFullShort": "Tất cả",
+  "sidebar.nav.workflows": "Quy trình"
 }

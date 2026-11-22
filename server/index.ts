@@ -232,6 +232,7 @@ import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import { createGoalTurns } from "./host/goal-turns.ts";
 import { createGoalCards, type LiveGoalRun } from "./host/goal-cards.ts";
 import { createOneOnOneGoals } from "./host/one-on-one-goals.ts";
+import { createWorkflowFeature } from "./workflows/index.ts";
 
 import { BUILT_IN_DRIVERS } from "./drivers/builtIn.ts";
 import { openCodeProviderKeysAllowed, setOpenCodeProviderKeyPolicy } from "./drivers/acp/opencode-go.ts";
@@ -2309,6 +2310,7 @@ function retireProviderTurn(turnId: string): void {
 }
 
 function shouldIgnoreProviderEvent(event: RuntimeEvent): boolean {
+  if (event.threadId.startsWith("wf-slot-")) return true;
   // Some adapters emit completion synchronously before sendTurn resolves: quarantine the pre-id window, time-bounded.
   if (isTurnEventQuarantined(pendingCancelledProviderHandshakes, retiredProviderTurns, event)) return true;
   if (event.type !== "session.exited" || event.turnId !== undefined) return false;
@@ -12413,6 +12415,7 @@ ROUTES.push(createDataRoutes({
   compileChart, validateVegaLite, renderer: chartRenderer,
   exportRoots: dataExportRoots,
 }));
+ROUTES.push(createWorkflowFeature({ dataDir: DATA_DIR, registry, decider }));
 ROUTES.push(createLiveRoutes({
   calls: liveCalls, deviceRevoked: (device) => { phonePush.forget(`companion:${device}`); phoneActivity.forget(`companion:${device}`); },
   resolveTarget: (botId, threadId) => {

@@ -7116,5 +7116,6 @@
   "backup.scopeFullHint": "Cały folder danych, z folderami roboczymi, klonami projektów i punktami kontrolnymi. Może przekroczyć limit 10 GB lub 100 000 plików.",
   "backup.scopeShown": "Zawartość",
   "backup.scopeEssentialsShort": "Tylko najważniejsze",
-  "backup.scopeFullShort": "Wszystko"
+  "backup.scopeFullShort": "Wszystko",
+  "sidebar.nav.workflows": "Przepływy pracy"
 }

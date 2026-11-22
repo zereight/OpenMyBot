@@ -48,6 +48,7 @@ import { newChatBot } from "@/state/new-chat";
 import { useTeamPresence } from "@/state/team-presence";
 import { inboxVersion, useInboxLoader, useInboxPanel, useInboxReady } from "@/state/inbox";
 import { PlacesRail } from "@/components/PlacesRail";
+import { WorkflowsPage } from "@/components/workflows/WorkflowsPage";
 import { NewLocalFromMenu } from "@/components/PlaceAddSheet";
 import { CloudHowTo } from "@/components/CloudHowTo";
 import { DesktopCapabilitiesProvider, useCaptionChrome, useDesktopCapabilities, WindowDragStrip, windowFramed } from "@/components/DesktopCapabilities";
@@ -402,6 +403,8 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
         <TeamFilesPage />
       ) : state.activeView === "routines" ? (
         <TriggersPage onBack={closeCalendar} onOpenRoom={openCalendarRoom} />
+      ) : state.activeView === "workflows" ? (
+        <WorkflowsPage />
       ) : !remoteClient && localVmWorkspaceBotId ? (
         <LocalVmWorkspace
           primaryBotId={localVmWorkspaceBotId}

@@ -3676,5 +3676,6 @@
   "backup.scopeFullHint": "कार्य फ़ोल्डर, प्रोजेक्ट क्लोन और चेकपॉइंट समेत पूरा डेटा फ़ोल्डर। यह 10 GB या 1,00,000 फ़ाइलों की सीमा पार कर सकता है।",
   "backup.scopeShown": "सामग्री",
   "backup.scopeEssentialsShort": "सिर्फ़ ज़रूरी",
-  "backup.scopeFullShort": "सब कुछ"
+  "backup.scopeFullShort": "सब कुछ",
+  "sidebar.nav.workflows": "वर्कफ़्लो"
 }

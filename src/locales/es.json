@@ -6413,5 +6413,6 @@
   "backup.scopeFullHint": "Toda la carpeta de datos, con carpetas de trabajo, clones de proyectos y puntos de control. Puede superar el límite de 10 GB o 100.000 archivos.",
   "backup.scopeShown": "Contenido",
   "backup.scopeEssentialsShort": "Lo esencial",
-  "backup.scopeFullShort": "Todo"
+  "backup.scopeFullShort": "Todo",
+  "sidebar.nav.workflows": "Flujos de trabajo"
 }

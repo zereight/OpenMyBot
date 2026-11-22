@@ -297,7 +297,7 @@ describe("toolbar tools layout", () => {
 
   it("toolbar applies to Advanced mode's three places; Simple mode keeps them in the bottom bar instead", () => {
     fixture.advanced = true;
-    expect(render("comfortable", { toolsLayout: "toolbar" }).html.match(/data-sidebar-nav="/g)).toHaveLength(3);
+    expect(render("comfortable", { toolsLayout: "toolbar" }).html.match(/data-sidebar-nav="/g)).toHaveLength(4);
     fixture.advanced = false;
     expect(render("comfortable", { toolsLayout: "toolbar" }).html).toBe("");
   });

@@ -7170,5 +7170,6 @@
   "backup.scopeFullHint": "Вся папка данных, включая рабочие папки, клоны проектов и контрольные точки. Может превысить лимит 10 ГБ или 100 000 файлов.",
   "backup.scopeShown": "Содержимое",
   "backup.scopeEssentialsShort": "Только главное",
-  "backup.scopeFullShort": "Всё"
+  "backup.scopeFullShort": "Всё",
+  "sidebar.nav.workflows": "Рабочие процессы"
 }

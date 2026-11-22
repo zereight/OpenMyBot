@@ -4056,5 +4056,6 @@
   "backup.scopeFullHint": "Der gesamte Datenordner mit Arbeitsordnern, Projektklonen und Checkpoints. Er kann die Grenze von 10 GB oder 100.000 Dateien überschreiten.",
   "backup.scopeShown": "Inhalt",
   "backup.scopeEssentialsShort": "Nur das Wichtigste",
-  "backup.scopeFullShort": "Alles"
+  "backup.scopeFullShort": "Alles",
+  "sidebar.nav.workflows": "Workflows"
 }
