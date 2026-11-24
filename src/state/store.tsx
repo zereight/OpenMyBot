@@ -567,8 +567,8 @@ export interface AppState {
   consumedQueueIds: Record<string, true>;
   backgroundThreadEvents: Record<string, Array<Extract<Action, { type: "messageAdded" | "messagePatched" | "threadActive" | "optimisticMessageRemoved" }>>>;
   loadingOlder: Record<string, true>;
-  /** Bumped when a transcript is replaced or its branch moves, never on append; stale scrollback pages are dropped. */
   transcriptGeneration: Record<string, number>;
+  recentThreadIds?: string[];
 }
 
 export type BotAnnouncement = Omit<Bot, "messages"> & { messages?: Message[] };
@@ -862,8 +862,8 @@ function reduceApp(state: AppState, action: Action): AppState {
   if (action.type === "messageAdded" || action.type === "messagePatched" || action.type === "threadActive" || action.type === "optimisticMessageRemoved") {
     const owner = state.bots.find((bot) => (bot.threadId !== action.threadId || bot.awaitingThreadSnapshot) && bot.tasks?.some((task) => task.threadId === action.threadId));
     if (owner) {
-      const frames = [...(state.backgroundThreadEvents[action.threadId] ?? []), action].slice(-256);
-      const buffered = { ...state, backgroundThreadEvents: { ...state.backgroundThreadEvents, [action.threadId]: frames } };
+      const buffered = (owner.switchingTo === action.threadId || (Boolean(owner.awaitingThreadSnapshot) && owner.threadId === action.threadId))
+        ? { ...state, backgroundThreadEvents: { ...state.backgroundThreadEvents, [action.threadId]: [...(state.backgroundThreadEvents[action.threadId] ?? []), action].slice(-256) } } : state;
       return (action.type === "messageAdded" || action.type === "messagePatched") && movesThreadToTop(action.message)
         ? bumpThreadUpdatedAt(buffered, action.threadId, action.message.at, true, action.message.turnCompletedAt ?? action.message.at)
         : action.type === "messageAdded" ? bumpThreadUpdatedAt(buffered, action.threadId, action.message.at) : buffered;
@@ -894,8 +894,7 @@ function reduceApp(state: AppState, action: Action): AppState {
         hydrated: true as const,
         backgroundThreadEvents: {},
         loadingOlder: {},
-        transcriptGeneration: {},
-        modelVariantSessions: {},
+        transcriptGeneration: {}, modelVariantSessions: {}, recentThreadIds: [],
       };
       const held = [...hydrated.bots, ...hydrated.groups].find((owner) => owner.threadId === state.unreadDivider?.threadId);
       if (held) hydrated.unreadDivider = placeUnreadDivider(state.unreadDivider, held.threadId, visibleMessages(held), Boolean(held.hasMore));
@@ -1683,7 +1682,7 @@ function reduceApp(state: AppState, action: Action): AppState {
         (bot) => ({ ...bot, switchingTo: action.threadId }));
     }
     case "switchTaskFailed":
-      return updateBot(state, action.botId, (bot) => bot.switchingTo === action.threadId ? { ...bot, switchingTo: undefined } : bot);
+      return updateBot(action.threadId in state.backgroundThreadEvents ? { ...state, backgroundThreadEvents: Object.fromEntries(Object.entries(state.backgroundThreadEvents).filter(([id]) => id !== action.threadId)) } : state, action.botId, (bot) => bot.switchingTo === action.threadId ? { ...bot, switchingTo: undefined } : bot);
     case "renameTask":
       return updateBot(state, action.botId, (bot) => ({
         ...bot,

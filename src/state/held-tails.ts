@@ -28,9 +28,12 @@ export function followHeldTails(store: { getState(): AppState; subscribe(listene
   const queued = new Set<string>();
   let selectedThread: string | undefined;
   const check = () => {
-    if (!tails.size) return;
     const state = store.getState();
     const selected = selectedOwner(state);
+    if (selected && shortHeld(selected) && selected.messages[0] && !tails.has(selected.threadId)) {
+      tails.set(selected.threadId, selected.messages[0].id);
+    }
+    if (!tails.size) return;
     if (selected?.threadId !== selectedThread) {
       selectedThread = selected?.threadId;
       if (selectedThread) asks.delete(selectedThread);

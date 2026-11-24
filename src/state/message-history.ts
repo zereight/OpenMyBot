@@ -35,6 +35,47 @@ export function reduceOlderMessages(state: AppState, action: OlderMessages): App
 /** Rows a conversation keeps once the reader has left it, and the most it keeps to put a reader's place back. */
 export const HELD_AFTER_LEAVING = MESSAGE_PAGE_SIZE;
 export const HELD_FOR_PLACE = 3 * MESSAGE_PAGE_SIZE;
+export const MAX_WARM_THREADS = 5;
+export const COLD_THREAD_TAIL = 20;
+
+function rememberWarmThreads(recent: readonly string[] | undefined, ...threadIds: Array<string | undefined>): string[] {
+  const next = [...(recent ?? [])];
+  for (const threadId of threadIds) {
+    if (!threadId) continue;
+    const at = next.indexOf(threadId);
+    if (at >= 0) next.splice(at, 1);
+    next.unshift(threadId);
+  }
+  return next.slice(0, MAX_WARM_THREADS);
+}
+
+export function evictColdThreads(state: AppState, recentThreadIds: readonly string[]): AppState {
+  const candidates = [...state.bots, ...state.groups].filter((owner) => owner.messages.length > COLD_THREAD_TAIL);
+  if (candidates.length <= MAX_WARM_THREADS) return state;
+  const keep = new Set<string>();
+  for (const owner of candidates) {
+    if (shownThread(state, owner.threadId)) keep.add(owner.threadId);
+  }
+  for (const threadId of recentThreadIds) {
+    if (keep.size >= MAX_WARM_THREADS) break;
+    if (candidates.some((owner) => owner.threadId === threadId)) keep.add(threadId);
+  }
+  if (keep.size < MAX_WARM_THREADS) {
+    for (const owner of candidates) {
+      if (keep.size >= MAX_WARM_THREADS) break;
+      keep.add(owner.threadId);
+    }
+  }
+  let changed = false;
+  const evict = <T extends HeldOwner>(owner: T): T => {
+    if (owner.messages.length <= COLD_THREAD_TAIL || keep.has(owner.threadId)) return owner;
+    changed = true;
+    return { ...owner, messages: owner.messages.slice(-COLD_THREAD_TAIL), hasMore: true };
+  };
+  const bots = state.bots.map(evict);
+  const groups = state.groups.map(evict);
+  return changed ? { ...state, bots, groups } : state;
+}
 
 /** The newest rows of `owner`, from `keepFromId` when that is close enough to the end, never cutting off its pinned
  * message or the leaf of the branch it shows. */
@@ -71,7 +112,16 @@ export function reduceTrimHeldMessages(state: AppState, { threadId, keepFromId }
   };
   const bots = state.bots.map(trim);
   const groups = state.groups.map(trim);
-  return changed ? { ...state, bots, groups } : state;
+  if (state.bots.length + state.groups.length <= MAX_WARM_THREADS) {
+    return changed ? { ...state, bots, groups } : state;
+  }
+  const recentThreadIds = rememberWarmThreads(state.recentThreadIds, threadId, selectedOwner(state)?.threadId);
+  const next = changed ? { ...state, bots, groups, recentThreadIds } : { ...state, recentThreadIds };
+  const evicted = evictColdThreads(next, recentThreadIds);
+  return evicted === next && !changed && recentThreadIds.length === (state.recentThreadIds?.length ?? 0) &&
+    recentThreadIds.every((id, index) => id === state.recentThreadIds?.[index])
+    ? state
+    : evicted;
 }
 
 /** The most rows a conversation nobody has on screen gathers from live frames before it is trimmed again. */
@@ -88,7 +138,8 @@ export function capHeldInBackground(state: AppState, action: Action): AppState {
   const trimmed = reduceTrimHeldMessages(state, { type: "trimHeldMessages", threadId: action.threadId, keepFromId: place?.atEnd ? undefined : place?.rowId });
   const page = <T extends HeldOwner>(held: T): T => held.threadId === action.threadId && held.messages.length > HELD_IN_BACKGROUND
     ? { ...held, messages: held.messages.slice(-MESSAGE_PAGE_SIZE), hasMore: true } : held;
-  return { ...trimmed, bots: trimmed.bots.map(page), groups: trimmed.groups.map(page) };
+  const capped = { ...trimmed, bots: trimmed.bots.map(page), groups: trimmed.groups.map(page) };
+  return evictColdThreads(capped, capped.recentThreadIds ?? []);
 }
 
 /** Holds fewer rows than one page while the server has more: a snapshot's tail, or a conversation switched to. */

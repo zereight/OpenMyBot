@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildErrorPage, desktopViewerErrorPage, showBootFailure } from "./error-pages.mjs";
-import { attachRendererRecovery, isLiveWebContents, resolveRecoveryTarget, safeSend } from "./renderer-recovery.mjs";
+import { attachRendererRecovery, isLiveWebContents, resolveRecoveryTarget, safeSend } from "./renderer-recovery.mjs"; import { applyRendererHeapLimit, notifyRendererOom, startRendererMemoryMonitor } from "./renderer-memory.mjs";
 import { startCua, stopCua, registerCuaIpc, requestComputerUse, setCuaStateListener, grantLocalComputer } from "./cua.mjs";
 import { createAndroidDeviceController } from "./android-device.mjs";
 import { finishSpeech, speechBusy, startSpeech, stopSpeech } from "./speech.mjs";
@@ -41,7 +41,7 @@ import { createActivityWindow } from "./lending-activity-window.mjs";
 import { missingPermissions } from "./lent-screen-failures.mjs";
 import { createScreenControl } from "./screen-control.mjs"; import { createAskPrompt } from "./ask-prompt.mjs";
 let startupScreen = null;
-let desktopTray = null;
+let desktopTray = null; let rendererMemoryMonitor = null;
 import { collisionFreeDownloadPath, defaultSaveName, openFolder, openHtmlCopy, openLogsFolder, revealDownloadWhenDone, revealInFolder, withSavableFile } from "./save-file.mjs";
 import { desktopViewerPermissionAllowed } from "./desktop-viewer-permissions.mjs";
 import { appPermissionHandlers, externalLinkUrl } from "./app-permissions.mjs";
@@ -179,7 +179,7 @@ function applyUnreadBadge(win = mainWindow) {
 // A launch with --disable-gpu (a desktop entry or a user workaround) renders on the CPU too.
 const linuxSoftwareRendering = process.platform === "linux" && (linuxDisablesGpu() || app.commandLine.hasSwitch("disable-gpu"));
 if (linuxSoftwareRendering) app.disableHardwareAcceleration();
-if (process.platform === "linux") { app.setDesktopName("com.openmausbot.app.desktop"); disableWaylandColorManager(app.commandLine); }
+if (process.platform === "linux") { app.setDesktopName("com.openmausbot.app.desktop"); disableWaylandColorManager(app.commandLine); } applyRendererHeapLimit(app.commandLine);
 
 if (!app.requestSingleInstanceLock()) {
   console.log("[desktop] OpenMyBot is already running — focusing that window");
@@ -1943,7 +1943,7 @@ function createWindow({ deferNavigation = false } = {}) {
         ...(app.isPackaged && !desktopRemoteAccess ? ["--omb-company-desktop=1"] : []), `--omb-app-version=${app.getVersion()}`, ...(linuxSoftwareRendering ? [SOFTWARE_RENDERING_ARG] : [])],
     },
   });
-  mainWindow = win; hiddenStart = false; chromeRail.attach(win);
+  mainWindow = win; hiddenStart = false; chromeRail.attach(win); rendererMemoryMonitor?.stop(); rendererMemoryMonitor = startRendererMemoryMonitor({ app, getMainWindow: () => mainWindow, log: slog });
   win.on("show", () => desktopTray?.windowShown(win));
   win.on("focus", () => { if (cloudAccount?.checkoutPending()) void cloudAccount.refresh().catch(() => {}); });
   win.on("close", (event) => {
@@ -2016,6 +2016,7 @@ function createWindow({ deferNavigation = false } = {}) {
   attachRendererRecovery(win, {
     powerMonitor, isQuitting: () => desktopShutdownStarted, log: slog, recoverHome: () => showHome(),
     resolveTarget: () => resolveRecoveryTarget({ currentUrl: win.webContents.getURL(), activeOrigin: activeRemote(environmentsState)?.origin ?? null, localOrigin: rendererOrigin(), isRemote: Boolean(activeRemote(environmentsState)), serverReady, isPackaged: app.isPackaged, desktopRemoteAccess: Boolean(desktopRemoteAccess), devUrl: DEV_URL, homeActive: Boolean(homeWindow.placeOrigin() || homeWindow.asking()), buildErrorPage: () => buildErrorPage({ allPortsOccupied: serverStartConflictOnly, logDir: LOG_DIR, keepTrying: !desktopRemoteAccess && alwaysOnHome.on() }, nativeText) }),
+    onOom: ({ count }) => notifyRendererOom({ app, Notification, log: slog, count }),
     onCircuitOpen: ({ resetAndReload }) => { void dialog.showMessageBox(win, { type: "error", message: "The app window stopped responding repeatedly.", buttons: [nativeT("native.role.reload"), nativeT("native.common.cancel")], defaultId: 0, cancelId: 1 }).then(({ response }) => { if (response === 0) void resetAndReload(); }).catch(() => {}); },
   });
   win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -3062,7 +3063,7 @@ process.once("SIGINT", requestSignalQuit);
 process.once("SIGTERM", requestSignalQuit);
 
 app.on("before-quit", (e) => {
-  talk.close();
+  talk.close(); rendererMemoryMonitor?.stop();
   desktopShutdownStarted = true;
   startupScreen?.dispose();
   companyBackupSchedule?.close();

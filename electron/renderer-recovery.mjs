@@ -66,6 +66,7 @@ export function attachRendererRecovery(win, {
   recoverHome = () => Promise.resolve(),
   isQuitting = () => false,
   onCircuitOpen = null,
+  onOom = null,
   log = () => {},
   maxCrashes = DEFAULT_MAX_CRASHES,
   windowMs = DEFAULT_CRASH_WINDOW_MS,
@@ -160,6 +161,9 @@ export function attachRendererRecovery(win, {
       log(`renderer recovery: circuit open after ${crashTimestamps.length} crashes in ${windowMs}ms (${reason})`);
       onCircuitOpen?.({ reason, count: crashTimestamps.length, resetAndReload });
       return;
+    }
+    if (reason === "oom") {
+      try { onOom?.({ reason, count: crashTimestamps.length }); } catch {}
     }
     if (suspended) {
       pendingRecovery = true;
