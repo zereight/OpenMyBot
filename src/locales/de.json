@@ -189,6 +189,8 @@
   "server.notify.workingFor": "{who}, arbeitet für {other}",
   "server.notify.approval": "{who} braucht eine Freigabe",
   "server.notify.question": "{who} hat eine Frage",
+  "server.notify.stillWaiting": "Wartet noch auf deine Antwort: {detail}",
+  "server.notify.stillWaitingFallback": "Wartet noch auf deine Antwort.",
   "server.notify.signIn": "{who} braucht deine Anmeldung bei {site}",
   "server.notify.secret": "{who} braucht von dir: {label}",
   "server.notify.connect": "{who} möchte, dass du {app} verbindest",
