@@ -1,9 +1,17 @@
 export const DEFAULT_MAX_OLD_SPACE_MB = 4096;
 export const DEFAULT_MEMORY_LOG_INTERVAL_MS = 5 * 60_000;
 export const DEFAULT_MEMORY_WARN_MB = 2048;
+export const DEFAULT_JS_HEAP_TIMEOUT_MS = 1500;
+
+// Electron's MemoryInfo.privateBytes is @platform win32 only (undefined on macOS/Linux),
+// so macOS logs omit `private=` and rely on `jsHeap` + `nonJsEst` to separate JS vs native growth.
+const JS_HEAP_BYTES_EXPR = "typeof performance !== 'undefined' && performance.memory ? performance.memory.usedJSHeapSize : null";
 
 export function applyRendererHeapLimit(commandLine, maxOldSpaceMb = DEFAULT_MAX_OLD_SPACE_MB) {
   if (!commandLine || typeof commandLine.appendSwitch !== "function") return false;
+  // Without this switch Chromium buckets/caches performance.memory.usedJSHeapSize for ~20 min,
+  // making jsHeap stale and causing nonJsEst to misattribute JS growth to native memory.
+  commandLine.appendSwitch("enable-precise-memory-info");
   const existing = typeof commandLine.getSwitchValue === "function"
     ? (commandLine.getSwitchValue("js-flags") ?? "").trim()
     : "";
@@ -15,6 +23,12 @@ export function applyRendererHeapLimit(commandLine, maxOldSpaceMb = DEFAULT_MAX_
 
 function kbToMb(kb) {
   return typeof kb === "number" && Number.isFinite(kb) ? Math.round((kb / 1024) * 10) / 10 : null;
+}
+
+function bytesToMb(bytes) {
+  return typeof bytes === "number" && Number.isFinite(bytes) && bytes >= 0
+    ? Math.round((bytes / (1024 * 1024)) * 10) / 10
+    : null;
 }
 
 export function sampleRendererMemory({ app, getMainWindow }) {
@@ -34,19 +48,50 @@ export function sampleRendererMemory({ app, getMainWindow }) {
     pid: match.pid ?? pid ?? 0,
     workingSetMb: kbToMb(match.memory.workingSetSize),
     peakWorkingSetMb: kbToMb(match.memory.peakWorkingSetSize),
+    // Populated on Windows only (@platform win32 in Electron MemoryInfo); null on macOS/Linux.
     privateMb: kbToMb(match.memory.privateBytes),
   };
+}
+
+export async function sampleRendererJsHeapMb({ getMainWindow, timeoutMs = DEFAULT_JS_HEAP_TIMEOUT_MS } = {}) {
+  const win = getMainWindow?.();
+  const contents = win && !win.isDestroyed?.() ? win.webContents : null;
+  if (!contents || contents.isDestroyed?.() || contents.isCrashed?.() || typeof contents.executeJavaScript !== "function") {
+    return null;
+  }
+  let timer = null;
+  try {
+    const timeoutPromise = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(null), timeoutMs);
+      timer?.unref?.();
+    });
+    const bytes = await Promise.race([
+      Promise.resolve().then(() => contents.executeJavaScript(JS_HEAP_BYTES_EXPR)),
+      timeoutPromise,
+    ]);
+    return bytesToMb(bytes);
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export function formatRendererMemoryLine(sample, warnMb = DEFAULT_MEMORY_WARN_MB) {
   const level = sample.workingSetMb !== null && sample.workingSetMb >= warnMb
     ? "[renderer-memory][warn]"
     : "[renderer-memory]";
+  const jsHeapMb = sample.jsHeapMb ?? null;
+  const nonJsEstMb = sample.workingSetMb !== null && jsHeapMb !== null
+    ? Math.max(0, Math.round((sample.workingSetMb - jsHeapMb) * 10) / 10)
+    : null;
   const parts = [
     `pid=${sample.pid}`,
     sample.workingSetMb !== null ? `workingSet=${sample.workingSetMb}MB` : null,
     sample.peakWorkingSetMb !== null ? `peak=${sample.peakWorkingSetMb}MB` : null,
     sample.privateMb !== null ? `private=${sample.privateMb}MB` : null,
+    jsHeapMb !== null ? `jsHeap=${jsHeapMb}MB` : null,
+    nonJsEstMb !== null ? `nonJsEst=${nonJsEstMb}MB` : null,
   ].filter(Boolean);
   return `${level} ${parts.join(" ")}`;
 }
@@ -57,18 +102,27 @@ export function startRendererMemoryMonitor({
   log = () => {},
   intervalMs = DEFAULT_MEMORY_LOG_INTERVAL_MS,
   warnMb = DEFAULT_MEMORY_WARN_MB,
+  jsHeapTimeoutMs = DEFAULT_JS_HEAP_TIMEOUT_MS,
   setTimer = setInterval,
   clearTimer = clearInterval,
 } = {}) {
   let stopped = false;
-  const sample = () => {
-    if (stopped) return null;
+  let inFlight = false;
+  const sample = async () => {
+    if (stopped || inFlight) return null;
+    inFlight = true;
     try {
-      const reading = sampleRendererMemory({ app, getMainWindow });
-      if (reading) log(formatRendererMemoryLine(reading, warnMb));
+      const base = sampleRendererMemory({ app, getMainWindow });
+      if (!base) return null;
+      const jsHeapMb = await sampleRendererJsHeapMb({ getMainWindow, timeoutMs: jsHeapTimeoutMs });
+      if (stopped) return null;
+      const reading = { ...base, jsHeapMb };
+      log(formatRendererMemoryLine(reading, warnMb));
       return reading;
     } catch {
       return null;
+    } finally {
+      inFlight = false;
     }
   };
   const timer = setTimer(sample, intervalMs);
