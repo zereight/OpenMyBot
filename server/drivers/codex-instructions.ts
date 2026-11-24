@@ -11,9 +11,17 @@ const digest = (value: string) => createHash("sha256").update(value).digest("hex
 export interface CodexInstructionReceipt {
   instructions: string;
   volatile?: string;
+  turnsSinceVolatile?: number;
 }
 
+export const CODEX_VOLATILE_RE_ANCHOR_TURNS = 8;
+
 const isFingerprint = (value: string) => /^[0-9a-f]{64}$/.test(value);
+
+function receiptPath(key: string, nativeThreadId: string): { directory: string; path: string } {
+  const directory = join(DATA_DIR, "codex-instructions");
+  return { directory, path: join(directory, `${digest(JSON.stringify([key, nativeThreadId]))}.sha256`) };
+}
 
 function parseReceipt(raw: string | undefined): CodexInstructionReceipt | null {
   if (!raw) return null;
@@ -22,16 +30,32 @@ function parseReceipt(raw: string | undefined): CodexInstructionReceipt | null {
   try {
     const parsed = JSON.parse(trimmed) as unknown;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      const record = parsed as { instructions?: unknown; volatile?: unknown };
+      const record = parsed as { instructions?: unknown; volatile?: unknown; turnsSinceVolatile?: unknown };
       if (typeof record.instructions === "string" && isFingerprint(record.instructions)) {
         return {
           instructions: record.instructions,
           ...(typeof record.volatile === "string" && isFingerprint(record.volatile) ? { volatile: record.volatile } : {}),
+          ...(typeof record.turnsSinceVolatile === "number" && Number.isInteger(record.turnsSinceVolatile) && record.turnsSinceVolatile >= 0
+            ? { turnsSinceVolatile: record.turnsSinceVolatile }
+            : {}),
         };
       }
     }
   } catch {}
   return null;
+}
+
+export function invalidateCodexVolatile(key: string, nativeThreadId: string): void {
+  const { directory, path } = receiptPath(key, nativeThreadId);
+  let previous: CodexInstructionReceipt | null;
+  try {
+    previous = parseReceipt(readFileSync(path, "utf8"));
+  } catch {
+    return;
+  }
+  if (!previous || (previous.volatile === undefined && previous.turnsSinceVolatile === undefined)) return;
+  mkdirSync(directory, { recursive: true });
+  writeFileAtomic(path, JSON.stringify({ instructions: previous.instructions }), { mode: 0o600 });
 }
 
 /** Preserve native configured rules when overriding Codex's developer slot. */
@@ -57,9 +81,9 @@ export async function syncCodexInstructions(
   resumed: boolean,
   request: (method: string, params: Record<string, unknown>) => Promise<unknown>,
   mentionTurn = false,
+  reAnchorAfterTurns = 0,
 ): Promise<{ deliverVolatile: boolean; hadVolatile: boolean; commitVolatile: (() => void) | null }> {
-  const directory = join(DATA_DIR, "codex-instructions");
-  const path = join(directory, `${digest(JSON.stringify([key, nativeThreadId]))}.sha256`);
+  const { directory, path } = receiptPath(key, nativeThreadId);
   const fingerprint = digest(instructions);
   const volatileFingerprint = digest(volatile);
   let previous: CodexInstructionReceipt | null;
@@ -92,18 +116,30 @@ export async function syncCodexInstructions(
       throw error;
     }
   }
-  const deliverVolatile = !resumed || previous?.volatile !== volatileFingerprint || mentionTurn;
+  const hasVolatile = Boolean(volatile.trim());
+  const turnsSinceVolatile = typeof previous?.turnsSinceVolatile === "number" ? previous.turnsSinceVolatile : 0;
+  const reAnchor = reAnchorAfterTurns > 0 && resumed && hasVolatile && previous?.volatile === volatileFingerprint && turnsSinceVolatile >= reAnchorAfterTurns;
+  const deliverVolatile = !resumed || previous?.volatile !== volatileFingerprint || mentionTurn || reAnchor;
   const hadVolatile = typeof previous?.volatile === "string" && previous.volatile !== digest("");
   if (!resumed || previous?.instructions !== fingerprint) {
     // The volatile digest stays pending until the provider accepts the turn, so a rejected one redelivers.
     mkdirSync(directory, { recursive: true });
     writeFileAtomic(path, JSON.stringify({ instructions: fingerprint }), { mode: 0o600 });
   }
-  const commitVolatile = previous?.instructions === fingerprint && previous?.volatile === volatileFingerprint
+  const trackReAnchor = reAnchorAfterTurns > 0 && hasVolatile;
+  const nextTurnsSinceVolatile = deliverVolatile ? 0 : turnsSinceVolatile + 1;
+  const receiptUnchanged = previous?.instructions === fingerprint
+    && previous?.volatile === volatileFingerprint
+    && (!trackReAnchor || previous?.turnsSinceVolatile === nextTurnsSinceVolatile);
+  const commitVolatile = receiptUnchanged
     ? null
     : () => {
         mkdirSync(directory, { recursive: true });
-        writeFileAtomic(path, JSON.stringify({ instructions: fingerprint, volatile: volatileFingerprint }), { mode: 0o600 });
+        writeFileAtomic(path, JSON.stringify({
+          instructions: fingerprint,
+          volatile: volatileFingerprint,
+          ...(trackReAnchor ? { turnsSinceVolatile: nextTurnsSinceVolatile } : {}),
+        }), { mode: 0o600 });
       };
   return { deliverVolatile, hadVolatile, commitVolatile };
 }

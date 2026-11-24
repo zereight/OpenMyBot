@@ -856,6 +856,46 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     expect(turnText(fourth)).toContain("fourth");
   });
 
+  it("re-delivers unchanged volatile memory on the turn after Codex contextCompaction", async () => {
+    await create({ mode: "resume" });
+    const memory = "Memory: delegate PR creation to PRCreator via coordinate_bots.";
+    const send = async (dumpName: string, text: string, cursor?: string, compact?: boolean) => {
+      process.env.FAKE_CODEX_DUMP = join(scratch, dumpName);
+      if (compact) process.env.FAKE_CODEX_COMPACTION = "1";
+      else delete process.env.FAKE_CODEX_COMPACTION;
+      const { turnId } = await instance.adapter.sendTurn({
+        threadId: "t-compaction-volatile",
+        text,
+        system: `Stable rules.\n\n${memory}`,
+        systemStable: "Stable rules.",
+        systemVolatile: memory,
+        ...(cursor ? { resumeCursor: cursor } : {}),
+      });
+      await recorder.until((event) => event.type === "turn.completed" && event.turnId === turnId);
+      delete process.env.FAKE_CODEX_COMPACTION;
+      return JSON.parse(readFileSync(join(scratch, dumpName), "utf8")).calls as Array<{
+        method: string;
+        params: Record<string, unknown>;
+      }>;
+    };
+    const turnText = (calls: Array<{ method: string; params: Record<string, unknown> }>) => {
+      const input = calls.find((c) => c.method === "turn/start")?.params?.input as Array<{ text?: string }> | undefined;
+      return input?.[0]?.text;
+    };
+
+    const first = await send("compact-1.json", "first");
+    expect(turnText(first)).toContain(memory);
+
+    const compacted = await send("compact-2.json", "second", "codex-thread-1", true);
+    expect(turnText(compacted)).toBe("second");
+    expect(recorder.events.some((event) => event.type === "context.compacted")).toBe(true);
+
+    const afterCompaction = await send("compact-3.json", "create PR", "codex-thread-1");
+    expect(turnText(afterCompaction)).toContain(memory);
+    expect(turnText(afterCompaction)).toContain("create PR");
+    expect(afterCompaction.some((c) => c.method === "thread/inject_items")).toBe(false);
+  });
+
   it("ignores requests received after turn completion", async () => {
     await create({ mode: "late-request" });
     await instance.adapter.sendTurn({ threadId: "t-late-request", text: "finish" });
