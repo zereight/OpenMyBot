@@ -12,11 +12,16 @@ export interface CodexInstructionReceipt {
   instructions: string;
   volatile?: string;
   turnsSinceVolatile?: number;
+  compactionStreak?: number;
+  volatileCooldownTurns?: number;
 }
 
 export const CODEX_VOLATILE_RE_ANCHOR_TURNS = 8;
+export const CODEX_VOLATILE_COOLDOWN_BASE = 2;
 
 const isFingerprint = (value: string) => /^[0-9a-f]{64}$/.test(value);
+const isNonNegativeInt = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0;
 
 function receiptPath(key: string, nativeThreadId: string): { directory: string; path: string } {
   const directory = join(DATA_DIR, "codex-instructions");
@@ -30,14 +35,20 @@ function parseReceipt(raw: string | undefined): CodexInstructionReceipt | null {
   try {
     const parsed = JSON.parse(trimmed) as unknown;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      const record = parsed as { instructions?: unknown; volatile?: unknown; turnsSinceVolatile?: unknown };
+      const record = parsed as {
+        instructions?: unknown;
+        volatile?: unknown;
+        turnsSinceVolatile?: unknown;
+        compactionStreak?: unknown;
+        volatileCooldownTurns?: unknown;
+      };
       if (typeof record.instructions === "string" && isFingerprint(record.instructions)) {
         return {
           instructions: record.instructions,
           ...(typeof record.volatile === "string" && isFingerprint(record.volatile) ? { volatile: record.volatile } : {}),
-          ...(typeof record.turnsSinceVolatile === "number" && Number.isInteger(record.turnsSinceVolatile) && record.turnsSinceVolatile >= 0
-            ? { turnsSinceVolatile: record.turnsSinceVolatile }
-            : {}),
+          ...(isNonNegativeInt(record.turnsSinceVolatile) ? { turnsSinceVolatile: record.turnsSinceVolatile } : {}),
+          ...(isNonNegativeInt(record.compactionStreak) && record.compactionStreak > 0 ? { compactionStreak: record.compactionStreak } : {}),
+          ...(isNonNegativeInt(record.volatileCooldownTurns) && record.volatileCooldownTurns > 0 ? { volatileCooldownTurns: record.volatileCooldownTurns } : {}),
         };
       }
     }
@@ -45,7 +56,11 @@ function parseReceipt(raw: string | undefined): CodexInstructionReceipt | null {
   return null;
 }
 
-export function invalidateCodexVolatile(key: string, nativeThreadId: string): void {
+export function invalidateCodexVolatile(
+  key: string,
+  nativeThreadId: string,
+  options: { deliveredVolatile?: boolean } = {},
+): void {
   const { directory, path } = receiptPath(key, nativeThreadId);
   let previous: CodexInstructionReceipt | null;
   try {
@@ -53,7 +68,20 @@ export function invalidateCodexVolatile(key: string, nativeThreadId: string): vo
   } catch {
     return;
   }
-  if (!previous || (previous.volatile === undefined && previous.turnsSinceVolatile === undefined)) return;
+  if (!previous) return;
+  if (options.deliveredVolatile) {
+    const streak = (previous.compactionStreak ?? 0) + 1;
+    const cooldown = Math.min(CODEX_VOLATILE_RE_ANCHOR_TURNS, CODEX_VOLATILE_COOLDOWN_BASE * (2 ** (streak - 1)));
+    mkdirSync(directory, { recursive: true });
+    writeFileAtomic(
+      path,
+      JSON.stringify({ instructions: previous.instructions, compactionStreak: streak, volatileCooldownTurns: cooldown }),
+      { mode: 0o600 },
+    );
+    return;
+  }
+  if (previous.volatileCooldownTurns && previous.volatileCooldownTurns > 0) return;
+  if (previous.volatile === undefined && previous.turnsSinceVolatile === undefined && !previous.compactionStreak) return;
   mkdirSync(directory, { recursive: true });
   writeFileAtomic(path, JSON.stringify({ instructions: previous.instructions }), { mode: 0o600 });
 }
@@ -118,19 +146,40 @@ export async function syncCodexInstructions(
   }
   const hasVolatile = Boolean(volatile.trim());
   const turnsSinceVolatile = typeof previous?.turnsSinceVolatile === "number" ? previous.turnsSinceVolatile : 0;
+  const cooldown = previous?.volatileCooldownTurns ?? 0;
+  const cooldownActive = resumed && !mentionTurn && hasVolatile && cooldown > 0;
   const reAnchor = reAnchorAfterTurns > 0 && resumed && hasVolatile && previous?.volatile === volatileFingerprint && turnsSinceVolatile >= reAnchorAfterTurns;
-  const deliverVolatile = !resumed || previous?.volatile !== volatileFingerprint || mentionTurn || reAnchor;
+  const deliverVolatile = cooldownActive ? false : (!resumed || previous?.volatile !== volatileFingerprint || mentionTurn || reAnchor);
   const hadVolatile = typeof previous?.volatile === "string" && previous.volatile !== digest("");
   if (!resumed || previous?.instructions !== fingerprint) {
     // The volatile digest stays pending until the provider accepts the turn, so a rejected one redelivers.
     mkdirSync(directory, { recursive: true });
     writeFileAtomic(path, JSON.stringify({ instructions: fingerprint }), { mode: 0o600 });
   }
+  if (cooldownActive) {
+    const remaining = cooldown - 1;
+    const streak = previous?.compactionStreak ?? 0;
+    return {
+      deliverVolatile: false,
+      hadVolatile,
+      commitVolatile: () => {
+        mkdirSync(directory, { recursive: true });
+        writeFileAtomic(path, JSON.stringify({
+          instructions: fingerprint,
+          ...(streak > 0 ? { compactionStreak: streak } : {}),
+          ...(remaining > 0 ? { volatileCooldownTurns: remaining } : {}),
+        }), { mode: 0o600 });
+      },
+    };
+  }
   const trackReAnchor = reAnchorAfterTurns > 0 && hasVolatile;
   const nextTurnsSinceVolatile = deliverVolatile ? 0 : turnsSinceVolatile + 1;
+  const preservedStreak = deliverVolatile ? (previous?.compactionStreak ?? 0) : 0;
   const receiptUnchanged = previous?.instructions === fingerprint
     && previous?.volatile === volatileFingerprint
-    && (!trackReAnchor || previous?.turnsSinceVolatile === nextTurnsSinceVolatile);
+    && (!trackReAnchor || previous?.turnsSinceVolatile === nextTurnsSinceVolatile)
+    && (previous?.compactionStreak ?? 0) === preservedStreak
+    && (previous?.volatileCooldownTurns ?? 0) === 0;
   const commitVolatile = receiptUnchanged
     ? null
     : () => {
@@ -139,6 +188,7 @@ export async function syncCodexInstructions(
           instructions: fingerprint,
           volatile: volatileFingerprint,
           ...(trackReAnchor ? { turnsSinceVolatile: nextTurnsSinceVolatile } : {}),
+          ...(preservedStreak > 0 ? { compactionStreak: preservedStreak } : {}),
         }), { mode: 0o600 });
       };
   return { deliverVolatile, hadVolatile, commitVolatile };
