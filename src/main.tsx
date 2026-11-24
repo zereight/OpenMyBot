@@ -18,12 +18,14 @@ import { TEAM_LEFT_REFUSAL } from "../shared/cloud-hints";
 import { HomeScreen, SignedOutAtHome } from "./components/HomeScreen";
 import { PageBoundary } from "./components/PageBoundary";
 import { installRendererErrorDiagnostics } from "./lib/renderer-diagnostics";
+import { installDevPerformanceTrim } from "./lib/dev-performance-trim";
 import { endedBeforeReload, forgetEndedSession } from "./lib/session-ended";
 import { signInGateShown } from "./lib/sign-in-gate";
 import { startDesktopLaunchMarks } from "./lib/launch-marks";
 import "./styles.css";
 
 installRendererErrorDiagnostics();
+if (import.meta.env.DEV) installDevPerformanceTrim();
 
 // Before first paint; settleInterfaceMode must run before applySkin writes omb-skin.
 settleInterfaceMode();
