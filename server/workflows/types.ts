@@ -7,6 +7,7 @@ export const WORKFLOW_RUNS_MAX_PER_WORKFLOW = 50;
 
 export const DOCUMENT_MAX = 20_000;
 export const NODES_MAX = 30;
+export const FALLBACKS_MAX = 3;
 export const OPTIONS_MIN = 2;
 export const OPTIONS_MAX = 20;
 export const QUESTION_MAX = 1_000;
@@ -35,6 +36,12 @@ export interface WorkflowOption {
   label: string;
 }
 
+export interface WorkflowModelTarget {
+  instanceId: string;
+  model: string | null;
+  effort: string | null;
+}
+
 export interface WorkflowNode {
   id: string;
   number: number;
@@ -44,6 +51,7 @@ export interface WorkflowNode {
   instanceId: string | null;
   model: string | null;
   effort: string | null;
+  fallbacks?: WorkflowModelTarget[];
   permission: WorkflowPermission | null;
   continueOnFailure: boolean;
   question: string;
@@ -74,6 +82,9 @@ export type WorkflowCheckProblemCode =
   | "too_many_nodes"
   | "duplicate_node_id"
   | "empty_node_name"
+  | "too_many_fallbacks"
+  | "invalid_fallback"
+  | "duplicate_fallback"
   | "too_few_options"
   | "too_many_options"
   | "invalid_option_id"
@@ -132,6 +143,9 @@ export interface WorkflowNodeRun {
   error?: string;
   startedAt: number | null;
   endedAt: number | null;
+  usedInstanceId?: string;
+  usedModel?: string;
+  fallbackAttempts?: number;
   chosenOptionId?: string | null;
   probabilities?: Record<string, number>;
   waitReason?: string;
