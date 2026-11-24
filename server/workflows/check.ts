@@ -1,5 +1,6 @@
 import {
   APPROVAL_OUTPUTS,
+  FALLBACKS_MAX,
   NODES_MAX,
   OPTION_ID_RE,
   OPTION_LABEL_MAX,
@@ -10,8 +11,13 @@ import {
   type WorkflowCheckProblem,
   type WorkflowConnection,
   type WorkflowGraph,
+  type WorkflowModelTarget,
   type WorkflowNode,
 } from "./types.ts";
+
+function targetKey(target: Pick<WorkflowModelTarget, "instanceId" | "model" | "effort">): string {
+  return `${target.instanceId.trim()}\u0000${target.model?.trim() ?? ""}\u0000${target.effort?.trim() ?? ""}`;
+}
 
 function connectionSourceKey(connection: WorkflowConnection): string {
   if (connection.source.kind === "option") return `option:${connection.source.optionId}`;
@@ -78,6 +84,48 @@ export function checkWorkflowGraph(graph: WorkflowGraph): WorkflowCheckOutcome {
         message: `Node #${node.number} needs a name.`,
         nodeIds: [node.id],
       });
+    }
+
+    const fallbacks = node.fallbacks ?? [];
+    if (fallbacks.length > 0) {
+      if (node.kind !== "text") {
+        problems.push({
+          code: "invalid_fallback",
+          message: `Only text nodes can configure model fallbacks ("${node.name || node.id}").`,
+          nodeIds: [node.id],
+        });
+      } else {
+        if (fallbacks.length > FALLBACKS_MAX) {
+          problems.push({
+            code: "too_many_fallbacks",
+            message: `Text node "${node.name || node.id}" can have at most ${FALLBACKS_MAX} fallbacks.`,
+            nodeIds: [node.id],
+          });
+        }
+        const seenTargets = new Set<string>();
+        if (node.instanceId?.trim()) {
+          seenTargets.add(targetKey({ instanceId: node.instanceId, model: node.model, effort: node.effort }));
+        }
+        for (const fallback of fallbacks) {
+          if (!fallback.instanceId?.trim()) {
+            problems.push({
+              code: "invalid_fallback",
+              message: `Fallback on node "${node.name || node.id}" needs an engine instanceId.`,
+              nodeIds: [node.id],
+            });
+            continue;
+          }
+          const key = targetKey(fallback);
+          if (seenTargets.has(key)) {
+            problems.push({
+              code: "duplicate_fallback",
+              message: `Duplicate fallback target "${fallback.instanceId}" on node "${node.name || node.id}".`,
+              nodeIds: [node.id],
+            });
+          }
+          seenTargets.add(key);
+        }
+      }
     }
 
     if (node.kind === "decision") {

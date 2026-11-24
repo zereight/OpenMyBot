@@ -22,7 +22,7 @@ export const WORKFLOW_TOOL_DEFINITIONS = [
   {
     name: "workflow",
     description:
-      "Create, update, run or cancel a workflow the person asked for. graph is {nodes:[{id,kind,name,prompt,question,options:[{id,label}],threshold,instance_id,model,effort,permission,continue_on_failure}],connections:[{from,to,when}]}, the shape workflow_info shows; it replaces the whole graph, so read with workflow_info first before updating and include all steps and connections to keep (kept ids keep their place). kind text is an AI turn: prompt, where {{trigger}} is the run's input and {{input}} the steps before; decision picks an option (when: its id); approval waits for the person (when: approve or reject). Steps never run above your own permission.",
+      "Create, update, run or cancel a workflow the person asked for. graph is {nodes:[{id,kind,name,prompt,question,options:[{id,label}],threshold,instance_id,model,effort,fallbacks:[{instance_id,model,effort}],permission,continue_on_failure}],connections:[{from,to,when}]}, the shape workflow_info shows; it replaces the whole graph, so read with workflow_info first before updating and include all steps and connections to keep (kept ids keep their place). kind text is an AI turn: prompt, where {{trigger}} is the run's input and {{input}} the steps before (optional fallbacks, up to 3, run in order on pre-side-effect engine/auth/quota/overload failures); decision picks an option (when: its id); approval waits for the person (when: approve or reject). Steps never run above your own permission.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

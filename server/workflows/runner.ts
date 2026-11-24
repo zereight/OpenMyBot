@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { EffortLevel, ProviderAdapter, RuntimeEvent, SendTurnInput } from "../contracts.ts";
 import type { Decider } from "../decider/index.ts";
+import { engineFailureKind } from "../drivers/engine-errors.ts";
+import { classifyError } from "../drivers/retry.ts";
 import { checkWorkflowGraph } from "./check.ts";
 import type { WorkflowStore } from "./store.ts";
 import {
@@ -12,12 +14,57 @@ import {
   WORKFLOW_THREAD_PREFIX,
   type Workflow,
   type WorkflowConnection,
+  type WorkflowModelTarget,
   type WorkflowNode,
   type WorkflowNodeRun,
   type WorkflowRespondInput,
   type WorkflowRun,
   type WorkflowSummary,
 } from "./types.ts";
+
+interface TextNodeTarget {
+  instanceId: string | null;
+  model: string | null;
+  effort: string | null;
+}
+
+type TextAttemptResult =
+  | { ok: true; output: string }
+  | { ok: false; error: string; cancelled?: boolean; fallbackEligible: boolean };
+
+type TextNodeResult =
+  | { ok: true; output: string; usedInstanceId: string; usedModel?: string; fallbackAttempts: number }
+  | { ok: false; error: string; cancelled?: boolean; fallbackAttempts: number };
+
+function isFallbackEligibleFailure(input: {
+  stopReason?: string | null;
+  errorText: string;
+  limit?: "engine" | "model" | "credits";
+  trialCredit?: string;
+}): boolean {
+  if (input.stopReason === "auth_required") return true;
+  if (input.limit !== undefined || input.trialCredit !== undefined) return true;
+  const classified = classifyError({ text: input.errorText });
+  if (classified.transient) {
+    if (classified.reason === "rate_limited" || classified.reason === "overloaded" || classified.reason === "server_error") return true;
+  } else if (classified.reason === "auth" || classified.reason === "quota" || classified.reason === "unknown_model") {
+    return true;
+  }
+  const kind = engineFailureKind(input.errorText);
+  return kind === "credits" || kind === "usage_limit" || kind === "rate_limit" || kind === "overloaded" || kind === "model_no_route";
+}
+
+function nodeTargets(node: WorkflowNode): TextNodeTarget[] {
+  const primary: TextNodeTarget = { instanceId: node.instanceId, model: node.model, effort: node.effort };
+  const fallbacks: WorkflowModelTarget[] = node.fallbacks ?? [];
+  return [primary, ...fallbacks];
+}
+
+function targetLabel(target: TextNodeTarget, resolvedInstanceId?: string, resolvedModel?: string): string {
+  const instance = resolvedInstanceId ?? target.instanceId ?? "default";
+  const model = resolvedModel ?? target.model;
+  return model ? `${instance}/${model}` : instance;
+}
 
 export interface WorkflowAdapterEntry {
   instanceId: string;
@@ -153,12 +200,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps): WorkflowRunner {
     }
   >();
 
-  async function executeTextNode(run: WorkflowRun, node: WorkflowNode, input: string): Promise<{ ok: true; output: string } | { ok: false; error: string; cancelled?: boolean }> {
-    const entry = deps.getAdapter(node.instanceId);
-    if (!entry) {
-      return { ok: false, error: node.instanceId ? `Engine "${node.instanceId}" is not available.` : "No AI engine is configured." };
-    }
-
+  async function executeTextNode(run: WorkflowRun, node: WorkflowNode, input: string): Promise<TextNodeResult> {
     let cwd: string;
     try {
       cwd = deps.store.ensureWorkspaceDir({
@@ -172,110 +214,233 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps): WorkflowRunner {
         updatedAt: run.startedAt,
       });
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: err instanceof Error ? err.message : String(err), fallbackAttempts: 0 };
     }
 
     const slotThreadId = await slots.acquire();
     const control = activeRuns.get(run.id);
     if (!control || control.cancelled) {
       slots.release(slotThreadId);
-      return { ok: false, error: "Run cancelled", cancelled: true };
+      return { ok: false, error: "Run cancelled", cancelled: true, fallbackAttempts: 0 };
     }
 
     const approvalMode: SendTurnInput["approvalMode"] = node.permission ?? run.permission;
     const promptText = renderNodePrompt(node.prompt, input, run.triggerText);
-    const model = node.model || entry.defaultModel;
-    const effort = (node.effort || undefined) as EffortLevel | undefined;
+    const targets = nodeTargets(node);
+    const deadline = Date.now() + nodeTimeoutMs;
+    const attemptErrors: string[] = [];
 
+    try {
+      for (const [index, target] of targets.entries()) {
+        if (control.cancelled) {
+          return { ok: false, error: "Run cancelled", cancelled: true, fallbackAttempts: index };
+        }
+        const entry = deps.getAdapter(target.instanceId);
+        if (!entry) {
+          const error = target.instanceId ? `Engine "${target.instanceId}" is not available.` : "No AI engine is configured.";
+          attemptErrors.push(`${targetLabel(target)}: ${error}`);
+          if (index + 1 < targets.length) continue;
+          return {
+            ok: false,
+            error: targets.length === 1 ? error : `All model targets failed: ${attemptErrors.join("; ")}`,
+            fallbackAttempts: index,
+          };
+        }
+
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) {
+          return {
+            ok: false,
+            error: `Node timed out after ${Math.round(nodeTimeoutMs / 1000)}s.`,
+            fallbackAttempts: index,
+          };
+        }
+
+        const model = target.model || entry.defaultModel;
+        const effort = (target.effort || undefined) as EffortLevel | undefined;
+        const attempt = await runSingleAttempt(entry, {
+          slotThreadId,
+          promptText,
+          system: run.document || undefined,
+          model,
+          effort,
+          approvalMode,
+          cwd,
+          remainingMs,
+          nodeTimeoutMs,
+          control,
+        });
+
+        if (attempt.ok) {
+          return {
+            ok: true,
+            output: attempt.output,
+            usedInstanceId: entry.instanceId,
+            ...(model ? { usedModel: model } : {}),
+            fallbackAttempts: index,
+          };
+        }
+        if (attempt.cancelled || control.cancelled) {
+          return { ok: false, error: attempt.error, cancelled: true, fallbackAttempts: index };
+        }
+        attemptErrors.push(`${targetLabel(target, entry.instanceId, model)}: ${attempt.error}`);
+        if (!attempt.fallbackEligible || index + 1 >= targets.length) {
+          return {
+            ok: false,
+            error: targets.length === 1 || !attempt.fallbackEligible ? attempt.error : `All model targets failed: ${attemptErrors.join("; ")}`,
+            fallbackAttempts: index,
+          };
+        }
+      }
+
+      return {
+        ok: false,
+        error: `All model targets failed: ${attemptErrors.join("; ")}`,
+        fallbackAttempts: Math.max(0, targets.length - 1),
+      };
+    } finally {
+      slots.release(slotThreadId);
+    }
+  }
+
+  function runSingleAttempt(
+    entry: WorkflowAdapterEntry,
+    params: {
+      slotThreadId: string;
+      promptText: string;
+      system?: string;
+      model?: string;
+      effort?: EffortLevel;
+      approvalMode: SendTurnInput["approvalMode"];
+      cwd: string;
+      remainingMs: number;
+      nodeTimeoutMs: number;
+      control: { cancelled: boolean; interrupt?: () => Promise<void> };
+    },
+  ): Promise<TextAttemptResult> {
     let turnId: string | undefined;
     let settled = false;
     const completedItems: string[] = [];
     let streamedText = "";
+    let hasSideEffectOrOutput = false;
+    let lastRuntimeError: { message: string; limit?: "engine" | "model" | "credits"; trialCredit?: string } | undefined;
 
-    try {
-      return await new Promise((resolve) => {
-        let timer: ReturnType<typeof setTimeout> | undefined;
+    return new Promise((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
 
-        const finish = (result: { ok: true; output: string } | { ok: false; error: string; cancelled?: boolean }) => {
-          if (settled) return;
-          settled = true;
-          if (timer) clearTimeout(timer);
-          unsubscribe();
-          if (control) control.interrupt = undefined;
-          resolve(result);
-        };
+      const finish = (result: TextAttemptResult) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        unsubscribe();
+        params.control.interrupt = undefined;
+        resolve(result);
+      };
 
-        const unsubscribe = entry.adapter.onEvent((event: RuntimeEvent) => {
-          if (event.threadId !== slotThreadId) return;
-          if (turnId && event.turnId && event.turnId !== turnId) return;
+      const unsubscribe = entry.adapter.onEvent((event: RuntimeEvent) => {
+        if (event.threadId !== params.slotThreadId) return;
+        if (turnId && event.turnId && event.turnId !== turnId) return;
 
-          if (event.type === "content.delta" && event.streamKind === "assistant_text") {
-            streamedText += event.delta;
+        if (event.type === "content.delta" && event.streamKind === "assistant_text") {
+          if (event.delta.length > 0) hasSideEffectOrOutput = true;
+          streamedText += event.delta;
+          return;
+        }
+        if (event.type === "item.completed" && event.itemType === "assistant_text") {
+          if (event.text.length > 0) hasSideEffectOrOutput = true;
+          completedItems.push(event.text);
+          return;
+        }
+        if ((event.type === "item.started" || event.type === "item.completed") && event.itemType === "tool") {
+          hasSideEffectOrOutput = true;
+          return;
+        }
+        if (event.type === "runtime.error") {
+          lastRuntimeError = { message: event.message, limit: event.limit, trialCredit: event.trialCredit };
+          return;
+        }
+        if (event.type === "request.opened" && event.requestId) {
+          hasSideEffectOrOutput = true;
+          const behavior = params.approvalMode === "full" && event.requestType === "permission" ? "allow" : "deny";
+          void entry.adapter
+            .respondToRequest(params.slotThreadId, event.requestId, {
+              behavior,
+              ...(behavior === "deny" ? { message: "Interactive prompts are disabled during workflow runs." } : {}),
+            })
+            .catch(() => {});
+          return;
+        }
+        if (event.type === "turn.completed") {
+          if (params.control.cancelled) {
+            finish({ ok: false, error: "Run cancelled", cancelled: true, fallbackEligible: false });
             return;
           }
-          if (event.type === "item.completed" && event.itemType === "assistant_text") {
-            completedItems.push(event.text);
-            return;
+          const output = (completedItems.length > 0 ? completedItems.join("\n\n") : streamedText).trim();
+          if (event.ok) {
+            finish({ ok: true, output });
+          } else {
+            const errorText = lastRuntimeError?.message || event.stopReason || "Turn failed";
+            finish({
+              ok: false,
+              error: errorText,
+              fallbackEligible:
+                !hasSideEffectOrOutput &&
+                isFallbackEligibleFailure({
+                  stopReason: event.stopReason,
+                  errorText,
+                  limit: lastRuntimeError?.limit,
+                  trialCredit: lastRuntimeError?.trialCredit,
+                }),
+            });
           }
-          if (event.type === "request.opened" && event.requestId) {
-            const behavior = approvalMode === "full" && event.requestType === "permission" ? "allow" : "deny";
-            void entry.adapter
-              .respondToRequest(slotThreadId, event.requestId, {
-                behavior,
-                ...(behavior === "deny" ? { message: "Interactive prompts are disabled during workflow runs." } : {}),
-              })
-              .catch(() => {});
-            return;
-          }
-          if (event.type === "turn.completed") {
-            if (control.cancelled) {
-              finish({ ok: false, error: "Run cancelled", cancelled: true });
-              return;
-            }
-            const output = (completedItems.length > 0 ? completedItems.join("\n\n") : streamedText).trim();
-            if (event.ok) {
-              finish({ ok: true, output });
-            } else {
-              finish({ ok: false, error: event.stopReason || "Turn failed" });
-            }
-          }
-        });
-
-        control.interrupt = async () => {
-          await entry.adapter.interruptTurn(slotThreadId, turnId).catch(() => {});
-          finish({ ok: false, error: "Run cancelled", cancelled: true });
-        };
-
-        timer = setTimeout(() => {
-          void entry.adapter.interruptTurn(slotThreadId, turnId).catch(() => {});
-          finish({ ok: false, error: `Node timed out after ${Math.round(nodeTimeoutMs / 1000)}s.` });
-        }, nodeTimeoutMs);
-
-        void entry.adapter
-          .sendTurn({
-            threadId: slotThreadId,
-            text: promptText,
-            system: run.document || undefined,
-            model,
-            effort,
-            approvalMode,
-            cwd,
-            sessionReset: true,
-          })
-          .then((started) => {
-            turnId = started.turnId;
-            if (control.cancelled) {
-              void entry.adapter.interruptTurn(slotThreadId, turnId).catch(() => {});
-              finish({ ok: false, error: "Run cancelled", cancelled: true });
-            }
-          })
-          .catch((err) => {
-            finish({ ok: false, error: err instanceof Error ? err.message : String(err) });
-          });
+        }
       });
-    } finally {
-      slots.release(slotThreadId);
-    }
+
+      params.control.interrupt = async () => {
+        await entry.adapter.interruptTurn(params.slotThreadId, turnId).catch(() => {});
+        finish({ ok: false, error: "Run cancelled", cancelled: true, fallbackEligible: false });
+      };
+
+      timer = setTimeout(() => {
+        void entry.adapter
+          .interruptTurn(params.slotThreadId, turnId)
+          .catch(() => {})
+          .finally(() => {
+            finish({
+              ok: false,
+              error: `Node timed out after ${Math.round(params.nodeTimeoutMs / 1000)}s.`,
+              fallbackEligible: false,
+            });
+          });
+      }, params.remainingMs);
+
+      void entry.adapter
+        .sendTurn({
+          threadId: params.slotThreadId,
+          text: params.promptText,
+          system: params.system,
+          model: params.model,
+          effort: params.effort,
+          approvalMode: params.approvalMode,
+          cwd: params.cwd,
+          sessionReset: true,
+        })
+        .then((started) => {
+          turnId = started.turnId;
+          if (params.control.cancelled) {
+            void entry.adapter.interruptTurn(params.slotThreadId, turnId).catch(() => {});
+            finish({ ok: false, error: "Run cancelled", cancelled: true, fallbackEligible: false });
+          }
+        })
+        .catch((err) => {
+          const message = err instanceof Error ? err.message : String(err);
+          finish({
+            ok: false,
+            error: message,
+            fallbackEligible: !hasSideEffectOrOutput && isFallbackEligibleFailure({ errorText: message }),
+          });
+        });
+    });
   }
 
   async function executeDecisionNode(run: WorkflowRun, node: WorkflowNode, input: string): Promise<boolean> {
@@ -399,9 +564,12 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps): WorkflowRunner {
         }
 
         const result = await executeTextNode(run, nextNode, input);
+        if (result.fallbackAttempts > 0) nodeRun.fallbackAttempts = result.fallbackAttempts;
         if (result.ok) {
           nodeRun.state = "done";
           nodeRun.output = result.output;
+          nodeRun.usedInstanceId = result.usedInstanceId;
+          if (result.usedModel) nodeRun.usedModel = result.usedModel;
           nodeRun.endedAt = Date.now();
           deps.store.saveRun(run);
         } else if (result.cancelled || control.cancelled) {

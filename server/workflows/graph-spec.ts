@@ -8,11 +8,18 @@ import {
   type WorkflowConnection,
   type WorkflowConnectionSource,
   type WorkflowGraph,
+  type WorkflowModelTarget,
   type WorkflowNode,
   type WorkflowNodeKind,
   type WorkflowOption,
   type WorkflowPermission,
 } from "./types.ts";
+
+export interface WorkflowModelTargetSpec {
+  instance_id: string;
+  model?: string;
+  effort?: string;
+}
 
 /** A workflow step as a bot reads and writes it in chat: no canvas position, no number, no blank fields. */
 export interface WorkflowNodeSpec {
@@ -26,6 +33,7 @@ export interface WorkflowNodeSpec {
   instance_id?: string;
   model?: string;
   effort?: string;
+  fallbacks?: WorkflowModelTargetSpec[];
   permission?: WorkflowPermission;
   continue_on_failure?: boolean;
 }
@@ -71,6 +79,13 @@ export function specFromGraph(graph: WorkflowGraph): WorkflowGraphSpec {
         if (node.instanceId) spec.instance_id = node.instanceId;
         if (node.model) spec.model = node.model;
         if (node.effort) spec.effort = node.effort;
+        if (node.fallbacks?.length) {
+          spec.fallbacks = node.fallbacks.map((target) => ({
+            instance_id: target.instanceId,
+            ...(target.model ? { model: target.model } : {}),
+            ...(target.effort ? { effort: target.effort } : {}),
+          }));
+        }
         if (node.permission) spec.permission = node.permission;
       } else {
         spec.question = node.question;
@@ -97,6 +112,14 @@ function parseNode(raw: unknown, at: string): Omit<WorkflowNode, "number" | "x" 
   if (raw.permission !== undefined && !(WORKFLOW_PERMISSIONS as readonly unknown[]).includes(raw.permission)) return `${at}.permission must be full, edits or ask.`;
   if (raw.threshold !== undefined && typeof raw.threshold !== "number") return `${at}.threshold must be a number from 0 to 1.`;
   if (raw.options !== undefined && !Array.isArray(raw.options)) return `${at}.options must be a list of {id, label}.`;
+  if (raw.fallbacks !== undefined && !Array.isArray(raw.fallbacks)) return `${at}.fallbacks must be a list of {instance_id, model?, effort?}.`;
+  const fallbacks: WorkflowModelTarget[] = [];
+  for (const [index, entry] of ((raw.fallbacks as unknown[] | undefined) ?? []).entries()) {
+    if (!isRecord(entry)) return `${at}.fallbacks[${index}] must be an object.`;
+    const instanceId = optionalText(entry.instance_id);
+    if (!instanceId) return `${at}.fallbacks[${index}].instance_id is required.`;
+    fallbacks.push({ instanceId, model: optionalText(entry.model), effort: optionalText(entry.effort) });
+  }
   const options: WorkflowOption[] = [];
   for (const [index, option] of ((raw.options as unknown[] | undefined) ?? []).entries()) {
     if (!isRecord(option) || typeof option.id !== "string") return `${at}.options[${index}] needs an id.`;
@@ -110,6 +133,7 @@ function parseNode(raw: unknown, at: string): Omit<WorkflowNode, "number" | "x" 
     instanceId: optionalText(raw.instance_id),
     model: optionalText(raw.model),
     effort: optionalText(raw.effort),
+    ...(fallbacks.length ? { fallbacks } : {}),
     permission: (raw.permission as WorkflowPermission | undefined) ?? null,
     continueOnFailure: raw.continue_on_failure === true,
     question: typeof raw.question === "string" ? raw.question : "",
