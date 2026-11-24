@@ -896,6 +896,47 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     expect(afterCompaction.some((c) => c.method === "thread/inject_items")).toBe(false);
   });
 
+  it("backs off volatile re-delivery for 2 turns when volatile injection itself triggers contextCompaction", async () => {
+    await create({ mode: "resume" });
+    const memory = "Memory: large volatile context.";
+    const send = async (dumpName: string, text: string, cursor?: string, compact?: boolean) => {
+      process.env.FAKE_CODEX_DUMP = join(scratch, dumpName);
+      if (compact) process.env.FAKE_CODEX_COMPACTION = "1";
+      else delete process.env.FAKE_CODEX_COMPACTION;
+      const { turnId } = await instance.adapter.sendTurn({
+        threadId: "t-compaction-backoff",
+        text,
+        system: `Stable rules.\n\n${memory}`,
+        systemStable: "Stable rules.",
+        systemVolatile: memory,
+        ...(cursor ? { resumeCursor: cursor } : {}),
+      });
+      await recorder.until((event) => event.type === "turn.completed" && event.turnId === turnId);
+      delete process.env.FAKE_CODEX_COMPACTION;
+      return JSON.parse(readFileSync(join(scratch, dumpName), "utf8")).calls as Array<{
+        method: string;
+        params: Record<string, unknown>;
+      }>;
+    };
+    const turnText = (calls: Array<{ method: string; params: Record<string, unknown> }>) => {
+      const input = calls.find((c) => c.method === "turn/start")?.params?.input as Array<{ text?: string }> | undefined;
+      return input?.[0]?.text;
+    };
+
+    const first = await send("backoff-1.json", "turn 1", undefined, true);
+    expect(turnText(first)).toContain(memory);
+
+    const cool1 = await send("backoff-2.json", "turn 2", "codex-thread-1");
+    expect(turnText(cool1)).toBe("turn 2");
+
+    const cool2 = await send("backoff-3.json", "turn 3", "codex-thread-1");
+    expect(turnText(cool2)).toBe("turn 3");
+
+    const retried = await send("backoff-4.json", "turn 4", "codex-thread-1");
+    expect(turnText(retried)).toContain(memory);
+    expect(turnText(retried)).toContain("turn 4");
+  });
+
   it("ignores requests received after turn completion", async () => {
     await create({ mode: "late-request" });
     await instance.adapter.sendTurn({ threadId: "t-late-request", text: "finish" });

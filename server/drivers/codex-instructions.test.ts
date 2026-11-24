@@ -185,4 +185,70 @@ describe("Codex instruction receipts", () => {
       expect(bare.commitVolatile).toBeNull();
     }
   });
+
+  it("backs off volatile re-delivery (2 -> 4 -> 8 turns) when volatile delivery itself triggers compaction, and resets after a clean turn", async () => {
+    const key = randomUUID();
+    const request = vi.fn().mockResolvedValue({});
+    const memory = "Memory: large context block.";
+    const sync = (resumed: boolean, mentionTurn = false) =>
+      syncCodexInstructions(key, "native", "rules", memory, resumed, request, mentionTurn, CODEX_VOLATILE_RE_ANCHOR_TURNS);
+
+    const first = await sync(false);
+    first.commitVolatile?.();
+    invalidateCodexVolatile(key, "native", { deliveredVolatile: true });
+
+    for (let i = 0; i < 2; i++) {
+      const skipped = await sync(true);
+      expect(skipped.deliverVolatile).toBe(false);
+      skipped.commitVolatile?.();
+    }
+
+    const retry1 = await sync(true);
+    expect(retry1.deliverVolatile).toBe(true);
+    retry1.commitVolatile?.();
+    invalidateCodexVolatile(key, "native", { deliveredVolatile: true });
+
+    for (let i = 0; i < 4; i++) {
+      const skipped = await sync(true);
+      expect(skipped.deliverVolatile).toBe(false);
+      skipped.commitVolatile?.();
+    }
+
+    const retry2 = await sync(true);
+    expect(retry2.deliverVolatile).toBe(true);
+    retry2.commitVolatile?.();
+    invalidateCodexVolatile(key, "native", { deliveredVolatile: true });
+
+    for (let i = 0; i < 8; i++) {
+      const skipped = await sync(true);
+      expect(skipped.deliverVolatile).toBe(false);
+      skipped.commitVolatile?.();
+    }
+
+    const retry3 = await sync(true);
+    expect(retry3.deliverVolatile).toBe(true);
+    retry3.commitVolatile?.();
+
+    const cleanBare = await sync(true);
+    expect(cleanBare.deliverVolatile).toBe(false);
+    cleanBare.commitVolatile?.();
+    expect(JSON.parse(readFileSync(receiptPath(key, "native"), "utf8")).compactionStreak).toBeUndefined();
+
+    invalidateCodexVolatile(key, "native", { deliveredVolatile: false });
+    const immediateAfterBareCompaction = await sync(true);
+    expect(immediateAfterBareCompaction.deliverVolatile).toBe(true);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("still delivers volatile context on an explicit mention turn during compaction cooldown", async () => {
+    const key = randomUUID();
+    const request = vi.fn().mockResolvedValue({});
+    const first = await syncCodexInstructions(key, "native", "rules", "Memory: tagged", false, request, false, CODEX_VOLATILE_RE_ANCHOR_TURNS);
+    first.commitVolatile?.();
+    invalidateCodexVolatile(key, "native", { deliveredVolatile: true });
+
+    const tagged = await syncCodexInstructions(key, "native", "rules", "Memory: tagged", true, request, true, CODEX_VOLATILE_RE_ANCHOR_TURNS);
+    expect(tagged.deliverVolatile).toBe(true);
+    expect(request).not.toHaveBeenCalled();
+  });
 });

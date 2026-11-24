@@ -555,7 +555,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         }, "bot")));
         const child = connection.child;
 
-      let abandoned = false, resumedNativeThread = false, compactionObserved = false;
+      let abandoned = false, resumedNativeThread = false, compactionObserved = false, deliveredVolatile = false;
       let codexThreadId: string | null = null;
       let codexTurnId: string | null = null;
       let startingNativeTurn = false;
@@ -1040,7 +1040,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
                 }
               }
             } else if (item.type === "reasoning" || item.type === "contextCompaction") {
-              if (item.type === "contextCompaction") { compactionObserved = true; if (codexThreadId) invalidateCodexVolatile(threadId, codexThreadId); }
+              if (item.type === "contextCompaction") { compactionObserved = true; if (codexThreadId) invalidateCodexVolatile(threadId, codexThreadId, { deliveredVolatile }); }
               emit(item.type === "reasoning" ? { ...base(threadId, turnId), type: "item.updated", itemType: "reasoning", tokens: null } : { ...base(threadId, turnId), type: "context.compacted" });
             }
             break;
@@ -1338,7 +1338,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           Boolean(turn.mentionTurn), CODEX_VOLATILE_RE_ANCHOR_TURNS,
         );
         if (deliverVolatile) {
-          promptText = withContextNote(
+          deliveredVolatile = true; promptText = withContextNote(
             volatileContextNote(promptSplit ? turn.systemVolatile ?? "" : "", hadVolatile),
             promptText,
           );
