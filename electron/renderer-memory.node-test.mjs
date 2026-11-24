@@ -4,6 +4,7 @@ import {
   applyRendererHeapLimit,
   DEFAULT_MAX_OLD_SPACE_MB,
   formatRendererMemoryLine,
+  sampleRendererJsHeapMb,
   sampleRendererMemory,
   startRendererMemoryMonitor,
 } from "./renderer-memory.mjs";
@@ -17,6 +18,7 @@ describe("applyRendererHeapLimit", () => {
     };
     assert.equal(applyRendererHeapLimit(commandLine), true);
     assert.equal(switches.get("js-flags"), `--max-old-space-size=${DEFAULT_MAX_OLD_SPACE_MB}`);
+    assert.equal(switches.has("enable-precise-memory-info"), true);
   });
 
   it("preserves existing js-flags when appending max-old-space-size", () => {
@@ -62,20 +64,53 @@ describe("renderer memory monitor", () => {
     );
   });
 
-  it("logs on interval and clears its timer on stop", () => {
+  it("omits win32-only private= on macOS and includes jsHeap + nonJsEst when available", () => {
+    const line = formatRendererMemoryLine(
+      { pid: 55198, workingSetMb: 499.2, peakWorkingSetMb: 571.8, privateMb: null, jsHeapMb: 62.4 },
+      2048,
+    );
+    assert.equal(
+      line,
+      "[renderer-memory] pid=55198 workingSet=499.2MB peak=571.8MB jsHeap=62.4MB nonJsEst=436.8MB",
+    );
+  });
+
+  it("reads JS heap via executeJavaScript and falls back to null on timeout", async () => {
+    const okMb = await sampleRendererJsHeapMb({
+      getMainWindow: () => ({
+        isDestroyed: () => false,
+        webContents: { isDestroyed: () => false, isCrashed: () => false, executeJavaScript: async () => 65_431_142 },
+      }),
+    });
+    assert.equal(okMb, 62.4);
+
+    const timedOutMb = await sampleRendererJsHeapMb({
+      getMainWindow: () => ({
+        isDestroyed: () => false,
+        webContents: { isDestroyed: () => false, isCrashed: () => false, executeJavaScript: () => new Promise(() => {}) },
+      }),
+      timeoutMs: 20,
+    });
+    assert.equal(timedOutMb, null);
+  });
+
+  it("logs on interval and clears its timer on stop", async () => {
     const lines = [];
     let tick = null;
     let cleared = false;
     const monitor = startRendererMemoryMonitor({
       app: { getAppMetrics: () => [{ pid: 42, type: "Tab", memory: { workingSetSize: 512 * 1024 } }] },
-      getMainWindow: () => null,
+      getMainWindow: () => ({
+        isDestroyed: () => false,
+        webContents: { isDestroyed: () => false, isCrashed: () => false, getOSProcessId: () => 42, executeJavaScript: async () => 64 * 1024 * 1024 },
+      }),
       log: (line) => lines.push(line),
       intervalMs: 1000,
       setTimer: (fn) => { tick = fn; return { unref() {} }; },
       clearTimer: () => { cleared = true; },
     });
-    tick();
-    assert.deepEqual(lines, ["[renderer-memory] pid=42 workingSet=512MB"]);
+    await tick();
+    assert.deepEqual(lines, ["[renderer-memory] pid=42 workingSet=512MB jsHeap=64MB nonJsEst=448MB"]);
     monitor.stop();
     assert.equal(cleared, true);
   });
