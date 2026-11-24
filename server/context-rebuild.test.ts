@@ -115,6 +115,13 @@ describe("tool history in a rebuilt session", () => {
       expect(toolReplayLine({ name: "Read", ok: true })).toBe("[ran: Read — ok]");
     });
 
+    it("preserves teammate targets from coordinate_bots bot_ids input", () => {
+      const input = JSON.stringify({ bot_ids: ["PRCreator"], message: "Create Bitbucket PR" }, null, 2);
+      expect(toolReplayLine({ name: "coordinate_bots", input, ok: true })).toBe("[ran: coordinate_bots: PRCreator — ok]");
+      const multi = JSON.stringify({ bot_ids: ["PRCreator", "PR Reviewer"], message: "Create and review" }, null, 2);
+      expect(toolReplayLine({ name: "coordinate_bots", input: multi, ok: true })).toBe("[ran: coordinate_bots: PRCreator, PR Reviewer — ok]");
+    });
+
     it("shows a command-titled chip once, the way the chat does", () => {
       // Codex and ACP title the chip with the command itself
       expect(toolReplayLine({ name: "git status --short", summary: "git status --short", ok: true })).toBe("[ran: git status --short — ok]");

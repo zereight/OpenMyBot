@@ -3,7 +3,12 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { DATA_DIR } from "../config.ts";
-import { codexDeveloperInstructions, syncCodexInstructions } from "./codex-instructions.ts";
+import {
+  CODEX_VOLATILE_RE_ANCHOR_TURNS,
+  codexDeveloperInstructions,
+  invalidateCodexVolatile,
+  syncCodexInstructions,
+} from "./codex-instructions.ts";
 
 const receiptPath = (key: string, nativeThreadId: string) =>
   join(DATA_DIR, "codex-instructions", `${createHash("sha256").update(JSON.stringify([key, nativeThreadId])).digest("hex")}.sha256`);
@@ -127,5 +132,57 @@ describe("Codex instruction receipts", () => {
     const after = await syncCodexInstructions(key, "native", "rules", "memory v1", true, request);
     expect(after.deliverVolatile).toBe(false);
     expect(after.commitVolatile).toBeNull();
+  });
+
+  it("re-delivers unchanged volatile context after compaction invalidates the receipt without touching developer rules", async () => {
+    const key = randomUUID();
+    const request = vi.fn().mockResolvedValue({});
+    const first = await syncCodexInstructions(key, "native", "rules", "Memory: delegate PRs to PRCreator.", false, request, false, CODEX_VOLATILE_RE_ANCHOR_TURNS);
+    first.commitVolatile?.();
+    const bare = await syncCodexInstructions(key, "native", "rules", "Memory: delegate PRs to PRCreator.", true, request, false, CODEX_VOLATILE_RE_ANCHOR_TURNS);
+    expect(bare.deliverVolatile).toBe(false);
+    bare.commitVolatile?.();
+
+    invalidateCodexVolatile(key, "native");
+
+    const afterCompaction = await syncCodexInstructions(key, "native", "rules", "Memory: delegate PRs to PRCreator.", true, request, false, CODEX_VOLATILE_RE_ANCHOR_TURNS);
+    expect(afterCompaction.deliverVolatile).toBe(true);
+    expect(request).not.toHaveBeenCalled();
+    afterCompaction.commitVolatile?.();
+
+    const steady = await syncCodexInstructions(key, "native", "rules", "Memory: delegate PRs to PRCreator.", true, request, false, CODEX_VOLATILE_RE_ANCHOR_TURNS);
+    expect(steady.deliverVolatile).toBe(false);
+  });
+
+  it("re-anchors unchanged volatile context after the configured number of bare turns and skips re-anchoring when empty", async () => {
+    const key = randomUUID();
+    const request = vi.fn().mockResolvedValue({});
+    const reAnchorAfter = 3;
+    const first = await syncCodexInstructions(key, "native", "rules", "Memory: delegate PRs to PRCreator.", false, request, false, reAnchorAfter);
+    expect(first.deliverVolatile).toBe(true);
+    first.commitVolatile?.();
+
+    for (let turn = 0; turn < reAnchorAfter; turn++) {
+      const bare = await syncCodexInstructions(key, "native", "rules", "Memory: delegate PRs to PRCreator.", true, request, false, reAnchorAfter);
+      expect(bare.deliverVolatile).toBe(false);
+      bare.commitVolatile?.();
+    }
+
+    const reAnchored = await syncCodexInstructions(key, "native", "rules", "Memory: delegate PRs to PRCreator.", true, request, false, reAnchorAfter);
+    expect(reAnchored.deliverVolatile).toBe(true);
+    reAnchored.commitVolatile?.();
+
+    const afterReAnchor = await syncCodexInstructions(key, "native", "rules", "Memory: delegate PRs to PRCreator.", true, request, false, reAnchorAfter);
+    expect(afterReAnchor.deliverVolatile).toBe(false);
+    expect(request).not.toHaveBeenCalled();
+
+    const emptyKey = randomUUID();
+    const emptyFirst = await syncCodexInstructions(emptyKey, "native", "rules", "", false, request, false, reAnchorAfter);
+    emptyFirst.commitVolatile?.();
+    for (let turn = 0; turn <= reAnchorAfter + 1; turn++) {
+      const bare = await syncCodexInstructions(emptyKey, "native", "rules", "", true, request, false, reAnchorAfter);
+      expect(bare.deliverVolatile).toBe(false);
+      expect(bare.commitVolatile).toBeNull();
+    }
   });
 });

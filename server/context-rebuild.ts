@@ -29,6 +29,8 @@ const TARGET_KEYS = ["command", "file_path", "notebook_path", "pattern", "query"
 const PATH_KEYS: ReadonlySet<string> = new Set(["file_path", "notebook_path", "path"]);
 /** A top-level argument line of the two-space JSON preview; read by line because a long preview is cut mid-document. */
 const TARGET_LINE = new RegExp(`^ {2}"(${TARGET_KEYS.join("|")})": ("(?:[^"\\\\]|\\\\.)*"),?$`, "gm");
+const BOT_IDS_BLOCK = /^ {2}"bot_ids": \[([^\]]*)/m;
+const JSON_STRING_LITERAL = /"(?:[^"\\]|\\.)*"/g;
 /** \s does not match U+0085. */
 const WHITESPACE = /[\s\u0085]+/g;
 const LINE_BREAK = /[\n\r\v\f\u0085\u2028\u2029]/;
@@ -48,6 +50,20 @@ function shownTarget(key: string, raw: string): { value: string; path: boolean }
   }
 }
 
+function botIdsTarget(preview: string): string | undefined {
+  const match = BOT_IDS_BLOCK.exec(preview);
+  if (!match) return undefined;
+  const names: string[] = [];
+  for (const [literal] of match[1]!.matchAll(JSON_STRING_LITERAL)) {
+    try {
+      const value = String(JSON.parse(literal)).trim();
+      if (value) names.push(value);
+    } catch {}
+    if (names.length >= 4) break;
+  }
+  return names.length ? names.join(", ") : undefined;
+}
+
 function inputTarget(preview: string | undefined): { value: string; path: boolean } | undefined {
   if (!preview) return undefined;
   // Codex previews a web search as the bare query; a longer or multi-line plain string is a body, not a target.
@@ -63,7 +79,8 @@ function inputTarget(preview: string | undefined): { value: string; path: boolea
     const target = found.has(key) ? shownTarget(key, found.get(key)!) : undefined;
     if (target) return target;
   }
-  return undefined;
+  const bots = botIdsTarget(preview);
+  return bots ? { value: bots, path: false } : undefined;
 }
 
 /** Every part is model-chosen text leaving for another provider: redact and escapeNotes it before clipping, since a cut key or note escapes both. Never the call's result. */
