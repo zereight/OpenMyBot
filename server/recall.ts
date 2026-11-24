@@ -4,6 +4,7 @@ import { parseTopicHeader, readTopicHead, topicBody, topicWords } from "./memory
 import { listMemoryTopics, memoryDate, readMemoryTopic, searchMemoryFiles, workspaceDir } from "./workspace.ts";
 import { withoutExpired, withoutSuperseded } from "./memory-entries.ts";
 import { hasCjk } from "./cjk-search.ts";
+import { redactSecretsInText } from "./redact.ts";
 import { join } from "node:path";
 
 type RecallOwner = { id: string; threadId: string; tasks?: readonly { threadId: string }[] };
@@ -50,6 +51,7 @@ export interface RecallResult {
   text: string;
   notes: number;
   conversations: number;
+  passages: RecallPassage[];
 }
 
 /** A CJK character carries about a word, so it counts twice toward the minimum length. */
@@ -82,7 +84,7 @@ function day(at?: number): string {
 }
 
 function clean(snippet: string): string {
-  return snippet
+  return redactSecretsInText(snippet)
     .split(RECALL_CLOSE).join("")
     .split("[end of recalled passages").join("")
     .split("Recalled for this message").join("Recalled")
@@ -98,17 +100,19 @@ export function renderRecall(passages: readonly RecallPassage[], maxChars = RECA
   let length = lines.join("\n").length + RECALL_CLOSE.length + 1;
   let notes = 0;
   let conversations = 0;
+  const rendered: RecallPassage[] = [];
   for (const passage of passages) {
     const line = `[${notes + conversations + 1}] ${passage.label} (${day(passage.at)}): ${clean(passage.snippet)}`;
     if (length + line.length + 1 > maxChars) continue;
     lines.push(line);
     length += line.length + 1;
+    rendered.push(passage);
     if (passage.source === "memory") notes += 1;
     else conversations += 1;
   }
   if (!notes && !conversations) return null;
   lines.push(RECALL_CLOSE);
-  return { text: lines.join("\n"), notes, conversations };
+  return { text: lines.join("\n"), notes, conversations, passages: rendered };
 }
 
 export interface RecallInput {
@@ -184,13 +188,17 @@ export function conversationPassages(input: RecallInput, query: string): RecallP
     }));
 }
 
-export function buildRecall(input: RecallInput): RecallResult | null {
+export function collectRecallPassages(input: RecallInput): RecallPassage[] {
   const query = recallQuery(input.message);
-  if (!query) return null;
+  if (!query) return [];
   const memoryIds = input.memoryIds?.length ? input.memoryIds : [input.botId];
   const topics = memoryIds.flatMap((id) => topicPassages(id, query));
   const notes = selectMemoryPassages(memoryIds.flatMap((id) => memoryPassages(id, query)), topics);
-  return renderRecall([...notes, ...conversationPassages(input, query)]);
+  return [...notes, ...conversationPassages(input, query)];
+}
+
+export function buildRecall(input: RecallInput): RecallResult | null {
+  return renderRecall(collectRecallPassages(input));
 }
 
 export function selectMemoryPassages(matches: readonly RecallPassage[], topics: readonly RecallPassage[]): RecallPassage[] {
