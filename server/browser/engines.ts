@@ -18,6 +18,8 @@ import { browserLanguage, browserTimeZone, languageList } from "./chrome/wrapper
 import { displayScreen } from "./display.ts";
 import type { Download } from "./cdp/downloads.ts";
 import { BrowserService, type BrowserTarget } from "./service.ts";
+import type { BrowserPolicy } from "../../shared/browser-policy.ts";
+import { browserToolCallRefusal, refuseLegacyBrowserResult } from "./bot-policy.ts";
 import { LiveV1 } from "./viewers/live-v1.ts";
 import { StreamV2, type StreamRequest } from "./viewers/stream-v2.ts";
 
@@ -61,6 +63,7 @@ export class ChromeEngine {
   readonly live: LiveV1;
   readonly stream: StreamV2;
   readonly #targets = new Map<string, string>();
+  readonly #sessionsByKey = new Map<string, string>();
   readonly #registry: ProcessRegistry;
   readonly #options: ChromeEngineOptions;
   #timer: ReturnType<typeof setInterval> | null = null;
@@ -110,12 +113,17 @@ export class ChromeEngine {
   /** The spec a session gets on the new engine, remembered so its live view finds the profile. */
   spec(session: string, key: string): { command: string; args: string[]; env: Record<string, string> } {
     this.#targets.set(session, key);
+    this.#sessionsByKey.set(key, session);
     return { command: CHROME_ENGINE, args: [key], env: {} };
   }
 
   target(session: string): BrowserTarget | null {
     const key = this.#targets.get(session);
     return key ? { session, key } : null;
+  }
+
+  sessionForKey(key: string): string | null {
+    return this.#sessionsByKey.get(key) ?? this.service.profiles().find((profile) => profile.key === key)?.session ?? null;
   }
 
   /**
@@ -223,9 +231,13 @@ export class RuntimeRouter {
     this.#afterCall = options.afterCall;
   }
 
-  async agentRpc(session: string, spec: BrowserSpawnSpec, method: "tools/list" | "tools/call", params: unknown, beforeDispatch?: () => void, ctx?: StepContext): Promise<unknown> {
-    const refusal = method === "tools/call" ? this.#refusal?.(session, spec, params) : null;
-    if (refusal) return { isError: true, content: [{ type: "text", text: refusal }] };
+  async agentRpc(session: string, spec: BrowserSpawnSpec, method: "tools/list" | "tools/call", params: unknown, beforeDispatch?: () => void, ctx?: StepContext, getPolicy?: () => BrowserPolicy | undefined): Promise<unknown> {
+    if (method === "tools/call") {
+      const policyRefusal = browserToolCallRefusal(getPolicy?.(), params);
+      if (policyRefusal) return { isError: true, content: [{ type: "text", text: policyRefusal }] };
+      const refusal = this.#refusal?.(session, spec, params);
+      if (refusal) return { isError: true, content: [{ type: "text", text: refusal }] };
+    }
     const target = chromeTarget(session, spec);
     const full = method === "tools/call" && target ? await this.#room?.(session, spec, params) : null;
     if (full) return { isError: true, content: [{ type: "text", text: full }] };
@@ -237,14 +249,19 @@ export class RuntimeRouter {
     } : beforeDispatch;
     let result: unknown;
     try {
-      result = await (target ? this.#chrome.service.agentRpc(target, method, params, dispatch) : this.#old.agentRpc(session, spec, method, params, dispatch, ctx));
+      result = await (target
+        ? (getPolicy
+          ? this.#chrome.service.agentRpc(target, method, params, dispatch, getPolicy)
+          : this.#chrome.service.agentRpc(target, method, params, dispatch))
+        : this.#old.agentRpc(session, spec, method, params, dispatch, ctx));
     } catch (error) {
       if (error instanceof ClaimRefused) return { isError: true, content: [{ type: "text", text: error.message }] };
       throw error;
     }
     if (method !== "tools/call") return result;
     const annotated = this.#annotate ? this.#annotate(spec, result) : result;
-    return this.#afterCall ? this.#afterCall(session, spec, annotated) : annotated;
+    const finished = this.#afterCall ? this.#afterCall(session, spec, annotated) : annotated;
+    return target ? finished : refuseLegacyBrowserResult(getPolicy?.(), finished);
   }
 
   previewFrame<T>(session: string, capture: () => Promise<T>, spec: { command: string; args?: readonly string[] }): Promise<T | { png: string; format: "jpeg" }> {

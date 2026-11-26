@@ -4,7 +4,7 @@
 import type { PresenceFrame } from "./team-presence.ts";
 import type { DataBroadcast } from "./data-surface.ts";
 import type { ApprovalMode } from "./approval-mode.ts";
-import type { ToolScope } from "./tool-scope.ts"; import type { ToolGroup } from "./tool-groups.ts";
+import type { ToolScope } from "./tool-scope.ts"; import type { ToolGroup } from "./tool-groups.ts"; import type { BrowserPolicy } from "./browser-policy.ts";
 import type { CommandAllowlistCandidate } from "./command-allowlist.ts";
 import type { TurnDigest } from "./digest.ts";
 import type { BotAvatarCrop, MascotFaceColor } from "./bot-avatar.ts";
@@ -376,6 +376,7 @@ export interface WireBot extends DefaultBotFields, BotAccessFields {
   fallback?: Array<{ instanceId: string; model: string }>;
   /** Whether this bot gets the app's built-in browser. */
   browser?: boolean;
+  browserPolicy?: BrowserPolicy;
   /** Record a screenshot and a short note of each browser action, kept with
    * the conversation. Off unless true. */
   recordBrowserSteps?: boolean;

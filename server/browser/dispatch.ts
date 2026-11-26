@@ -19,6 +19,8 @@ import { BrowserControlInterrupted } from "./session-control.ts";
 import { errorResult, pageLabel, snapshotText, textResult, withParts, type ToolResult } from "./shape.ts";
 import type { Tab, TabRegistry } from "./tabs.ts";
 import { targetOf, type ToolCall, type ToolInput } from "./tools.ts";
+import { browserUrlRefusal, hasBrowserPolicy, type BrowserPolicy } from "../../shared/browser-policy.ts";
+import { isTabEscapeAllowed, redactBrowserStatus } from "./bot-policy.ts";
 
 export const DEFAULT_ACTION_MS = 15_000;
 /** Kept back from a call's budget for the reads after its action. */
@@ -60,6 +62,7 @@ export interface ToolContext {
   secretOnPage(tab: Tab): Promise<boolean>;
   saveScreenshot(data: Buffer, pageUrl: string): string;
   downloads(): Download[];
+  policy?: () => BrowserPolicy | undefined;
 }
 
 /** A typed address with its scheme: a bare host means https, loopback http. */
@@ -116,13 +119,13 @@ function describe(tab: Tab): { url: string; title: string; tab: string } {
 }
 
 /** A tab's state for agent_browser_status, the title left out while a dialog is open, as T3 Code does. */
-export function statusOf(context: Pick<ToolContext, "tabs" | "control" | "active" | "downloads">, tab: Tab | null = null): BrowserStatus {
+export function statusOf(context: Pick<ToolContext, "tabs" | "control" | "active" | "downloads"> & { policy?: ToolContext["policy"] }, tab: Tab | null = null): BrowserStatus {
   const front = context.active();
   const active = tab ?? front;
   const dialog = active?.page.dialogs.pending ?? null;
   const chooser = active?.page.fileChoosers.open ?? null;
   const auth = active?.page.auth.pending ?? null;
-  return {
+  return redactBrowserStatus(context.policy?.(), {
     tab: active?.id ?? null,
     url: active && active.page.url() !== "about:blank" ? sanitizeUrl(active.page.url()) || active.page.url() : null,
     title: dialog ? "" : active?.page.title() ?? "",
@@ -138,7 +141,7 @@ export function statusOf(context: Pick<ToolContext, "tabs" | "control" | "active
     downloads: context.downloads().filter((download) => download.state !== "inProgress").slice(-20).map((download) => ({
       fileName: download.fileName, path: download.path, sizeBytes: download.receivedBytes, url: sanitizeUrl(download.url), state: download.state,
     })),
-  };
+  });
 }
 
 function signInWait(tab: Tab, url: string, prompt: { origin: string; realm: string }): string {
@@ -162,21 +165,80 @@ async function openedNote(context: ToolContext, tab: Tab, known: ReadonlySet<str
   if (!opened.length) return null;
   await context.browser.refreshTargets().catch(() => undefined);
   const front = context.active();
-  return opened.map((candidate) => `The page opened a new tab ${candidate.id} at ${sanitizeUrl(candidate.page.url()) || candidate.page.url()}${candidate === front ? ", now in front" : ""}; take a snapshot to act on it.`).join(" ");
+  const policy = context.policy?.();
+  const notes: string[] = [];
+  for (const candidate of opened) {
+    const refusal = browserUrlRefusal(policy, candidate.page.url());
+    if (refusal) {
+      await context.closeTab(candidate).catch(() => undefined);
+      notes.push(`Blocked and closed a popup tab (${candidate.id}): ${refusal}`);
+      continue;
+    }
+    notes.push(`The page opened a new tab ${candidate.id} at ${sanitizeUrl(candidate.page.url()) || candidate.page.url()}${candidate === front ? ", now in front" : ""}; take a snapshot to act on it.`);
+  }
+  return notes.join(" ") || null;
+}
+
+function directUrlOf(call: ToolCall): string | null {
+  if (call.name === "agent_browser_navigate") {
+    return call.input.url !== undefined ? call.input.url : null;
+  }
+  if (call.name === "agent_browser_open" || call.name === "agent_browser_read") {
+    const url = call.input.url?.trim();
+    return url || null;
+  }
+  if (call.name === "agent_browser_tabs" && call.input.action === "new") {
+    const url = call.input.url?.trim();
+    return url || null;
+  }
+  return null;
+}
+
+function policyTargetTab(context: ToolContext, call: ToolCall): Tab | null {
+  switch (call.name) {
+    case "restart_browser":
+    case "agent_browser_close":
+      return null;
+    case "agent_browser_open":
+      if (call.input.tab === "new") return null;
+      return call.input.tab ? tabOf(context, call.input.tab) : context.active();
+    case "agent_browser_status":
+      return call.input.tab ? tabOf(context, call.input.tab) : context.active();
+    case "agent_browser_tabs":
+      return call.input.action === "switch" && call.input.tab ? tabOf(context, call.input.tab) : null;
+    default:
+      return tabOf(context, call.input.tab);
+  }
 }
 
 /** Runs `run` as bot work on `tab` (or the whole browser), with what the page did and reported after it. */
 async function act(context: ToolContext, tab: Tab | null, run: () => Promise<ToolResult>, { observeChange = false } = {}): Promise<ToolResult> {
   return context.control.agent(tab, async () => {
+    const policy = context.policy?.();
     const known = new Set(context.tabs.list().map((candidate) => candidate.id));
     const before = observeChange && tab ? await observe(tab) : null;
     const mark = before && tab ? tab.page.navigations.mark() : null;
     const result = await run();
-    if (!tab || result.isError) return result;
+    if (!tab) return result;
+    if (result.isError) {
+      if (hasBrowserPolicy(policy)) {
+        const blocked = browserUrlRefusal(policy, tab.page.url());
+        if (blocked) return errorResult(blocked);
+      }
+      return result;
+    }
     // An open dialog blocks the page's scripts, so the page is read again only once it is answered.
     if (mark && !tab.page.dialogs.pending) await tab.page.navigations.follow(mark, Math.min(NAVIGATION_FOLLOW_MS, remaining(context)));
-    const after = before && !tab.page.dialogs.pending ? await observe(tab) : null;
     const opened = observeChange ? await openedNote(context, tab, known) : null;
+    if (hasBrowserPolicy(policy)) {
+      const postRefusal = browserUrlRefusal(policy, tab.page.url());
+      if (postRefusal) return errorResult(postRefusal);
+    }
+    const after = before && !tab.page.dialogs.pending ? await observe(tab) : null;
+    if (hasBrowserPolicy(policy)) {
+      const afterRefusal = after ? browserUrlRefusal(policy, after.url) : browserUrlRefusal(policy, tab.page.url());
+      if (afterRefusal) return errorResult(afterRefusal);
+    }
     return withParts(result, before && after ? describePageChange(before, after) : null, opened, dialogNote(tab), context.health(tab));
   });
 }
@@ -194,9 +256,18 @@ export function pictureNote(shot: Pick<Screenshot, "width" | "height" | "scale" 
 async function snapshotResult(context: ToolContext, tab: Tab, { includeImage = false, save = false }: { includeImage?: boolean; save?: boolean } = {}): Promise<ToolResult> {
   const snapshot = await tab.page.snapshot();
   await context.browser.refreshTargets().catch(() => undefined);
+  const policy = context.policy?.();
+  if (hasBrowserPolicy(policy)) {
+    const refusal = browserUrlRefusal(policy, tab.page.url());
+    if (refusal) return errorResult(refusal);
+  }
   const text = snapshotText({ ...describe(tab), tree: snapshot.tree, truncated: snapshot.truncated, frames: snapshot.frames, health: context.health(tab) });
   if (!includeImage && !save) return textResult(text);
   const shot = await context.paused(tab, () => tab.page.screenshot());
+  if (hasBrowserPolicy(policy)) {
+    const refusal = browserUrlRefusal(policy, tab.page.url());
+    if (refusal) return errorResult(refusal);
+  }
   const saved = save ? context.saveScreenshot(shot.data, tab.page.url()) : null;
   const shown = includeImage || !save;
   return {
@@ -229,6 +300,19 @@ function element(input: { ref?: string; selector?: string; x?: number; y?: numbe
 }
 
 export async function executeTool(context: ToolContext, call: ToolCall): Promise<ToolResult> {
+  const policy = context.policy?.();
+  if (hasBrowserPolicy(policy)) {
+    const directUrl = directUrlOf(call);
+    if (directUrl !== null) {
+      const refusal = browserUrlRefusal(policy, directUrl);
+      if (refusal) return errorResult(refusal);
+    }
+    const targetTab = policyTargetTab(context, call);
+    if (targetTab) {
+      const tabRefusal = browserUrlRefusal(policy, targetTab.page.url());
+      if (tabRefusal && !isTabEscapeAllowed(policy, call)) return errorResult(tabRefusal);
+    }
+  }
   switch (call.name) {
     case "agent_browser_status": {
       const tab = call.input.tab ? tabOf(context, call.input.tab) : null;
@@ -248,11 +332,20 @@ export async function executeTool(context: ToolContext, call: ToolCall): Promise
       return context.control.agent(tab, async () => {
         await tab.page.bringToFront();
         const opened = address ? await tab.page.navigate(address, { readiness: "load", timeoutMs: remaining(context) }) : null;
+        if (hasBrowserPolicy(policy)) {
+          const refusal = browserUrlRefusal(policy, opened?.url ?? tab.page.url());
+          if (refusal) return errorResult(refusal);
+        }
         if (opened?.signInPrompt) return textResult(signInWait(tab, opened.url, opened.signInPrompt));
         const lead = opened
           ? `Opened ${sanitizeUrl(opened.url) || opened.url} in ${tab.id}${opened.status && opened.status >= 400 ? `; the site answered HTTP ${opened.status}` : ""}.`
           : `${tab.id} is open at ${sanitizeUrl(tab.page.url()) || tab.page.url()}.`;
         const snapshot = await snapshotResult(context, tab);
+        if (snapshot.isError) return snapshot;
+        if (hasBrowserPolicy(policy)) {
+          const refusal = browserUrlRefusal(policy, tab.page.url());
+          if (refusal) return errorResult(refusal);
+        }
         return withParts(textResult(lead, "Page observed after navigation. Its refs are current, so act on them without another snapshot. Check this result for redirects, sign-in requirements or page errors before reporting task success:"), ...snapshot.content.map((part) => (part.type === "text" ? part.text : null)), dialogNote(tab));
       });
     }
@@ -273,7 +366,13 @@ export async function executeTool(context: ToolContext, call: ToolCall): Promise
       const tab = tabOf(context, call.input.tab);
       return context.control.agent(tab, async () => {
         await tab.page.bringToFront();
-        return withParts(await snapshotResult(context, tab, call.input), dialogNote(tab));
+        const snapshot = await snapshotResult(context, tab, call.input);
+        if (snapshot.isError) return snapshot;
+        if (hasBrowserPolicy(policy)) {
+          const refusal = browserUrlRefusal(policy, tab.page.url());
+          if (refusal) return errorResult(refusal);
+        }
+        return withParts(snapshot, dialogNote(tab));
       });
     }
     case "agent_browser_read": {
@@ -281,6 +380,10 @@ export async function executeTool(context: ToolContext, call: ToolCall): Promise
       return act(context, tab, async () => {
         await tab.page.bringToFront();
         if (call.input.url !== undefined && call.input.url.trim() !== "") await tab.page.navigate(agentUrl(call.input.url), { readiness: "load", timeoutMs: remaining(context) });
+        if (hasBrowserPolicy(policy)) {
+          const refusal = browserUrlRefusal(policy, tab.page.url());
+          if (refusal) return errorResult(refusal);
+        }
         return textResult(`${pageLabel(describe(tab))}\n${await readText(tab, call.input)}`);
       });
     }
@@ -406,6 +509,10 @@ export async function executeTool(context: ToolContext, call: ToolCall): Promise
       const tab = tabOf(context, call.input.tab);
       if (context.control.owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);
       const answered = await tab.page.answerDialog({ accept: call.input.accept, ...(call.input.promptText === undefined ? {} : { promptText: call.input.promptText }) });
+      if (hasBrowserPolicy(policy)) {
+        const refusal = browserUrlRefusal(policy, tab.page.url());
+        if (refusal) return errorResult(refusal);
+      }
       return textResult(`${call.input.accept ? "Accepted" : "Dismissed"} the ${answered.type} dialog.`);
     }
     case "agent_browser_tabs": {

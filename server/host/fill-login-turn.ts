@@ -1,5 +1,6 @@
 // fill_login for one turn: filled by the server as one browser action, answered with a status in words, never a value.
 import type { Surface } from "../../shared/wire.ts";
+import { browserUrlRefusal } from "../../shared/browser-policy.ts";
 import type { BotLogins } from "../bot-logins.ts";
 import { productName } from "../brand.ts";
 import { BROWSER_CONTROL_REFUSAL } from "../browser-runtime.ts";
@@ -96,6 +97,7 @@ export function createFillLoginTurn(deps: FillLoginTurnDeps) {
         candidates: (host) => deps.logins.candidates(bot.id, host),
         available: async () => deps.logins.sitesFor(bot.id),
         trouble: deps.onePasswordTrouble,
+        urlRefusal: (url) => browserUrlRefusal(current.browserPolicy, url),
       }, {
         ...deps.loginInput(session, spec, env),
         remember: deps.remember,

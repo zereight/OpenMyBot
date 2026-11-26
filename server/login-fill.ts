@@ -63,6 +63,8 @@ export interface FillLoginInput {
   trouble?(): string | undefined;
   /** A whole sentence on another manager whose logins are missing just now, such as Bitwarden being locked. */
   locked?(): string | undefined;
+  /** Per-bot browser policy refusal for the current or post-submit page URL, or null when allowed. */
+  urlRefusal?(url: string): string | null;
 }
 
 export type FilledField = "username" | "password" | "code";
@@ -366,7 +368,9 @@ export async function fillLogin(input: FillLoginInput, deps: FillLoginDeps): Pro
       : "The current page is not a web page fill_login can fill. Open the site's login page, then call fill_login." };
   }
   const pageHost = fillable.pageHost;
-  const runOptions = { submit: input.submit !== false, host: pageHost, deps, now, sleep };
+  const policyRefusal = input.urlRefusal?.(pageUrl);
+  if (policyRefusal) return { ok: false, host: pageHost, text: policyRefusal };
+  const runOptions = { submit: input.submit !== false, host: pageHost, deps, now, sleep, urlRefusal: input.urlRefusal };
   const email = input.email?.trim();
   if (email !== undefined && email !== "") {
     if (!ADDRESS.test(email)) return { ok: false, host: pageHost, text: `${JSON.stringify(email.slice(0, 80))} is not an email address. Call fill_login with the person's whole address.` };
@@ -441,6 +445,7 @@ class LoginRun {
   private readonly host: string;
   private deadline: number;
   private readonly addressOnly: boolean;
+  private readonly urlRefusal?: (url: string) => string | null;
   private submittedAt: number | null = null;
   private codeHelp: string = CODE_FROM_INBOX;
   private fromMailbox = false;
@@ -449,7 +454,7 @@ class LoginRun {
   private secrets: { password: string; totp: TotpKey | null } | null = null;
   private secretUrl: string | null = null;
 
-  constructor(login: FillCandidate, options: { submit: boolean; host: string; deps: FillLoginDeps; now: () => number; sleep: (ms: number) => Promise<void>; addressOnly?: boolean }) {
+  constructor(login: FillCandidate, options: { submit: boolean; host: string; deps: FillLoginDeps; now: () => number; sleep: (ms: number) => Promise<void>; addressOnly?: boolean; urlRefusal?: (url: string) => string | null }) {
     this.login = login;
     this.addressOnly = options.addressOnly === true;
     this.submit = options.submit;
@@ -457,6 +462,7 @@ class LoginRun {
     this.deps = options.deps;
     this.now = options.now;
     this.sleep = options.sleep;
+    this.urlRefusal = options.urlRefusal;
     this.deadline = this.now() + FILL_BUDGET_MS;
   }
 
@@ -542,6 +548,8 @@ class LoginRun {
       }
       if (!this.stillHere(fields.href)) {
         if (step === 0) return this.outcome(false, `The page moved away from ${this.host} before anything was filled. Open its login page again, then call fill_login.`);
+        const blocked = this.urlRefusal?.(fields.href);
+        if (blocked) return this.finish(false, blocked);
         return this.finish(true, `Submitted ${this.filledWords()} for ${this.who()}; the page is now ${pageAddress(fields.href)}, where this login is not used. Check you are signed in, or call request_sign_in.`);
       }
       if (this.addressOnly && fields.password) {
@@ -589,6 +597,8 @@ class LoginRun {
         return this.failed(`Filled ${this.filledWords()} for ${this.who()} on ${this.host}, but the browser did not take the Enter key or the click to submit it.`);
       }
       if (sent.kind === "no-control") return this.leave(`It was not submitted: Enter did nothing and the page has no sign-in button to press. Press the page's own sign-in button now.${codeNote}`);
+      const sentBlocked = this.urlRefusal?.(sent.href);
+      if (sentBlocked) return this.finish(false, sentBlocked);
       if (sent.human) return this.failed(`A human check (CAPTCHA) appeared on ${this.host} after the login for ${this.who()} was submitted. Call request_sign_in so the person finishes signing in.`);
       if (!sent.changed) {
         const said = sent.alert ? ` It said: “${sent.alert}”.` : " The page did not change.";

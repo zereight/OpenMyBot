@@ -4,6 +4,7 @@ import { LINK_PREFIX } from "../bot-link/protocol.ts";
 import { validateBotCwd } from "../bot-cwd.ts";
 import { parseBotProfilePatch } from "../bot-profile.ts";
 import { parseVisibility } from "../bot-visibility.ts";
+import { parseBrowserPolicy } from "../../shared/browser-policy.ts";
 import type { createCloudRoutineAuthors } from "../cloud-lending.ts";
 import type { AppConfig } from "../config.ts";
 import type { ModelSelection } from "../contracts.ts";
@@ -205,12 +206,17 @@ export function createBotCreateRoutes(deps: BotCreateRouteDeps): RouteHandler {
       // Apply the audience before creation can announce the bot to members.
       const created = body.visibility === undefined ? null : parseVisibility(body.visibility);
       if (created && !created.ok) return json(res, 400, { error: created.error });
+      const createdBrowserPolicy = Object.hasOwn(body, "browserPolicy")
+        ? parseBrowserPolicy(body.browserPolicy === null ? undefined : body.browserPolicy)
+        : null;
+      if (createdBrowserPolicy && !createdBrowserPolicy.ok) return json(res, 400, { error: createdBrowserPolicy.error });
       // Checked again beside the synchronous write: an await above let another request take the same id.
       if (kept.id && "error" in keptBotIds(kept, store)) return json(res, 409, { error: "a bot with this id already exists here" });
       // A bot moved in from another computer keeps its own look; a new one named no look starts in a fresh one.
       const look = kept.id || settings.color || settings.mascotBody ? undefined : freshLook(store.bots);
       const bot = store.createBot({ ...profile.patch, soul: settings.soul, section, modelSelection: selection,
         toolScope: settings.toolScope ?? undefined, color: settings.color ?? look?.color, mascotBody: settings.mascotBody ?? look?.mascotBody,
+        ...(createdBrowserPolicy?.ok && createdBrowserPolicy.policy ? { browserPolicy: createdBrowserPolicy.policy } : {}),
         ...(deps.team && creator ? { createdBy: creator } : {}), ...(reportsTo ? { reportsTo } : {}),
         ...(created?.ok ? { visibility: created.visibility } : {}) }, { ...(kept.id ? { ...kept, seedMessages: false } : {}), settle: (made) => {
         const { chiefOfStaff: _chief, managedSections: _managed, toolScope: _toolScope, ...ordinary } = settings;

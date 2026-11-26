@@ -35,6 +35,7 @@ import { failedTurnTool } from "../shared/failed-turn.ts";
 import { assistantTranscript, errorTranscript } from "../shared/client-cancel.ts"; import { PersonStops, stoppedTurnRow } from "./person-stops.ts"; import { LiveTurns } from "./live-turns.ts";
 import { phonePairingLink } from "../shared/pairing-link.ts"; import { personTagNames, withoutPersonTags } from "../shared/person-mention.ts";
 import { canWorkOnCloud, type CloudEngine } from "../shared/cloud-computer.ts";
+import { browserPolicyPrompt, type BrowserPolicy } from "../shared/browser-policy.ts";
 import {
   approvalModeFor,
   modelSwitchNeedsAsk,
@@ -7610,7 +7611,7 @@ async function beginTurn(
   const dispatchClaimId = randomUUID();
   if (guestConfined) guestDrivenTurns.set(threadId, dispatchClaimId);
   if (guestConfined && personLine) outsideLineage.personLineConfined(threadId);
-  const resourceOwner: TurnOwner = { threadId, generation: dispatchClaimId };
+  const resourceOwner: TurnOwner = { botId: bot.id, threadId, generation: dispatchClaimId };
   turnResourceOwners.set(threadId, resourceOwner);
   directTurnGenerationByThread.set(threadId, dispatchClaimId);
   let requestMessageId = opts?.cardContinuation ? opts.requestMessageId : userMessage.id;
@@ -9590,7 +9591,7 @@ async function runClaimedGroupMemberTurn(
   if (CLOUD_HOME && (!CLOUD_PERSONAL || cloudHomeLendingRefusal(cloudLendingTurn({ botId: bot.id, threadId, generation: internalGeneration })) !== null)) {
     noteForeignTurn(bot.id, threadId, internalGeneration);
   }
-  const resourceOwner: TurnOwner = { threadId, generation: internalGeneration };
+  const resourceOwner: TurnOwner = { botId: bot.id, threadId, generation: internalGeneration };
   turnResourceOwners.set(threadId, resourceOwner);
   let roomClaimFailure: RoomClaimEnd | undefined;
   let roomVmTarget: ReturnType<typeof localVmTargetForBot> | null = null;
@@ -11506,8 +11507,10 @@ async function saveLoginFromCard(botId: string, threadId: string, messageId: str
 }
 
 /** Saved logins appear by site and username only. */
-function browserPromptFor(bot: { id: string; browserProfile?: string }, agentsMounted: boolean): string {
-  return browserSystemPrompt(bot.browserProfile) + (agentsMounted ? savedLoginsPrompt(botLogins.sitesFor(bot.id)) : "");
+function browserPromptFor(bot: { id: string; browserProfile?: string; browserPolicy?: BrowserPolicy }, agentsMounted: boolean): string {
+  return browserSystemPrompt(bot.browserProfile)
+    + browserPolicyPrompt(bot.browserPolicy)
+    + (agentsMounted ? savedLoginsPrompt(botLogins.sitesFor(bot.id)) : "");
 }
 
 /** Null while the browser engine is not installed. */
@@ -12977,7 +12980,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (body.method === "tools/call" && !claimTurnResource(internalCapability, `browser:${browser.session}`)) {
             throw Object.assign(new Error("another thread is using this browser — pause browser work until that thread finishes"), { status: 409 });
           }
-        }, stepContext(bot, internalCapability, () => liveTurnByThread.get(internalCapability.threadId) ?? null));
+        }, stepContext(bot, internalCapability, () => liveTurnByThread.get(internalCapability.threadId) ?? null), () => store.bot(internalCapability.botId)?.browserPolicy);
         requireActiveInternalCapability(); if (body.method === "tools/call") browserSeats.used(internalCapability, browser.session);
         return json(res, 200, { result });
       }

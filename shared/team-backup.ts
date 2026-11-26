@@ -3,6 +3,7 @@ import { mascotFaceColorSchema } from "./bot-avatar.ts";
 
 import { CONNECTOR_SLUG_PATTERN, CONNECTOR_TOOL_NAME_PATTERN, MAUS_COLOR_NAMES } from "./wire.ts";
 import { parseToolScope, type ToolScope } from "./tool-scope.ts";
+import { parseBrowserPolicy, type BrowserPolicy } from "./browser-policy.ts";
 
 export const MAX_TEAM_BACKUP_BYTES = 50 * 1024 * 1024;
 export const TEAM_BACKUP_CONTENTS = "Bot profiles, instructions, sections, rooms, playbooks, routines, each bot's memory (MEMORY.md, topic notes and daily logs) and conversation text (all tasks and branches).";
@@ -128,6 +129,8 @@ const backupSchema = z.object({
     connectorTools: connectorTools.optional(),
     toolScope: z.custom<ToolScope>((value) => value !== undefined && parseToolScope(value).ok, "Invalid tool selection")
       .transform((value) => { const parsed = parseToolScope(value); return parsed.ok ? parsed.scope! : value; }).optional(),
+    browserPolicy: z.custom<BrowserPolicy>((value) => value !== undefined && parseBrowserPolicy(value).ok, "Invalid browser policy")
+      .transform((value) => { const parsed = parseBrowserPolicy(value); return parsed.ok ? parsed.policy! : value; }).optional(),
     /** Only false is written and applied: a file can keep a bot off the helper model, never put one on it. */
     helperModel: z.boolean().optional(),
     memory: memory.optional(),

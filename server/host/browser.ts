@@ -256,6 +256,29 @@ export function createBrowserHost(deps: BrowserHostDeps) {
   });
   const browserLive = new LiveRouter(agentBrowserLive, chromeEngine);
   const usedBrowserSessions = new Map<string, Spec>();
+  const lastBotBySession = new Map<string, string>();
+  turnResources.onClaim((resource, owner) => {
+    if (!resource.startsWith("browser:")) return;
+    const session = resource.slice("browser:".length);
+    const botId = owner.botId ?? store.botByThread(owner.threadId)?.id;
+    if (botId) lastBotBySession.set(session, botId);
+  });
+  function botPolicyForGate(gateKey: string) {
+    const session = chromeEngine.sessionForKey(gateKey) ?? gateKey;
+    if (browserRuntime.heldBy(session) !== null) return undefined;
+    const holder = turnResources.holder(`browser:${session}`);
+    if (holder) {
+      const bot = (holder.botId ? store.bot(holder.botId) : null) ?? store.botByThread(holder.threadId);
+      if (bot) return bot.browserPolicy;
+    }
+    const lastBotId = lastBotBySession.get(session);
+    if (lastBotId) {
+      const bot = store.bot(lastBotId);
+      if (bot) return bot.browserPolicy;
+    }
+    const owners = store.bots.filter((bot) => browserSessionsOf(bot.id, bot.browserProfile).includes(session));
+    return owners.length === 1 ? owners[0]!.browserPolicy : undefined;
+  }
   const audiences = new AudienceBrowsers(join(DATA_DIR, "browser", "audiences.json"));
   const browserAudience = (threadId: string | undefined): Audience => (threadId && deps.audienceOf ? deps.audienceOf(threadId) : "team");
   const device = deps.device && lentDevice(deps.device, (session) => turnResources.holder(`browser:${session}`), mayLend);
@@ -264,7 +287,12 @@ export function createBrowserHost(deps: BrowserHostDeps) {
   // workspace's network is the operator's, so its stored switch and allow-list are ignored, like MausBot Cloud's.
   const hostedServer = egressHost === "server" && Boolean(deps.HOSTED_WORKSPACE);
   const sitesSwitch = egressHost === "server" && !hostedServer;
-  browserEgress.configure({ host: egressHost, config: () => (hostedServer ? undefined : cfg.browserEngine?.egress), ...(device ? { device } : {}) });
+  browserEgress.configure({
+    host: egressHost,
+    config: () => (hostedServer ? undefined : cfg.browserEngine?.egress),
+    botPolicy: botPolicyForGate,
+    ...(device ? { device } : {}),
+  });
   /** A live bot's, profile's or temporary browser of this data dir, for any audience. */
   const belongs = (session: string) => isTemporaryBrowserSession(session) || audiences.variants().some((suffix) =>
     store.bots.some((bot) => browserSessionId(bot.id + suffix, "") === session)

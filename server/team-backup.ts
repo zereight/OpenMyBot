@@ -120,6 +120,7 @@ export function createTeamBackup(store: Store, routines: Routine[], name: string
       // Grants travel so the team's shape survives, but the import still lands every bot grant-less.
       ...(bot.connectorTools ? { connectorTools: structuredClone(bot.connectorTools) } : {}),
       ...(bot.toolScope !== undefined ? { toolScope: structuredClone(bot.toolScope) } : {}),
+      ...(bot.browserPolicy !== undefined ? { browserPolicy: structuredClone(bot.browserPolicy) } : {}),
       // A bot kept off the helper model stays off it wherever its notes and chats land.
       ...(helperModelAllowed(bot) ? {} : { helperModel: false }),
       memory: memoryFor(bot.id),
@@ -194,7 +195,7 @@ export function importTeamBackup(store: Store, routines: RoutineManager, input: 
       bots.push(bot);
       botIds.set(source.key, bot.id);
       store.patchBot(bot.id, { composio: false, computer: "off", browser: false, autoApprove: false,
-        connectorTools: {}, toolScope: source.toolScope, hidden: source.hidden, chiefOfStaff: source.chiefOfStaff, playbooks: source.playbooks,
+        connectorTools: {}, toolScope: source.toolScope, browserPolicy: source.browserPolicy, hidden: source.hidden, chiefOfStaff: source.chiefOfStaff, playbooks: source.playbooks,
         ...(source.helperModel === false ? { helperModel: false } : {}) });
       if (source.memory) restoreMemory(bot.id, source.memory);
     }

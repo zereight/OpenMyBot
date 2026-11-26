@@ -30,6 +30,7 @@ import { errorResult, shapeResult, textResult, withParts, type ToolResult } from
 import { TabRegistry, type Tab } from "./tabs.ts";
 import { parseToolCall, RESTART_TOOL, TOOL_LIST } from "./tools.ts";
 import { ViewerHub, type Viewer, type ViewerOptions, type ViewerOutput } from "./viewers/core.ts";
+import { browserUrlRefusal, evaluateBrowserUrl, hasBrowserPolicy, type BrowserPolicy } from "../../shared/browser-policy.ts";
 
 /** One profile's browser as the server names it: the session (bot-<id>, a profile's partition, guest-…) and its key. */
 export interface BrowserTarget {
@@ -131,8 +132,21 @@ function recoveredResult(call: string, url: string): ToolResult {
   return textResult(`The browser answers again: the earlier ${call} call that did not answer has ended, and it may have taken effect. This call did not run. The current page is ${url || "unknown"}. Check the page before you repeat the earlier action, then call again what you need.`);
 }
 
-function reopenedNote(reopened: NonNullable<Reopened>, temporary: boolean): string {
-  const pages = reopened.pages.length ? ` It reopened your pages: ${reopened.pages.join(", ")}.` : "";
+function formatReopenedPage(entry: string, policy: BrowserPolicy | undefined): string {
+  if (!hasBrowserPolicy(policy)) return entry;
+  const split = entry.indexOf(" ");
+  if (split <= 0) return entry;
+  const tabId = entry.slice(0, split);
+  const url = entry.slice(split + 1);
+  const decision = evaluateBrowserUrl(policy, url);
+  if (decision.allowed) return entry;
+  return `${tabId} ${decision.host ? `blocked://${decision.host}` : "blocked://policy"}`;
+}
+
+function reopenedNote(reopened: NonNullable<Reopened>, temporary: boolean, policy?: BrowserPolicy): string {
+  const pages = reopened.pages.length
+    ? ` It reopened your pages: ${reopened.pages.map((entry) => formatReopenedPage(entry, policy)).join(", ")}.`
+    : "";
   const refs = " Refs from before are gone: take a snapshot before acting on refs.";
   if (reopened.kind === "restart") return `The browser was restarted; this call ran in the fresh browser, on one blank tab.${refs} Check whether an interrupted action already happened before repeating it.`;
   if (reopened.kind === "crash") return `Your browser stopped unexpectedly, and this call started it again.${pages}${refs}`;
@@ -428,7 +442,7 @@ export class BrowserService {
 
   // Bot calls.
 
-  async agentRpc(target: BrowserTarget, method: "tools/list" | "tools/call", params: unknown, beforeDispatch?: () => void): Promise<unknown> {
+  async agentRpc(target: BrowserTarget, method: "tools/list" | "tools/call", params: unknown, beforeDispatch?: () => void, getPolicy?: () => BrowserPolicy | undefined): Promise<unknown> {
     if (method === "tools/list") return { tools: TOOL_LIST.map((tool) => ({ ...tool })) };
     if (method !== "tools/call") throw new Error("Unsupported browser method.");
     const profile = this.profile(target);
@@ -439,7 +453,7 @@ export class BrowserService {
     const started = performance.now();
     let result: ToolResult | null;
     try {
-      const work = () => this.#call(profile, params, deadline, beforeDispatch);
+      const work = () => this.#call(profile, params, deadline, beforeDispatch, getPolicy);
       const call = name === RESTART_TOOL || profile.control.uncertain ? work() : this.#lanes.run(profile.key, work, this.#options.laneWaitMs);
       result = await this.#withinBudget(profile, name, call, deadline);
     } finally {
@@ -449,7 +463,7 @@ export class BrowserService {
     const final = result ?? errorResult(LANE_BUSY);
     this.#options.onTiming?.({ session: profile.session, tool: name, outcome: final.isError ? "error" : "ok", totalMs: performance.now() - started, inFlight: profile.control.agents, chars: final.content.reduce((sum, part) => sum + (part.type === "text" ? part.text.length : 0), 0) });
     if (profile.reopened && profile.run) {
-      const note = reopenedNote(profile.reopened, profile.temporary);
+      const note = reopenedNote(profile.reopened, profile.temporary, getPolicy?.());
       profile.reopened = null;
       return scrubBrowserResult({ ...final, content: [{ type: "text", text: note }, ...final.content] }, this.#scrub);
     }
@@ -468,7 +482,7 @@ export class BrowserService {
     return profile.control.lostCall === null ? errorResult(BROWSER_STUCK) : lostCallResult(call);
   }
 
-  async #call(profile: ProfileState, params: unknown, deadline: number, beforeDispatch?: () => void): Promise<ToolResult> {
+  async #call(profile: ProfileState, params: unknown, deadline: number, beforeDispatch?: () => void, getPolicy?: () => BrowserPolicy | undefined): Promise<ToolResult> {
     const name = toolNameOf(params);
     const control = profile.control;
     if (name === RESTART_TOOL) {
@@ -482,7 +496,9 @@ export class BrowserService {
       if (lost === null) return errorResult(BROWSER_STUCK);
       beforeDispatch?.();
       const url = await this.#probe(profile);
-      return url === null ? stillBusyResult(lost) : recoveredResult(lost, url);
+      if (url === null) return stillBusyResult(lost);
+      const refusal = browserUrlRefusal(getPolicy?.(), url);
+      return refusal ? errorResult(refusal) : recoveredResult(lost, url);
     }
     const parsed = parseToolCall(name, (params as { arguments?: unknown } | null)?.arguments);
     if (!parsed.ok) return errorResult(parsed.error);
@@ -496,7 +512,7 @@ export class BrowserService {
     if (control.owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);
     control.call = parsed.call.name;
     try {
-      const result = await executeTool(this.#context(profile, run, deadline), parsed.call);
+      const result = await executeTool(this.#context(profile, run, deadline, getPolicy), parsed.call);
       beforeDispatch?.();
       return shapeResult(result, parsed.call.name);
     } catch (error) {
@@ -513,7 +529,7 @@ export class BrowserService {
     }
   }
 
-  #context(profile: ProfileState, run: Running, deadline: number): ToolContext {
+  #context(profile: ProfileState, run: Running, deadline: number, getPolicy?: () => BrowserPolicy | undefined): ToolContext {
     return {
       control: profile.control,
       tabs: profile.tabs,
@@ -529,6 +545,7 @@ export class BrowserService {
       secretOnPage: (tab) => this.#holds.refuses(profile.session, async () => tab.page.url(), tab.page.targetId),
       saveScreenshot: (data, pageUrl) => this.#saveScreenshot(profile, data, pageUrl),
       downloads: () => run.browser.downloads?.list() ?? [],
+      ...(getPolicy ? { policy: getPolicy } : {}),
     };
   }
 

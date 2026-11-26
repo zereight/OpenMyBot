@@ -1,4 +1,5 @@
 export type TurnOwner = {
+  botId?: string;
   threadId: string;
   generation: string;
   /** Already reported: Claude settles the follow-up interrupt as exit_before_result, which must not read as a second failure. */

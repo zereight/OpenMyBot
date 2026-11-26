@@ -6,6 +6,7 @@ import { isBotLiveVoice } from "../../shared/live-call.ts";
 import { normalizeOutboundPolicy } from "../../shared/outbound.ts";
 import { normalizePhoneApps } from "../../shared/phone-apps.ts";
 import { parseToolScope, toolScopeWidens } from "../../shared/tool-scope.ts";
+import { browserPolicyWidens, parseBrowserPolicy, type BrowserPolicy } from "../../shared/browser-policy.ts";
 import { parseToolsOff, TOOL_GROUPS } from "../../shared/tool-groups.ts";
 import { isMausColor, MAUS_COLOR_NAMES, type BotUpdateResponse, type WireBot, type WireGroup } from "../../shared/wire.ts";
 import { dropRemovedGrants, MAX_ALWAYS_ALLOW } from "../always-allow.ts";
@@ -350,6 +351,13 @@ export function createBotPatchRoutes(deps: BotPatchRouteDeps): RouteHandler {
         if (!parsed.ok) return json(res, 400, { error: parsed.error });
         patch.toolScope = parsed.scope;
       }
+      let requestedBrowserPolicy: BrowserPolicy | undefined;
+      if (Object.hasOwn(body, "browserPolicy")) {
+        const parsed = parseBrowserPolicy(body.browserPolicy === null ? undefined : body.browserPolicy);
+        if (!parsed.ok) return json(res, 400, { error: parsed.error });
+        requestedBrowserPolicy = parsed.policy;
+        patch.browserPolicy = parsed.policy;
+      }
       if (body.mcpServers !== undefined) {
         if (auth.kind === "session" && !sessions.isLive(auth.session.id)) {
           return json(res, 401, { error: "unauthorized: this session has expired or was revoked" });
@@ -622,6 +630,7 @@ export function createBotPatchRoutes(deps: BotPatchRouteDeps): RouteHandler {
         loosened.push("mcpServers");
       }
       if (Object.hasOwn(body, "toolScope") && toolScopeWidens(existingBot?.toolScope, patch.toolScope)) loosened.push("toolScope");
+      if (Object.hasOwn(body, "browserPolicy") && browserPolicyWidens(existingBot?.browserPolicy, requestedBrowserPolicy)) loosened.push("browserPolicy");
       const browserOrigin = typeof req.headers.origin === "string" && req.headers.origin.trim() !== "";
       if (loosened.length && auth.kind === "loopback" && !DESKTOP_MANAGED && !browserOrigin) {
         if (store.bots.some((candidate) => candidate.busy)) {
@@ -661,6 +670,14 @@ export function createBotPatchRoutes(deps: BotPatchRouteDeps): RouteHandler {
           return json(res, 401, { error: "unauthorized: this session has expired or was revoked" });
         }
         if (toolScopeWidens(freshBrowserBot?.toolScope, patch.toolScope) && auth.kind === "loopback" && !DESKTOP_MANAGED && !browserOrigin && store.bots.some((candidate) => candidate.busy)) {
+          return json(res, 409, { error: "A bot is working right now, so this change has to come from the desktop app or a paired device. Try again once every bot is idle." });
+        }
+      }
+      if (Object.hasOwn(body, "browserPolicy")) {
+        if (auth.kind === "session" && !sessions.isLive(auth.session.id)) {
+          return json(res, 401, { error: "unauthorized: this session has expired or was revoked" });
+        }
+        if (browserPolicyWidens(freshBrowserBot?.browserPolicy, requestedBrowserPolicy) && auth.kind === "loopback" && !DESKTOP_MANAGED && !browserOrigin && store.bots.some((candidate) => candidate.busy)) {
           return json(res, 409, { error: "A bot is working right now, so this change has to come from the desktop app or a paired device. Try again once every bot is idle." });
         }
       }

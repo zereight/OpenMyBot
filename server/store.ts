@@ -4,6 +4,7 @@ import { join } from "node:path"; import { isDeepStrictEqual } from "node:util";
 import { writeFileAtomic } from "./atomic.ts"; import { BOTS_FILE, JsonRegistry, persistedPin, type RegistryDurability, type RegistryStore } from "./registry-store.ts"; import { discardNativeLog } from "./drivers/native.ts";
 import { commitRegistryChange, deferrablePatch, keptRevocation, saveRegistryFor, touchesPermissions } from "./registry-save.ts";
 import { parseToolScope, toolScopeWidens } from "../shared/tool-scope.ts"; import { grantScopedApps } from "../shared/connector-scopes.ts"; import { dropRetiredApps } from "./retired-apps.ts";
+import { browserPolicyWidens, parseBrowserPolicy } from "../shared/browser-policy.ts";
 import { reorderInPlace } from "../shared/bot-order.ts"; import { trimOutboundPolicy } from "../shared/outbound.ts";
 import { botOwner, chiefConflict, chiefScope, ownerEmail } from "../shared/bot-owner.ts"; import { reshowWhenMoved } from "../shared/default-bot.ts";
 import { ensureSections, readSections, changeEmptySection } from "./section-context.ts"; import { grantNewDepartments } from "./department-grants.ts";
@@ -1227,7 +1228,7 @@ export class Store {
     profile: Partial<
       Pick<
         BotRecord,
-        "name" | "title" | "description" | "soul" | "color" | "mascotExpression" | "mascotBody" | "mascotFaceColor" | "modelSelection" | "section" | "cwd" | "visibility" | "toolScope" | "createdBy" | "reportsTo"
+        "name" | "title" | "description" | "soul" | "color" | "mascotExpression" | "mascotBody" | "mascotFaceColor" | "modelSelection" | "section" | "cwd" | "visibility" | "toolScope" | "browserPolicy" | "createdBy" | "reportsTo"
       >
     > = {},
     opts: {
@@ -1237,6 +1238,8 @@ export class Store {
   ): BotRecord {
     const toolScope = parseToolScope(profile.toolScope);
     if (!toolScope.ok) throw new Error(toolScope.error);
+    const browserPolicy = parseBrowserPolicy(profile.browserPolicy);
+    if (!browserPolicy.ok) throw new Error(browserPolicy.error);
     this.rememberSections([profile.section]);
     const name = profile.name?.trim() || pickBotName(this.bots.map((b) => b.name));
     const section = sectionKey(profile.section);
@@ -1254,6 +1257,7 @@ export class Store {
       ...(profile.mascotBody ? { mascotBody: profile.mascotBody } : {}),
       ...this.newBotSharing(profile.visibility, newBotOwner(profile)),
       ...(toolScope.scope ? { toolScope: toolScope.scope } : {}),
+      ...(browserPolicy.policy ? { browserPolicy: browserPolicy.policy } : {}),
       unread: false,
       modelSelection: this.newBotSelection(profile.modelSelection),
       resumeCursors: {},
@@ -1437,11 +1441,19 @@ export class Store {
       if (!parsed.ok) throw new Error(parsed.error);
       patch = { ...patch, toolScope: parsed.scope };
     }
+    if (Object.hasOwn(patch, "browserPolicy")) {
+      const parsed = parseBrowserPolicy(patch.browserPolicy);
+      if (!parsed.ok) throw new Error(parsed.error);
+      patch = { ...patch, browserPolicy: parsed.policy };
+    }
     const wideningToolScope = Object.hasOwn(patch, "toolScope") && toolScopeWidens(bot.toolScope, patch.toolScope);
+    const wideningBrowserPolicy = Object.hasOwn(patch, "browserPolicy") && browserPolicyWidens(bot.browserPolicy, patch.browserPolicy);
     const nextToolScope = patch.toolScope;
-    if (wideningToolScope) {
+    const nextBrowserPolicy = patch.browserPolicy;
+    if (wideningToolScope || wideningBrowserPolicy) {
       patch = { ...patch };
-      delete patch.toolScope;
+      if (wideningToolScope) delete patch.toolScope;
+      if (wideningBrowserPolicy) delete patch.browserPolicy;
     }
     const toAsk = patch.modelSelection ? (bot.tasks ?? []).filter((task) => task.modelSelection === undefined &&
       this.switchNeedsAsk(id, task.threadId, bot.modelSelection, patch.modelSelection!)) : [];
@@ -1457,10 +1469,14 @@ export class Store {
       }
       bot.unread = bot.tasks!.some(taskCountsAsBotUnread);
     }
-    if (wideningToolScope) {
-      // New authority goes live only after its durable save succeeds.
-      this.saveBots(this.bots.map((candidate) => candidate === bot ? { ...bot, toolScope: nextToolScope } : candidate));
-      bot.toolScope = nextToolScope;
+    if (wideningToolScope || wideningBrowserPolicy) {
+      const deferred: Partial<BotRecord> = {
+        ...(wideningToolScope ? { toolScope: nextToolScope } : {}),
+        ...(wideningBrowserPolicy ? { browserPolicy: nextBrowserPolicy } : {}),
+      };
+      this.saveBots(this.bots.map((candidate) => candidate === bot ? { ...bot, ...deferred } : candidate));
+      if (wideningToolScope) bot.toolScope = nextToolScope;
+      if (wideningBrowserPolicy) bot.browserPolicy = nextBrowserPolicy;
     } else this.saveBotThread(id, undefined, "now");
     this.emit({ type: "bot", botId: id });
     return bot;
