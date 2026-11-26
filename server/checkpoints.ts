@@ -20,6 +20,30 @@ import { execFileInGroup } from "./group-exec.ts";
 import { checkpointGitSlots } from "./job-slots.ts";
 
 export const CHECKPOINTS_DIR = join(DATA_DIR, "checkpoints");
+export const CHECKPOINTS_ENV = "OMB_CHECKPOINTS";
+
+const ENV_ON = new Set(["1", "true", "on", "yes"]);
+const ENV_OFF = new Set(["0", "false", "off", "no"]);
+
+export function checkpointsEnvOverride(env: NodeJS.ProcessEnv = process.env): boolean | undefined {
+  const raw = env[CHECKPOINTS_ENV]?.trim().toLowerCase();
+  if (raw && ENV_ON.has(raw)) return true;
+  if (raw && ENV_OFF.has(raw)) return false;
+  return undefined;
+}
+
+/** On unless OMB_CHECKPOINTS is off ("0", "false", "off", "no") or config.json has `features.checkpoints: false`; env wins. */
+export function checkpointsEnabled(cfg: { features?: { checkpoints?: boolean } }, env: NodeJS.ProcessEnv = process.env): boolean {
+  const pinned = checkpointsEnvOverride(env);
+  return pinned ?? (cfg.features?.checkpoints !== false);
+}
+
+export function checkpointsEnvRefusal(wanted: boolean | undefined, env: NodeJS.ProcessEnv = process.env): string | null {
+  if (wanted === undefined) return null;
+  const pinned = checkpointsEnvOverride(env);
+  if (pinned === undefined || pinned === wanted) return null;
+  return `${CHECKPOINTS_ENV} is set where this server starts and forces workspace checkpoints ${pinned ? "on" : "off"}, so this change would not take effect. Change or unset ${CHECKPOINTS_ENV} there to manage this setting here.`;
+}
 
 /** Full sha1 hex only, so no revspec ("HEAD~3", "main@{u}") reaches git. */
 const COMMIT_HASH = /^[0-9a-f]{40}$/;
@@ -675,32 +699,29 @@ const commitsSinceGc = new Map<string, number>();
 /** Packs grow between collections because `git add` writes files over core.bigFileThreshold straight into packs. */
 const packBaselineKib = new Map<string, number>();
 
-/** Held until that turn's settled diff is queued or its pin is released, whichever comes first. */
-const pendingCollections = new Map<string, (stop: AbortController) => Promise<void>>();
+type CollectionRun = { stop: AbortController; requeue: boolean };
 
-/** A collection waiting its turn in the folder's queue or running; a snapshot or a settled diff stops it. */
-const collecting = new Map<string, AbortController>();
+const pendingCollections = new Map<string, (run: CollectionRun) => Promise<void>>();
+const collecting = new Map<string, CollectionRun>();
 
-/** Queued behind the folder's operations: runs what a snapshot has held by then. */
 function releaseCollection(shadow: string): void {
-  if (collecting.get(shadow)?.signal.aborted === false) return;
-  const stop = new AbortController();
-  collecting.set(shadow, stop);
+  if (collecting.get(shadow)?.stop.signal.aborted === false) return;
+  const run: CollectionRun = { stop: new AbortController(), requeue: true };
+  collecting.set(shadow, run);
   void serialize(shadow, async () => {
     const collect = pendingCollections.get(shadow);
     try {
-      if (collect === undefined || stop.signal.aborted) return;
+      if (collect === undefined || run.stop.signal.aborted) return;
       pendingCollections.delete(shadow);
-      await collect(stop);
+      await collect(run);
     } finally {
-      if (collecting.get(shadow) === stop) collecting.delete(shadow);
+      if (collecting.get(shadow) === run) collecting.delete(shadow);
     }
   }).catch(() => {});
 }
 
-/** Nobody's message or digest waits for a collection: one queued or running makes way, and is held again. */
 function yieldCollection(shadow: string): void {
-  collecting.get(shadow)?.abort();
+  collecting.get(shadow)?.stop.abort();
 }
 
 async function collectionDue(shadow: string, result: CommitResult, cwd: string, env: NodeJS.ProcessEnv): Promise<boolean> {
@@ -729,18 +750,18 @@ async function collectionDue(shadow: string, result: CommitResult, cwd: string, 
 /** Prunes what was unreachable when it started and nothing newer: a collection this process no longer waits for (it died,
  * or was restarted) can then never prune what a later git is writing. Windows ends a stopped git by force, with its locks
  * left in place, so there a collection that has started runs to its end and the turn waits for it. */
-async function collectObsolete(shadow: string, cwd: string, env: NodeJS.ProcessEnv, stop: AbortController): Promise<void> {
-  const signal = process.platform === "win32" ? undefined : stop.signal;
+async function collectObsolete(shadow: string, cwd: string, env: NodeJS.ProcessEnv, run: CollectionRun): Promise<void> {
+  const signal = process.platform === "win32" ? undefined : run.stop.signal;
   const marker = join(shadow, ".git", COLLECTING);
   const before = Math.floor(Date.now() / 1000);
   try {
     writeFileSync(marker, String(before), { mode: 0o600 });
     await runGit(["reflog", "expire", "--expire=now", "--all"], cwd, env, signal);
-    stop.signal.throwIfAborted();
+    run.stop.signal.throwIfAborted();
     await runGit(["gc", `--prune=${before}`, "--quiet"], cwd, env, signal);
   } catch {
-    if (!stop.signal.aborted) console.warn("checkpoint cleanup deferred; the latest snapshot is preserved");
-    else if (!pendingCollections.has(shadow)) pendingCollections.set(shadow, (again) => collectObsolete(shadow, cwd, env, again));
+    if (!run.stop.signal.aborted) console.warn("checkpoint cleanup deferred; the latest snapshot is preserved");
+    else if (run.requeue && !pendingCollections.has(shadow)) pendingCollections.set(shadow, (again) => collectObsolete(shadow, cwd, env, again));
   } finally {
     rmSync(marker, { force: true });
   }
@@ -775,7 +796,7 @@ export async function snapshot(botId: string, cwd: string, label: string, signal
       if (!result) return null;
       // Counted behind this snapshot, off the turn's path, and held for the turn's settled diff: GC never eats into the digest's capture window.
       void serialize(shadow, async () => {
-        if (await collectionDue(shadow, result, worktree, env)) pendingCollections.set(shadow, (stop) => collectObsolete(shadow, worktree, env, stop));
+        if (await collectionDue(shadow, result, worktree, env)) pendingCollections.set(shadow, (run) => collectObsolete(shadow, worktree, env, run));
       }).catch(() => {});
       return result.hash;
     });
@@ -817,17 +838,24 @@ export async function prime(botId: string, cwd: string, signal?: AbortSignal): P
  * A collection queued or running there is stopped first. */
 export async function quiet(botId: string): Promise<void> {
   const mine = (shadow: string) => shadow.startsWith(join(CHECKPOINTS_DIR, botId) + sep);
-  for (const [shadow, stop] of collecting) if (mine(shadow)) stop.abort();
+  for (const shadow of pendingCollections.keys()) if (mine(shadow)) pendingCollections.delete(shadow);
+  for (const [shadow, run] of collecting) {
+    if (!mine(shadow)) continue;
+    run.requeue = false;
+    run.stop.abort();
+  }
   await Promise.all([...chains].filter(([shadow]) => mine(shadow)).map(([, tail]) => tail));
 }
 
-/** At shutdown: no collection is left running behind the server. */
 export function stopCollections(): void {
-  for (const stop of collecting.values()) stop.abort();
+  pendingCollections.clear();
+  for (const run of collecting.values()) {
+    run.requeue = false;
+    run.stop.abort();
+  }
 }
 
-/** Queued behind the shadow's pending operations, so a diff already queued still finds its commit. */
-export async function release(botId: string, cwd: string, pin: string): Promise<void> {
+export async function release(botId: string, cwd: string, pin: string, opts?: { collect?: boolean }): Promise<void> {
   if (!(await gitAvailable())) return;
   try {
     const worktree = realpathSync(resolve(cwd));
@@ -842,8 +870,7 @@ export async function release(botId: string, cwd: string, pin: string): Promise<
         await unpin();
       });
     });
-    // A turn that ended without a settled diff: the collection its snapshot held runs now.
-    if (held) releaseCollection(shadow);
+    if (held && opts?.collect !== false) releaseCollection(shadow);
   } catch (e) {
     console.warn(`checkpoint pin not released for bot ${botId}: ${e instanceof Error ? e.message : String(e)}`);
   }

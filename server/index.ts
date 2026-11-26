@@ -5370,7 +5370,7 @@ bus.subscribe((event: RuntimeEvent) => {
 });
 // `pin` keeps a sibling thread's snapshot in the same folder from reclaiming the commit mid-turn.
 const turnStartedAt = new Map<string, number>();
-const turnCheckpoints = new Map<string, { botId: string; cwd: string; hash: string; pin: string }>(); const checkpointSeeds = createCheckpointSeeds({ bots: () => store.bots, bot: (id) => store.bot(id), worksInFolders: (bot) => { const engine = registry.get(bot.modelSelection.instanceId); return engine ? supportsWorkspaceFiles(engine.driverKind) : false; }, refusal: checkpoints.refusalReason, prime: checkpoints.prime, onChange: (listener) => store.onChange(listener), ownRoots: [DATA_DIR] });
+const turnCheckpoints = new Map<string, { botId: string; cwd: string; hash: string; pin: string }>(); const checkpointSeeds = createCheckpointSeeds({ bots: () => store.bots, bot: (id) => store.bot(id), worksInFolders: (bot) => { const engine = registry.get(bot.modelSelection.instanceId); return engine ? supportsWorkspaceFiles(engine.driverKind) : false; }, enabled: () => checkpoints.checkpointsEnabled(cfg), refusal: checkpoints.refusalReason, prime: checkpoints.prime, onChange: (listener) => store.onChange(listener), ownRoots: [DATA_DIR] });
 // Not every driver stamps every item with a turnId (some ACP agents), so unstamped rows go to the thread's live turn.
 const liveTurnByThread = new Map<string, string>();
 
@@ -5378,7 +5378,7 @@ function forgetTurnCheckpoint(threadId: string): void {
   const checkpoint = turnCheckpoints.get(threadId);
   if (!checkpoint) return;
   turnCheckpoints.delete(threadId);
-  void checkpoints.release(checkpoint.botId, checkpoint.cwd, checkpoint.pin);
+  void checkpoints.release(checkpoint.botId, checkpoint.cwd, checkpoint.pin, { collect: checkpoints.checkpointsEnabled(cfg) });
 }
 
 function clearTurnDigestState(threadId: string): void {
@@ -5484,7 +5484,7 @@ async function scheduleTurnDigest(input: {
       if (handed) store.setHandedMessages(input.botId, input.threadId, input.instanceId,
         recordHanded(handed, store.activePath(input.threadId).filter(isContextMessage).map(row => row.id), [message.id]));
     }
-    if (!checkpoint) return;
+    if (!checkpoint || !checkpoints.checkpointsEnabled(cfg)) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const capture = async () => {
@@ -5505,8 +5505,7 @@ async function scheduleTurnDigest(input: {
   } catch (error) {
     console.error(`digest: could not record turn ${input.turnId} on ${input.threadId}:`, error instanceof Error ? error.message : error);
   } finally {
-    // The diff above is queued ahead of this in the shadow repo, so the pre-turn commit has had its last reader.
-    if (checkpoint) void checkpoints.release(checkpoint.botId, checkpoint.cwd, checkpoint.pin);
+    if (checkpoint) void checkpoints.release(checkpoint.botId, checkpoint.cwd, checkpoint.pin, { collect: checkpoints.checkpointsEnabled(cfg) });
   }
 }
 
@@ -8182,16 +8181,15 @@ async function beginTurn(
       const recallPrompt = integrations.agents && bot.memoryEnabled !== false ? SESSION_SEARCH_SYSTEM_PROMPT : "";
       const learnPrompt = skillAuthoring ? profilePrompt ? LEARN_RULES_PROMPT : LEARN_PROMPT : "";
 
-      // Wait for the snapshot right before dispatch: the engine must not edit the project until it settles.
-      if (checkpointCwd) { setup.lap("sync");
+      if (checkpointCwd && checkpoints.checkpointsEnabled(cfg)) { setup.lap("sync");
         const before = await checkpoints.snapshot(bot.id, checkpointCwd, `turn ${threadId.slice(0, 8)}`, undefined, { pin: dispatchClaimId }); setup.lap("checkpoint");
         if (!directTurnClaimIsCurrent(bot.id, dispatchClaimId, threadId)) {
-          if (before) void checkpoints.release(bot.id, checkpointCwd, dispatchClaimId);
+          if (before) void checkpoints.release(bot.id, checkpointCwd, dispatchClaimId, { collect: checkpoints.checkpointsEnabled(cfg) });
           throw new DirectTurnSetupCancelled("turn stopped during checkpoint");
         }
         forgetTurnCheckpoint(threadId);
         if (before) turnCheckpoints.set(threadId, { botId: bot.id, cwd: checkpointCwd, hash: before, pin: dispatchClaimId });
-      }
+      } else forgetTurnCheckpoint(threadId);
       // One bot snapshot for the browser bearer, setupModeActive and the prompt's soul, so a soul saved mid-dispatch cannot split them.
       const liveBot = store.bot(bot.id);
       const setupMode =
@@ -11675,6 +11673,7 @@ function configStatus() {
       parallelRoomJobs: parallelRoomJobsEnabled(cfg),
       savedSteps: savedStepsEnabled(cfg), savedStepsHere: savedSteps.here(),
       usbPhoneTakeover: HAS_USB_PORT ? usbPhoneTakeoverEnabled(cfg) : undefined,
+      checkpoints: checkpoints.checkpointsEnabled(cfg),
     },
     onboarding: {
       completedAt: cfg.onboarding?.completedAt ?? "",
@@ -12267,7 +12266,7 @@ const postiz = createPostiz({ cfg: () => cfg, mcpOAuth, persistMcpServers: persi
   checkedModelSelection, policyModelRefusal, browserSessionSpec, configStatus,
   configForAccess: (status, auth) => configForAccess(status as ReturnType<typeof configStatus>, auth.scopes.includes("admin"), auth.kind === "session" ? auth.session : null),
   ...(CLOUD_TEAM ? { ownProfile: (auth: RequestAuth, profile: { name?: string; avatarUrl?: string; aboutMe?: string }) => auth.kind === "session" ? (teamHost.saveMemberProfile(auth.session, profile), true) : false, ownHints: (auth: RequestAuth, hints: string[]) => auth.kind === "session" ? (teamWelcome.save(personKey(auth.session), { hints }), true) : false } : {}),
-  resyncOpenCodeProviderKeys, revokeEngineCapabilities, reloadProviders, broadcast, drainQueuedSends, postiz,
+  checkpointsDisabled: () => { checkpointSeeds.cancel(); checkpoints.stopCollections(); }, resyncOpenCodeProviderKeys, revokeEngineCapabilities, reloadProviders, broadcast, drainQueuedSends, postiz,
 }); ROUTES.push(createPostizRoutes({ postiz }), configRoutes);
 const instanceRoutes = createInstanceRoutes({
   store, cfg, registry, sessions, providerAuthSessions,

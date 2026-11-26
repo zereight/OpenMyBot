@@ -38,7 +38,7 @@ describe a setting from memory: read the setting, the file, or the page.
 | `workspaces/<botId>/` | The bot's own folder: `MEMORY.md`, `memory/<topic>.md`, `memory/log/<date>.md`, its private `skills/`. |
 | `skills-library/index.json` | Skills imported into the shared library: hashes, source, review state. |
 | `skill-state/` | Per-bot skill imports and their revisions. |
-| `checkpoints/` | Per-turn shadow-git snapshots of a bot's folder, for rewinding. |
+| `checkpoints/` | Per-turn shadow-git snapshots of a bot's project folder for turn digest file diffs (`features.checkpoints: false` in `config.json` or `OMB_CHECKPOINTS=off` disables them). |
 
 Change a setting with `app_settings` when it has it. Otherwise `config.json`
 is the one file meant to be edited by hand; `instances` are read at boot, so

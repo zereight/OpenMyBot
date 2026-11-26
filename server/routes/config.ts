@@ -1,4 +1,5 @@
 import { liveSavePatch } from "../live-config.ts";
+import { checkpointsEnabled, checkpointsEnvRefusal } from "../checkpoints.ts";
 import { signInEnvRefusal } from "../sign-in-env.ts";
 import * as boat from "../boat.ts";
 import { boatCreateRecoverySnapshot, retireDeletedBoatCreate } from "../boat-create-idempotency.ts";
@@ -72,6 +73,7 @@ export interface ConfigRouteDeps {
   closeBrowser(session: string, spec: { command: string; env: Record<string, string> }): Promise<boolean>;
   /** After browserEngine.engine changed: closes the viewers and the browsers the other engine ran. */
   browserEngineSwitched(): void;
+  checkpointsDisabled?(): void;
   decider: Pick<Decider, "testKey">;
   sharedComputers: Pick<SharedComputers, "close">;
   sharedComputerControl: Pick<SharedComputerControl, "close">;
@@ -125,7 +127,7 @@ function vpsEnvironmentFilter(): string | null {
 export function createConfigRoutes(deps: ConfigRouteDeps): RouteHandler {
   const {
     store, cfg, registry, sessions, browserCleanup, browserLive, browserRuntime, usedBrowserSessions, decider,
-    closeBrowser, browserEngineSwitched, sharedComputers, sharedComputerControl, hostedModels, cloudHome: CLOUD_HOME, sharedMembership, lendingEnabled, providerConfigs,
+    closeBrowser, browserEngineSwitched, checkpointsDisabled, sharedComputers, sharedComputerControl, hostedModels, cloudHome: CLOUD_HOME, sharedMembership, lendingEnabled, providerConfigs,
     localVmIdleMs, localVmIdles, localVmActiveThreads, localVmLifecycleBusy, localVmImageBusy, localVmModeChangeBusy, localVmModeChanging,
     providerConfigBusy, computerProviderConfigTransitions, managedBoatOwners, providerOperationConflict,
     perBotLocalVmCountForModeChange, checkedModelSelection, policyModelRefusal, browserSessionSpec, configStatus,
@@ -167,6 +169,8 @@ export function createConfigRoutes(deps: ConfigRouteDeps): RouteHandler {
       // Saved, it would be overruled by the environment at once: say so instead of answering 200 with nothing changed.
       const signInPinned = signInEnvRefusal(patch.signIn);
       if (signInPinned) return json(res, 409, { error: signInPinned, code: "signin_env" });
+      const checkpointsPinned = checkpointsEnvRefusal(patch.features?.checkpoints);
+      if (checkpointsPinned) return json(res, 409, { error: checkpointsPinned, code: "checkpoints_env" });
       if (patch.newBotDefaults) {
         if (patch.newBotDefaults.profile.modelSelection) {
           const checked = checkedModelSelection(patch.newBotDefaults.profile.modelSelection);
@@ -212,6 +216,7 @@ export function createConfigRoutes(deps: ConfigRouteDeps): RouteHandler {
         }
       }
       const disablingBuiltInBrowser = patch.features?.browser === false && builtInBrowserEnabled(cfg);
+      const checkpointsWereEnabled = checkpointsEnabled(cfg);
       const switchingBrowserEngine = patch.browserEngine?.engine !== undefined && patch.browserEngine.engine !== browserEngineKind(cfg);
       const removedBrowserProfileIds = patch.browserProfiles === undefined
         ? []
@@ -639,6 +644,7 @@ export function createConfigRoutes(deps: ConfigRouteDeps): RouteHandler {
         sharedComputerControl.close();
       }
       if (disablingBuiltInBrowser) browserLive.closeAll();
+      if (checkpointsWereEnabled && !checkpointsEnabled(cfg)) checkpointsDisabled?.();
       if (switchingBrowserEngine) browserEngineSwitched();
       for (const request of browserCleanupRequests) {
         if (request.kind === "profile") browserLive.closeForSession(browserSessionId("", request.partitionId));

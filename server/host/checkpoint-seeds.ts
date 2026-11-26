@@ -34,6 +34,7 @@ export interface CheckpointSeedsDeps<Bot extends SeedBot = SeedBot> {
   now?(): number;
   /** Runs the start-up pass once the start-up itself is over. */
   later?(run: () => void): void;
+  enabled?(): boolean;
 }
 
 /** Start-up reads at most this many folders, the most recently used first. */
@@ -49,6 +50,7 @@ function inside(root: string, path: string): boolean {
 export function createCheckpointSeeds<Bot extends SeedBot>(deps: CheckpointSeedsDeps<Bot>) {
   const now = deps.now ?? Date.now;
   const later = deps.later ?? ((run) => { setTimeout(run, STARTUP_DELAY_MS).unref?.(); });
+  const isEnabled = () => deps.enabled?.() ?? true;
   /** Bot and folder, once queued. */
   const queued = new Set<string>();
   /** The folder each bot, and each conversation with one of its own, was last seen set to: a change to anything else about a
@@ -98,7 +100,7 @@ export function createCheckpointSeeds<Bot extends SeedBot>(deps: CheckpointSeeds
   };
 
   const consider = (bot: Bot, folder: string | null | undefined): void => {
-    if (stopped || !folder || queued.has(key(bot.id, folder)) || !deps.worksInFolders(bot) || !qualifies(folder)) return;
+    if (stopped || !isEnabled() || !folder || queued.has(key(bot.id, folder)) || !deps.worksInFolders(bot) || !qualifies(folder)) return;
     queued.add(key(bot.id, folder));
     queue.push({ botId: bot.id, folder });
     pump();
@@ -136,6 +138,7 @@ export function createCheckpointSeeds<Bot extends SeedBot>(deps: CheckpointSeeds
     /** The folders of the conversations used in the last week, most recent first. */
     start(): void {
       later(() => {
+        if (stopped || !isEnabled()) return;
         const used = new Map<string, { bot: Bot; folder: string; at: number }>();
         for (const bot of deps.bots()) {
           for (const task of bot.tasks ?? []) {
@@ -149,10 +152,16 @@ export function createCheckpointSeeds<Bot extends SeedBot>(deps: CheckpointSeeds
         for (const { bot, folder } of [...used.values()].sort((left, right) => right.at - left.at).slice(0, STARTUP_FOLDERS)) consider(bot, folder);
       });
     },
+    cancel(): void {
+      for (const one of queue.splice(0)) queued.delete(key(one.botId, one.folder));
+      if (running) running.stop.abort();
+      else for (const done of idle.splice(0)) done();
+    },
     stop(): void {
       stopped = true;
-      queue.length = 0;
-      running?.stop.abort();
+      for (const one of queue.splice(0)) queued.delete(key(one.botId, one.folder));
+      if (running) running.stop.abort();
+      else for (const done of idle.splice(0)) done();
     },
     /** Resolves once nothing is being read or waiting to be. */
     settled(): Promise<void> {

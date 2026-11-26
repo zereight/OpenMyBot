@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 // Shadow repos live under DATA_DIR, which server/testing/setup.ts points at a disposable home before config.ts loads.
-import { CHECKPOINTS_DIR, GC_EVERY_COMMITS, diffWorkingTree, prime, refusalReason, release, snapshot } from "./checkpoints.ts";
+import { CHECKPOINTS_DIR, GC_EVERY_COMMITS, checkpointsEnabled, checkpointsEnvRefusal, diffWorkingTree, prime, refusalReason, release, snapshot } from "./checkpoints.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
 
 const scratchDirs: string[] = [];
@@ -711,4 +711,23 @@ describe("a collection cut short", () => {
     expect(() => userGit(shadow, "fsck", "--connectivity-only", "--no-dangling")).not.toThrow();
     await release(bot, cwd, "dispatch-S");
   }, process.platform === "win32" ? 120_000 : 60_000);
+});
+
+describe("checkpointsEnabled", () => {
+  it("defaults on, respects features.checkpoints, and lets OMB_CHECKPOINTS override config", () => {
+    expect(checkpointsEnabled({}, {})).toBe(true);
+    expect(checkpointsEnabled({ features: { checkpoints: false } }, {})).toBe(false);
+    expect(checkpointsEnabled({ features: { checkpoints: true } }, { OMB_CHECKPOINTS: "off" })).toBe(false);
+    expect(checkpointsEnabled({ features: { checkpoints: true } }, { OMB_CHECKPOINTS: "0" })).toBe(false);
+    expect(checkpointsEnabled({ features: { checkpoints: false } }, { OMB_CHECKPOINTS: "on" })).toBe(true);
+    expect(checkpointsEnabled({ features: { checkpoints: false } }, { OMB_CHECKPOINTS: "1" })).toBe(true);
+    expect(checkpointsEnabled({ features: { checkpoints: false } }, { OMB_CHECKPOINTS: "maybe" })).toBe(false);
+  });
+
+  it("refuses config toggles that conflict with OMB_CHECKPOINTS", () => {
+    expect(checkpointsEnvRefusal(false, {})).toBeNull();
+    expect(checkpointsEnvRefusal(false, { OMB_CHECKPOINTS: "off" })).toBeNull();
+    expect(checkpointsEnvRefusal(true, { OMB_CHECKPOINTS: "off" })).toContain("OMB_CHECKPOINTS");
+    expect(checkpointsEnvRefusal(false, { OMB_CHECKPOINTS: "1" })).toContain("OMB_CHECKPOINTS");
+  });
 });

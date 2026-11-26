@@ -12,6 +12,7 @@ describe("which config patches can change an engine's status", () => {
       { onboarding: { hintsSeen: ["welcome"], reelSeen: true, completedAt: "2026-11-20", version: 3, firstTurnAt: "2026-11-20" } },
       { profile: { name: "Ada", email: "ada@example.test", aboutMe: "I write compilers", avatarUrl: "" } },
       { features: { showToolCalls: true } },
+      { features: { checkpoints: false } },
       { language: "de" },
       { computerName: "Desk" },
       { everyBotRules: "Be brief." },
@@ -59,7 +60,7 @@ describe("saving config and the engines' status", () => {
   const auth = { kind: "owner", via: "loopback", scopes: ["admin", "client"] } as unknown as RequestAuth;
 
   function routes() {
-    let forgotten = 0, broadcasts = 0;
+    let forgotten = 0, broadcasts = 0, disabledCheckpoints = 0;
     const busy = () => ({ get: () => false, set: () => {} });
     const deps = {
       store: { bots: [], patchBot: () => null, clearVoiceSelections: () => {} },
@@ -72,6 +73,7 @@ describe("saving config and the engines' status", () => {
       usedBrowserSessions: new Map(),
       closeBrowser: async () => true,
       browserEngineSwitched: () => {},
+      checkpointsDisabled: () => { disabledCheckpoints += 1; },
       decider: { testKey: async () => ({ ok: true }) },
       sharedComputers: { close: () => {} },
       sharedComputerControl: { close: () => {} },
@@ -113,17 +115,33 @@ describe("saving config and the engines' status", () => {
       } as unknown as Parameters<typeof route>[0]);
       return replies;
     };
-    return { save, forgotten: () => forgotten, broadcasts: () => broadcasts, cfg: deps.cfg };
+    return { save, forgotten: () => forgotten, broadcasts: () => broadcasts, disabledCheckpoints: () => disabledCheckpoints, cfg: deps.cfg };
   }
 
   it("keeps every engine's status through a save of what the app shows", async () => {
-    const { save, forgotten, broadcasts, cfg } = routes();
+    const { save, forgotten, broadcasts, disabledCheckpoints, cfg } = routes();
     expect(await save({ onboarding: { hintsSeen: ["welcome"] } })).toEqual([200]);
     expect(await save({ features: { showToolCalls: true } })).toEqual([200]);
+    expect(await save({ features: { checkpoints: false } })).toEqual([200]);
     expect(await save({ profile: { name: "Ada" }, language: "de" })).toEqual([200]);
-    expect(cfg).toMatchObject({ onboarding: { hintsSeen: ["welcome"] }, features: { showToolCalls: true }, profile: { name: "Ada" }, language: "de" });
-    expect(broadcasts()).toBe(3);
+    expect(cfg).toMatchObject({ onboarding: { hintsSeen: ["welcome"] }, features: { showToolCalls: true, checkpoints: false }, profile: { name: "Ada" }, language: "de" });
+    expect(broadcasts()).toBe(4);
     expect(forgotten()).toBe(0);
+    expect(disabledCheckpoints()).toBe(1);
+  });
+
+  it("refuses a checkpoint toggle that OMB_CHECKPOINTS overrides", async () => {
+    const previous = process.env.OMB_CHECKPOINTS;
+    process.env.OMB_CHECKPOINTS = "off";
+    try {
+      const { save, disabledCheckpoints } = routes();
+      expect(await save({ features: { checkpoints: true } })).toEqual([409]);
+      expect(await save({ features: { checkpoints: false } })).toEqual([200]);
+      expect(disabledCheckpoints()).toBe(0);
+    } finally {
+      if (previous === undefined) delete process.env.OMB_CHECKPOINTS;
+      else process.env.OMB_CHECKPOINTS = previous;
+    }
   });
 
   it("reads every engine again after a save that can reach one, alone or beside what the app shows", async () => {

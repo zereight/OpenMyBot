@@ -21,7 +21,7 @@ function folder(kind: "project" | "plain"): string {
 
 type Read = { botId: string; cwd: string; signal: AbortSignal; end: () => void };
 
-function setup(options: { bots?: SeedBot[]; chatOnly?: string[]; ownRoots?: string[] } = {}) {
+function setup(options: { bots?: SeedBot[]; chatOnly?: string[]; ownRoots?: string[]; enabled?: () => boolean } = {}) {
   const bots = new Map((options.bots ?? []).map((bot) => [bot.id, bot]));
   const reads: Read[] = [];
   const clock = 1_000_000_000_000;
@@ -31,6 +31,7 @@ function setup(options: { bots?: SeedBot[]; chatOnly?: string[]; ownRoots?: stri
     bots: () => [...bots.values()],
     bot: (id) => bots.get(id),
     worksInFolders: (bot) => !(options.chatOnly ?? []).includes(bot.id),
+    enabled: options.enabled,
     refusal: refusalReason,
     prime: (botId, cwd, signal) => new Promise<void>((end) => {
       const read = { botId, cwd, signal, end };
@@ -210,5 +211,37 @@ describe("checkpoint seeds", () => {
     host.seeds.start();
     host.runStartUp();
     expect(host.reads).toHaveLength(1);
+  });
+
+  it("skips reads while disabled and lets canceled folders be read again after re-enabling", async () => {
+    const first = folder("project");
+    const second = folder("project");
+    const other = folder("project");
+    let enabled = false;
+    const host = setup({ enabled: () => enabled });
+    host.bots.set("boot", { id: "boot", cwd: first, tasks: [{ threadId: "t1", updatedAt: host.now() }] });
+    host.seeds.start();
+    host.runStartUp();
+    host.set({ id: "a", cwd: first });
+    expect(host.reads).toEqual([]);
+
+    enabled = true;
+    host.set({ id: "a", cwd: other });
+    host.set({ id: "b", cwd: second });
+    expect(read(host.reads)).toEqual([`a:${other}`]);
+    enabled = false;
+    host.seeds.cancel();
+    expect(host.reads[0]!.signal.aborted).toBe(true);
+    await host.seeds.settled();
+
+    enabled = true;
+    host.set({ id: "b", cwd: first });
+    host.set({ id: "b", cwd: second });
+    host.reads[1]!.end();
+    await Promise.resolve();
+    await Promise.resolve();
+    host.reads[2]!.end();
+    await host.seeds.settled();
+    expect(read(host.reads)).toEqual([`a:${other}`, `b:${first}`, `b:${second}`]);
   });
 });
