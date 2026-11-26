@@ -75,3 +75,21 @@ function mountOwnOverHttp(appServerArgs: string[], env: Record<string, string | 
   if (approval !== "prompt") appServerArgs.push("-c", `${prefix}.default_tools_approval_mode="${approval}"`);
   return true;
 }
+
+export function assertSelectedCodexMcp(effectiveConfig: unknown, selectedMcp: ReadonlyMap<string, StdioMcpSpec>, selectedApprovals: ReadonlyMap<string, McpApprovalMode>): void {
+  const catalog = (effectiveConfig as { mcp_servers?: unknown } | null)?.mcp_servers;
+  if (!catalog || typeof catalog !== "object" || Array.isArray(catalog)) throw new Error("Codex could not confirm its selected MCP configuration. No prompt was sent.");
+  for (const [name, entry] of Object.entries(catalog)) {
+    if (entry && typeof entry === "object" && (entry as { enabled?: unknown }).enabled === false) continue;
+    const expected = selectedMcp.get(name);
+    const actual = entry as { command?: unknown; args?: unknown; env_vars?: unknown; env?: unknown; default_tools_approval_mode?: unknown; tools?: unknown } | null;
+    if (!expected || actual?.command !== expected.command
+      || JSON.stringify(actual?.args ?? []) !== JSON.stringify(expected.args ?? [])
+      || !Array.isArray(actual?.env_vars) || JSON.stringify([...actual.env_vars].sort()) !== JSON.stringify(Object.keys(expected.env).sort())
+      || actual.default_tools_approval_mode !== (selectedApprovals.get(name) ?? "prompt")
+      || (actual.env != null && (typeof actual.env !== "object" || Array.isArray(actual.env) || Object.keys(actual.env).length > 0))
+      || (actual.tools != null && (typeof actual.tools !== "object" || Array.isArray(actual.tools) || Object.keys(actual.tools).length > 0))) {
+      throw new Error("Codex has an MCP server outside the selected configuration. Disable native MCP entries for this account before using tool selection or guardrails. No prompt was sent.");
+    }
+  }
+}

@@ -170,6 +170,7 @@ export function gateServer(input: {
   threadId: string;
   budget: number;
   toolScope?: ToolScope;
+  toolGuardrailsFile?: string;
   nodeEnv?: Record<string, string>;
   execPath?: string;
   configEnvName?: string;
@@ -186,8 +187,10 @@ export function gateServer(input: {
   const parsed = parseToolScope(input.toolScope);
   if (!parsed.ok) throw new Error(parsed.error);
   const scoped = parsed.scope !== undefined;
+  const guardrailsFile = input.toolGuardrailsFile;
+  const restricted = scoped || guardrailsFile !== undefined;
   const remote = remoteMcpSpec(server) !== undefined;
-  if (budget <= 0 && !scoped && !apps && !schemaProfile && !limitsTools) return null;
+  if (budget <= 0 && !restricted && !apps && !schemaProfile && !limitsTools) return null;
   const directory = input.directory === true && remote;
   const proxyOptions = {
     nodeEnv: input.nodeEnv,
@@ -196,29 +199,30 @@ export function gateServer(input: {
     ...(directory ? { directory: { name, ...(scoped ? { toolScope: parsed.scope } : {}) } } : {}),
     ...(apps && remote ? { apps } : {}),
   };
-  if (!scoped && remote && !(input.gateRemote === true && budget > 0)) {
+  if (!restricted && remote && !(input.gateRemote === true && budget > 0)) {
     if (!apps && !limitsTools) return null;
     const proxy = mcpStdioServer(server, proxyOptions);
     return proxy ? { command: proxy.command, args: proxy.args ?? [], env: proxy.env ?? {} } : null;
   }
   const spec = mcpStdioServer(server, proxyOptions);
   if (!spec) {
-    if (scoped) throw new Error("Tool selection requires a supported MCP server.");
+    if (restricted) throw new Error(scoped ? "Tool selection requires a supported MCP server." : "Tool guardrails require a supported MCP server.");
     return null;
   }
   // Security: a selection matches the name in the call, so behind one the agents server is never bridged,
   // whatever the turn decided earlier.
-  const upstream = scoped && name === "agents" ? unbridgedServer(spec) : spec;
+  const upstream = restricted && name === "agents" ? unbridgedServer(spec) : spec;
   const env = {
     OMB_GATE_NAME: name,
     OMB_GATE_UPSTREAM: JSON.stringify({ command: upstream.command, args: upstream.args ?? [], env: upstream.env ?? {} }),
     OMB_GATE_SPILL_DIR: spillDir(input.threadId),
     OMB_GATE_BUDGET: String(budget),
     ...(scoped ? { OMB_GATE_TOOL_SCOPE: JSON.stringify(parsed.scope) } : {}),
+    ...(guardrailsFile !== undefined ? { OMB_GATE_GUARDRAILS_FILE: guardrailsFile } : {}),
     ...(directory ? { OMB_GATE_DIRECTORY: "1" } : {}),
     ...(apps && !remote ? { [GATE_APPS_ENV]: JSON.stringify(apps) } : {}),
   };
-  if (input.configEnvName && ((!scoped && !(apps && !remote)) || !/^OMB_GATE_CONFIG_[a-f0-9]{64}$/.test(input.configEnvName))) {
+  if (input.configEnvName && ((!restricted && !(apps && !remote)) || !/^OMB_GATE_CONFIG_[a-f0-9]{64}$/.test(input.configEnvName))) {
     throw new Error("Invalid private MCP gate configuration.");
   }
   return {

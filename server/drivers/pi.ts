@@ -46,7 +46,7 @@ import {
   mergeLocalInject,
 } from "./local-inject.ts";
 import { appendNative } from "./native.ts";
-import { allowsTool, parseToolScope } from "../../shared/tool-scope.ts";
+import { allowsTool, parseToolScope } from "../../shared/tool-scope.ts"; import { parseToolGuardrails } from "../../shared/tool-guardrails.ts"; import { guardrailProtectedPaths } from "./tool-guardrails-runtime.ts";
 import { buildMcpServers } from "./pi-mcp-servers.ts";
 import { piSessionDir, piSessionPath, piTurnArgs } from "./pi-session.ts";
 import { piAgentDir, readPiDefaultModel, withOwnPiAgentDir } from "./pi-agent-dir.ts";
@@ -407,8 +407,8 @@ export const PiDriver: ProviderDriver<PiConfig> = {
     const sendTurn = async (turn: SendTurnInput) => {
       if (startupModelRefresh) await startupModelRefresh;
       const { threadId } = turn;
-      const selection = parseToolScope(turn.toolScope);
-      if (!selection.ok) throw new Error(selection.error);
+      const selection = parseToolScope(turn.toolScope), guardrails = parseToolGuardrails(turn.toolGuardrails);
+      if (!selection.ok) throw new Error(selection.error); if (!guardrails.ok) throw new Error(guardrails.error);
       const toolScope = selection.scope;
       if (active.has(threadId)) throw new Error("a turn is already running on this thread");
       const fullAuto = turn.approvalMode === undefined ? config.fullAuto : false;
@@ -445,7 +445,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       const mcpTempDir = mkdtempSync(join(tmpdir(), "omb-pi-mcp-"));
       const scopeReadyPath = toolScope !== undefined ? join(mcpTempDir, "scope-ready.json") : undefined;
       try {
-        writeFileSync(join(mcpTempDir, "mcp.json"), JSON.stringify({ mcpServers: mcpServers ?? {}, toolScope, scopeReadyPath, approvalMode: turn.approvalMode, askUser }), { mode: 0o600 });
+        writeFileSync(join(mcpTempDir, "mcp.json"), JSON.stringify({ mcpServers: mcpServers ?? {}, toolScope, toolGuardrails: guardrails.rules, protectedPaths: guardrailProtectedPaths(), scopeReadyPath, approvalMode: turn.approvalMode, askUser }), { mode: 0o600 });
       } catch (err) {
         // A partial file could still hold credentials.
         try {

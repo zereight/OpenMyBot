@@ -25,6 +25,7 @@ export const SPAWNED_PROXIES = {
   chatgptPlanToken: resolveProxy("drivers/chatgpt-plan-token-command"),
   hook: resolveProxy("hooks/omb-hook"),
   browserGuard: resolveProxy("hooks/omb-browser-guard"),
+  toolGuard: resolveProxy("hooks/omb-tool-guard"),
   piMcpExtension: resolveProxy("drivers/pi-mcp-extension"),
 } as const;
 

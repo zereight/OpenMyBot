@@ -6,6 +6,7 @@ import { isBotLiveVoice } from "../../shared/live-call.ts";
 import { normalizeOutboundPolicy } from "../../shared/outbound.ts";
 import { normalizePhoneApps } from "../../shared/phone-apps.ts";
 import { parseToolScope, toolScopeWidens } from "../../shared/tool-scope.ts";
+import { parseToolGuardrails, toolGuardrailsWidens } from "../../shared/tool-guardrails.ts";
 import { parseToolsOff, TOOL_GROUPS } from "../../shared/tool-groups.ts";
 import { isMausColor, MAUS_COLOR_NAMES, type BotUpdateResponse, type WireBot, type WireGroup } from "../../shared/wire.ts";
 import { dropRemovedGrants, MAX_ALWAYS_ALLOW } from "../always-allow.ts";
@@ -350,6 +351,11 @@ export function createBotPatchRoutes(deps: BotPatchRouteDeps): RouteHandler {
         if (!parsed.ok) return json(res, 400, { error: parsed.error });
         patch.toolScope = parsed.scope;
       }
+      if (Object.hasOwn(body, "toolGuardrails")) {
+        const parsed = parseToolGuardrails(body.toolGuardrails === null ? undefined : body.toolGuardrails);
+        if (!parsed.ok) return json(res, 400, { error: parsed.error });
+        patch.toolGuardrails = parsed.rules;
+      }
       if (body.mcpServers !== undefined) {
         if (auth.kind === "session" && !sessions.isLive(auth.session.id)) {
           return json(res, 401, { error: "unauthorized: this session has expired or was revoked" });
@@ -622,6 +628,7 @@ export function createBotPatchRoutes(deps: BotPatchRouteDeps): RouteHandler {
         loosened.push("mcpServers");
       }
       if (Object.hasOwn(body, "toolScope") && toolScopeWidens(existingBot?.toolScope, patch.toolScope)) loosened.push("toolScope");
+      if (Object.hasOwn(body, "toolGuardrails") && toolGuardrailsWidens(existingBot?.toolGuardrails, patch.toolGuardrails)) loosened.push("toolGuardrails");
       const browserOrigin = typeof req.headers.origin === "string" && req.headers.origin.trim() !== "";
       if (loosened.length && auth.kind === "loopback" && !DESKTOP_MANAGED && !browserOrigin) {
         if (store.bots.some((candidate) => candidate.busy)) {
@@ -656,11 +663,13 @@ export function createBotPatchRoutes(deps: BotPatchRouteDeps): RouteHandler {
           (freshBrowserBot.busy || activeGroupTurnForBot(freshBrowserBot.id))) {
         return json(res, 409, { error: "stop this bot's turn before changing its memory setting" });
       }
-      if (Object.hasOwn(body, "toolScope")) {
+      if (Object.hasOwn(body, "toolScope") || Object.hasOwn(body, "toolGuardrails")) {
         if (auth.kind === "session" && !sessions.isLive(auth.session.id)) {
           return json(res, 401, { error: "unauthorized: this session has expired or was revoked" });
         }
-        if (toolScopeWidens(freshBrowserBot?.toolScope, patch.toolScope) && auth.kind === "loopback" && !DESKTOP_MANAGED && !browserOrigin && store.bots.some((candidate) => candidate.busy)) {
+        const widens = (Object.hasOwn(body, "toolScope") && toolScopeWidens(freshBrowserBot?.toolScope, patch.toolScope))
+          || (Object.hasOwn(body, "toolGuardrails") && toolGuardrailsWidens(freshBrowserBot?.toolGuardrails, patch.toolGuardrails));
+        if (widens && auth.kind === "loopback" && !DESKTOP_MANAGED && !browserOrigin && store.bots.some((candidate) => candidate.busy || activeGroupTurnForBot(candidate.id))) {
           return json(res, 409, { error: "A bot is working right now, so this change has to come from the desktop app or a paired device. Try again once every bot is idle." });
         }
       }

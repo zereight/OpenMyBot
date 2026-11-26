@@ -263,6 +263,17 @@ describe("CodexDriver turns (fake app-server)", () => {
     expect(existsSync(dump)).toBe(false);
   });
 
+  it("refuses a guarded turn before its prompt when Codex does not list the guard hook as trusted", async () => {
+    const dump = join(scratch, "guard-refused.json"); process.env.FAKE_CODEX_DUMP = dump;
+    await create({ environment: { HOME: scratch, CODEX_HOME: join(scratch, ".codex") } });
+    await instance.adapter.sendTurn({ threadId: "guard-refused", botId: "guarded", text: "Must not run", approvalMode: "full",
+      toolGuardrails: [{ id: "delegate-pr", tools: ["native:shell"], match: { patterns: ["bitbucket.org"] }, message: "Hand PR work to the PR bot." }] });
+    await recorder.until((event) => event.type === "turn.completed");
+    const seen = existsSync(dump) ? JSON.parse(readFileSync(dump, "utf8")) : { calls: [] };
+    expect(seen.calls.some((call: { method: string }) => call.method === "turn/start")).toBe(false);
+    expect(recorder.events.some((event) => event.type === "runtime.error" && /did not load the PreToolUse hook/.test(event.message))).toBe(true);
+  });
+
   it("switches a bot's native skills off by path, and still runs its turn while its switches can't be read", async () => {
     const dump = join(scratch, "skills-off.json"); process.env.FAKE_CODEX_DUMP = dump;
     const skill = join(scratch, ".agents", "skills", "pdf", "SKILL.md");

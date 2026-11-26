@@ -2,6 +2,7 @@
 
 import type { ApprovalMode } from "../shared/approval-mode.ts";
 import type { ToolIdentity, ToolScope } from "../shared/tool-scope.ts";
+import type { ToolGuardrailRule } from "../shared/tool-guardrails.ts";
 import type { EffortLevel } from "../shared/wire.ts";
 import type {
   DriverKind, InstanceId, ModelVariantOption, RuntimeEventListener, ThreadId, TurnId,
@@ -136,6 +137,7 @@ export interface SendTurnInput {
   approvalModeNow?: () => ApprovalMode;
   /** Fresh owner selection, independent of execution approval and resume state. */
   toolScope?: ToolScope;
+  toolGuardrails?: ToolGuardrailRule[];
   /** A guest turn: no shell or command execution, no reads outside its folder. Sent only to drivers whose guestTurns is "confined". */
   guestConfined?: boolean;
   /** Why this turn is confined, in the owner's words, for a refusal to end with. */

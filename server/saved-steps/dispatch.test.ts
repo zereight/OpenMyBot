@@ -158,6 +158,9 @@ describe("SavedStepsDispatch.sendTurn", () => {
     ["only some of the steps' tools are selected", REQ, { ...INPUT, toolScope: { allow: ["mcp:computer:click", "mcp:computer:list_apps"] } }],
     ["the computer is not selected", REQ, { ...INPUT, toolScope: { deny: ["mcp:computer:*"] } }],
     ["the bot's tool selection cannot be read", REQ, { ...INPUT, toolScope: { allow: "mcp:computer:*" } as never }],
+    ["a guardrail blocks a step's tool", REQ, { ...INPUT, toolGuardrails: [{ id: "no-typing", tools: ["mcp:computer:set_value"], message: "Ask first." }] }],
+    ["a guardrail matches a step's arguments", REQ, { ...INPUT, toolGuardrails: [{ id: "no-hello", tools: ["mcp:computer:*"], match: { patterns: ["hello"] }, message: "No." }] }],
+    ["a guardrail blocks a lookup the replay needs", REQ, { ...INPUT, toolGuardrails: [{ id: "no-windows", tools: ["mcp:computer:list_windows"], message: "No." }] }],
   ])("passes through: %s", async (_, request, input) => {
     expect(await dispatch.sendTurn(engine, request as never, input as SendTurnInput, start)).toEqual({ turnId: "e1" });
     expect(start).toHaveBeenCalledWith(input);
@@ -218,6 +221,13 @@ describe("SavedStepsDispatch.sendTurn", () => {
     expect(start).toHaveBeenCalledWith(INPUT);
     expect(recipes.find).not.toHaveBeenCalled();
     expect(events).toEqual([]);
+  });
+
+  it("still replays when the bot's guardrails match none of the steps", async () => {
+    await dispatch.sendTurn(engine, REQ, { ...INPUT, toolGuardrails: [{ id: "pr", tools: ["mcp:computer:*"], match: { patterns: ["bitbucket.org"] }, message: "No." }] }, start);
+    await settled();
+    expect(start).not.toHaveBeenCalled();
+    expect(acted).toEqual(["click", "set_value"]);
   });
 
   it("answers a saved request with no engine call", async () => {

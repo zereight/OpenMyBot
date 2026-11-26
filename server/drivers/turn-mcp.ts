@@ -10,6 +10,7 @@ import { AGENTS_MCP_ENV } from "./agents-mcp-env.ts";
 import { OWN_APPS_SERVER } from "../../shared/own-apps.ts";
 import { shareToolBudget, TOOL_LIMIT_ENV, TOOL_LIMIT_HEADER } from "../tool-count-limit.ts";
 import { agentsToolList } from "./agents-mcp.ts";
+import { turnGuardrailFiles } from "./tool-guardrails-runtime.ts";
 
 export interface TurnStdioMcpServer {
   name: string;
@@ -23,6 +24,7 @@ export interface TurnStdioMcpServer {
  * the profile, and the person's stdio servers go through a gate. */
 export function turnStdioMcpServers(turn: SendTurnInput, options: { schemaProfile?: ToolSchemaProfileId; toolBudget?: number } = {}): TurnStdioMcpServer[] {
   const { schemaProfile, toolBudget } = options;
+  const { mcpRulesPath } = turnGuardrailFiles(turn), restricted = turn.toolScope !== undefined || mcpRulesPath !== undefined;
   const servers: TurnStdioMcpServer[] = [];
   const observedCommands = new Map<string, AppMount>();
   const add = (name: string, server: { command: string; args: string[]; env?: Record<string, string> } | undefined) => {
@@ -43,7 +45,7 @@ export function turnStdioMcpServers(turn: SendTurnInput, options: { schemaProfil
     const apps = appMountFor(name, turn);
     if (apps && !("url" in server)) observedCommands.set(name, apps);
     const stdio = "url" in server ? mcpStdioServer(server, { nodeEnv: { ELECTRON_RUN_AS_NODE: "1" }, ...(apps ? { apps } : {}) })
-      : (apps || schemaProfile) && turn.toolScope === undefined
+      : (apps || schemaProfile) && !restricted
         ? gateServer({ name, server, threadId: turn.threadId, budget: 0, nodeEnv: { ELECTRON_RUN_AS_NODE: "1" }, ...(apps ? { apps } : {}), schemaProfile })
       : server;
     if (!stdio) continue;
@@ -51,10 +53,10 @@ export function turnStdioMcpServers(turn: SendTurnInput, options: { schemaProfil
   }
   const profiled = (server: TurnStdioMcpServer) =>
     schemaProfile ? { ...server, env: { ...server.env, [TOOL_SCHEMA_PROFILE_ENV]: schemaProfile } } : server;
-  const fitted = turn.toolScope === undefined ? servers.map(profiled) : servers.filter((server) => canUseMcpServer(turn.toolScope, server.name)).map((server) => {
+  const fitted = !restricted ? servers.map(profiled) : servers.filter((server) => canUseMcpServer(turn.toolScope, server.name)).map((server) => {
     const apps = observedCommands.get(server.name);
     const gated = gateServer({ name: server.name, server: { command: server.command, args: server.args, env: server.env },
-      threadId: turn.threadId, budget: 0, toolScope: turn.toolScope, nodeEnv: { ELECTRON_RUN_AS_NODE: "1" }, ...(apps ? { apps } : {}), schemaProfile });
+      threadId: turn.threadId, budget: 0, toolScope: turn.toolScope, toolGuardrailsFile: mcpRulesPath, nodeEnv: { ELECTRON_RUN_AS_NODE: "1" }, ...(apps ? { apps } : {}), schemaProfile });
     if (!gated) throw new Error("Tool selection requires an MCP gate.");
     return profiled({ name: server.name, command: gated.command, args: gated.args, env: gated.env });
   });

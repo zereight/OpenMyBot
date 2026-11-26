@@ -25,6 +25,7 @@ import { commandSummary, toolDetailPreview } from "../tool-summary.ts";
 import type { ApprovalMode } from "../../shared/approval-mode.ts";
 import { parseProtocolAskQuestions, questionAnswersById, type ProtocolAskQuestion } from "../../shared/ask-question.ts";
 import type { EffortLevel } from "../../shared/wire.ts";
+import { hasNativeToolGuardrails, NATIVE_GUARDRAILS_UNSUPPORTED } from "../../shared/tool-guardrails.ts";
 import { promptHalves, readPromptSplitReceipt, splitSessionPrompt, writePromptSplitReceipt, type PromptSplitReceipt } from "./prompt-split.ts";
 import { turnStdioMcpServers } from "./turn-mcp.ts";
 
@@ -660,6 +661,7 @@ export const MuseCodeDriver: ProviderDriver<MuseConfig> = {
         localComputerMcp: true,
       },
       async sendTurn(turn) {
+        if (hasNativeToolGuardrails(turn.toolGuardrails)) throw new Error(`Muse Code: ${NATIVE_GUARDRAILS_UNSUPPORTED}`);
         const state = threadOf(turn.threadId);
         if (state.active && !state.active.finished) throw new Error("Muse Code is still working on this thread.");
         const turnId = newId();

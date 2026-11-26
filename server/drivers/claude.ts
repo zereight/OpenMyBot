@@ -14,7 +14,7 @@ import { boxAudienceKey, brokerSocketPath, describeSpawnFailure, execCli, killCl
 import { cliToLaunch, cliVersionProbe } from "../cli-version-probe.ts";
 import { claudeAuthStatus } from "./claude-auth-status.ts";
 import { projectMcpServers } from "./claude-project-mcp.ts";
-import { browserGuardHookSettings } from "./claude-hook-settings.ts"; import { botSettingsFor, folderSettingsEnv, withBotSettings } from "./claude-bot-settings.ts"; import { claudeHookSettings } from "./claude-hooks.ts"; import { withCarriedAttribution } from "./claude-attribution.ts";
+import { browserGuardHookSettings, mergeHookSettings, toolGuardHookSettings } from "./claude-hook-settings.ts"; import { botSettingsFor, folderSettingsEnv, withBotSettings } from "./claude-bot-settings.ts"; import { claudeHookSettings } from "./claude-hooks.ts"; import { withCarriedAttribution } from "./claude-attribution.ts"; import { turnGuardrailFiles } from "./tool-guardrails-runtime.ts";
 import { claudeBilling, claudeCallUsage } from "./claude-billing.ts";
 import { claudeAuthFailure, claudeAuthRecovery, claudeOAuthExpired } from "./claude-auth-recovery.ts"; import { AWS_CREDENTIAL_ENV_KEYS, bedrockResultError, withBedrockCredentialError } from "./claude-bedrock-aws.ts";
 import { CLAUDE_MODEL_ID, STATIC_CLAUDE_MODELS, claudeModelExtras, currentEngineCatalog, endpointModelCatalog, withCliVersionGate } from "./claude-model-extras.ts";
@@ -317,7 +317,7 @@ export function readClaudeModelCatalog(env: Record<string, string | undefined> =
 const PERM_PROXY_PATH = SPAWNED_PROXIES.permission;
 const DWEB_PROXY_PATH = SPAWNED_PROXIES.dweb;
 const HOOK_HELPER_PATH = SPAWNED_PROXIES.hook;
-const BROWSER_GUARD_PATH = SPAWNED_PROXIES.browserGuard;
+const BROWSER_GUARD_PATH = SPAWNED_PROXIES.browserGuard, TOOL_GUARD_PATH = SPAWNED_PROXIES.toolGuard;
 // In the packaged app process.execPath is the Electron binary; this makes it run as plain node.
 const NODE_ENV_FLAG = { ELECTRON_RUN_AS_NODE: "1" };
 
@@ -1053,9 +1053,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (replaysUserMessages) args.push("--replay-user-messages");
       const isolated = !inheritsUserConfig(turnEnvironment); const projectSettingsOnly = isolated && claudeCliSupports(turnCliVersion, "--setting-sources");
       const disallowed = [...(config.disallowedTools ?? []), ...unusableBuiltIns({ isolated, listsTools: config.tools !== undefined, guest: Boolean(turn.guestConfined) }), ...claudeDisabledNativeSkillRules(botId)];
-      if (disallowed.length) args.push("--disallowedTools", disallowed.join(","));
-      if (turn.toolScope !== undefined && (!isolated || turn.mcpFromUserConfig || turnCliVersion === null || !claudeCliSupports(turnCliVersion, "--strict-mcp-config"))) {
-        throw new Error("Claude cannot confirm a restricted MCP configuration for this account. Disable inherited Claude MCP servers and use a current, identifiable Claude CLI before using tool selection.");
+      if (disallowed.length) args.push("--disallowedTools", disallowed.join(",")); const guardrails = turnGuardrailFiles({ threadId, botId, toolGuardrails: turn.toolGuardrails }), strictMcp = turn.toolScope !== undefined || guardrails.mcpRulesPath !== undefined;
+      if (strictMcp && (!isolated || turn.mcpFromUserConfig || turnCliVersion === null || !claudeCliSupports(turnCliVersion, "--strict-mcp-config"))) {
+        throw new Error("Claude cannot confirm a restricted MCP configuration for this account. Disable inherited Claude MCP servers and use a current, identifiable Claude CLI before using tool selection or guardrails.");
       }
       if (isolated) {
         // Without these every turn gets this machine's MCP servers, connectors, skills, hooks and CLAUDE.md (one desktop: 407 tools, ~10k tokens).
@@ -1135,9 +1135,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           botOwned.add(name);
         }
       }
-      for (const name of turn.toolScope === undefined ? botOwned : Object.keys(mcpServers)) {
+      for (const name of strictMcp ? Object.keys(mcpServers) : botOwned) {
         if (!canUseMcpServer(turn.toolScope, name)) { delete mcpServers[name]; continue; }
-        const gated = gateServer({ name, server: mcpServers[name], threadId, nodeEnv: NODE_ENV_FLAG, toolScope: turn.toolScope, ...customServerGate(name, botOwned.has(name), turn.integrations?.customResultBudgets, turnEnvironment), apps: appMountFor(name, turn) });
+        const gated = gateServer({ name, server: mcpServers[name], threadId, nodeEnv: NODE_ENV_FLAG, toolScope: turn.toolScope, toolGuardrailsFile: guardrails.mcpRulesPath, ...customServerGate(name, botOwned.has(name), turn.integrations?.customResultBudgets, turnEnvironment), apps: appMountFor(name, turn) });
         if (gated) mcpServers[name] = { ...gated, ...((mcpServers[name] as { alwaysLoad?: unknown })?.alwaysLoad === true ? { alwaysLoad: true } : {}) };
       }
       allowed.splice(0, allowed.length, ...allowed.filter((name) => Object.hasOwn(mcpServers, name.slice("mcp__".length).split("__")[0]!)));
@@ -1176,15 +1176,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         env.OMB_HOOK_URL = hooks.url;
         env.OMB_HOOK_TOKEN_FILE = hookTokenPath;
       }
-      if ((hooks && hookTokenPath || browserGuard) && process.versions.electron) env.ELECTRON_RUN_AS_NODE = "1";
+      if ((hooks && hookTokenPath || browserGuard || guardrails.rulesPath) && process.versions.electron) env.ELECTRON_RUN_AS_NODE = "1";
       // Every MCP server without alwaysLoad loads on demand behind ToolSearch (claude-tool-search.ts).
       const own: Record<string, unknown> = { ...authSettings, env: { ...authSettings.env, ENABLE_TOOL_SEARCH: toolSearch, ...(isolated ? CLAUDE_OWN_MEMORY_OFF : {}) } };
       // Project-only settings still find the personal memory via ancestors when the bot lives under HOME.
       if (isolated) own.claudeMdExcludes = [join(homedir(), ".claude", "CLAUDE.md")];
-      const ownHooks = { ...(hooks ? claudeHookSettings(HOOK_HELPER_PATH) : {}), ...(browserGuard ? browserGuardHookSettings(BROWSER_GUARD_PATH) : {}) };
+      const ownHooks = mergeHookSettings(hooks ? claudeHookSettings(HOOK_HELPER_PATH) : undefined, browserGuard ? browserGuardHookSettings(BROWSER_GUARD_PATH) : undefined, guardrails.rulesPath ? toolGuardHookSettings(TOOL_GUARD_PATH, guardrails.rulesPath) : undefined);
       if (Object.keys(ownHooks).length) own.hooks = ownHooks;
       // A project's `disableAllHooks: true` would switch the guard off; this later source wins.
-      if (browserGuard) own.disableAllHooks = false;
+      if (browserGuard || guardrails.rulesPath) own.disableAllHooks = false;
       if (turn.guestConfined) own.permissions = GUEST_CLAUDE_PERMISSIONS;
       // Approvals and browser credentials expire at the turn boundary; native background workers and cron jobs must not outlive it.
       env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = env.CLAUDE_CODE_DISABLE_CRON = "1";
@@ -1205,7 +1205,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         model: injected.model ?? null,
         base: env.ANTHROPIC_BASE_URL ?? null,
         configDir: env.CLAUDE_CONFIG_DIR ?? null,
-        hooks: Boolean(hooks), box: boxAudienceKey(cwd),
+        hooks: Boolean(hooks), toolGuard: guardrails.rulesPath ?? null, box: boxAudienceKey(cwd),
         toolSearch, mcpOutputTokens: env.MAX_MCP_OUTPUT_TOKENS ?? null,
         botSettings: createHash("sha256").update(JSON.stringify([botSettings, settings.attribution ?? null])).digest("hex"),
         // Rotating an account's key/helper must not reuse the old process.

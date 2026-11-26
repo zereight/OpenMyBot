@@ -31,6 +31,8 @@ import { capToolList, learnToolCountLimit, shareToolBudget, toolCountLimitFromEr
 import type { ToolSchemaProfile } from "../tool-schema-profile.ts";
 import type { ServerText } from "../../shared/server-text.ts";
 import { allowsTool, canUseMcpServer, parseToolScope, type ToolScope } from "../../shared/tool-scope.ts";
+import { evaluateToolGuardrails, formatGuardrailBlock, parseToolGuardrails, type ToolGuardrailRule } from "../../shared/tool-guardrails.ts";
+import { guardrailProtectedPaths } from "./tool-guardrails-runtime.ts";
 import { OWN_APPS_SERVER } from "../../shared/own-apps.ts";
 import { CHAT_TOOL_LIMIT, type ToolBudget } from "../../shared/tool-budget.ts";
 
@@ -110,6 +112,7 @@ export interface ChatToolMountOptions {
   notice?: (line: { message: string; text: ServerText }) => void;
   background?: boolean;
   onSettled?: (server: string) => void;
+  toolGuardrails?: readonly ToolGuardrailRule[];
 }
 const DEFAULT_CALL_MS = 10 * 60_000;
 const FRAME_BYTES = 2 * 1024 * 1024;
@@ -543,6 +546,10 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
   const parsed = parseToolScope(toolScope);
   if (!parsed.ok) throw new Error(parsed.error);
   const scope = parsed.scope;
+  const parsedGuardrails = parseToolGuardrails(options.toolGuardrails);
+  if (!parsedGuardrails.ok) throw new Error(parsedGuardrails.error);
+  const guardrails = parsedGuardrails.rules;
+  const protectedPaths = guardrails ? guardrailProtectedPaths() : [];
   const servers: Array<[string, Server]> = [];
   const observers = new Map<string, AppObserver>();
   const searchable = new Set<string>();
@@ -822,16 +829,37 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
   const validate = (name: string, args: unknown) => {
     if (closed || signal.aborted) throw new ChatToolSessionError("MCP session closed");
     if (name === standIn?.definition.function.name) return;
+    const checkGuardrail = (tool: RegisteredTool, rawArgs: unknown) => {
+      if (!guardrails) return;
+      const runs = target(tool, rawArgs);
+      if (tool.searched && tool.name === CALL_TOOL && runs === undefined) {
+        throw new Error(formatGuardrailBlock("invalid-directory-call", "Directory tool call requires a valid tool name."));
+      }
+      const runsArgs = tool.searched && tool.name === CALL_TOOL && object(rawArgs) ? rawArgs.arguments : rawArgs;
+      if (runs !== undefined) {
+        const mcpVerdict = evaluateToolGuardrails(guardrails, { tool: { kind: "mcp", server: tool.server, name: runs }, input: runsArgs }, { protectedPaths });
+        if (mcpVerdict.blocked) throw new Error(mcpVerdict.reason);
+        if (tool.hostComputer) {
+          const nativeVerdict = evaluateToolGuardrails(guardrails, { tool: { kind: "native", name: runs }, input: runsArgs }, { protectedPaths });
+          if (nativeVerdict.blocked) throw new Error(nativeVerdict.reason);
+        }
+      }
+    };
     const listedAs = directoryNames.get(name);
     if (listedAs) {
       const call = listedAs === CALL_TOOL ? searchedCall(args) : undefined;
       if (call && selectionExcludes(call.tool, call.args)) throw new Error("Tool selection excludes this tool");
+      if (guardrails && listedAs === CALL_TOOL && !call) {
+        throw new Error(formatGuardrailBlock("invalid-directory-call", "Directory tool call requires a valid tool name."));
+      }
+      if (call) checkGuardrail(call.tool, call.args);
       if (!object(args)) throw new Error(ARGUMENTS_MISFIT);
       return;
     }
     const tool = registered.get(name);
     if (!tool) throw new Error("The requested tool was not advertised for this turn");
     if (selectionExcludes(tool, args)) throw new Error("Tool selection excludes this tool");
+    checkGuardrail(tool, args);
     omitBlankDefaults(tool.builtInBrowser, tool.name, args);
     if (!object(args) || (!(tool.searched && isDirectoryTool(tool.name)) && !tool.schema(args))) {
       throw new Error(readsAddressOnly(tool, args) ? readOpenPageOnly(tool.server) : ARGUMENTS_MISFIT);

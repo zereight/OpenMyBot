@@ -108,7 +108,7 @@ import { DataFailure } from "./data/types.ts";
 import { TeamComputers, teamComputerOwner, type TeamComputerRecord } from "./team-computers.ts";
 import { isEffortLevel, type AuthPairResponse, type CardAnswerer, type LoopbackSessionResponse, type SignedInSessionResponse, type PairResponse, type ResolvedSender, type ServerFrame, type SignInRequestCardData, type WireBot, type WireGroup, type WireTask } from "../shared/wire.ts";
 import { isPersistentQuestionCard, shouldSettleRequestCard } from "../shared/ask-question.ts";
-import { parseToolScope } from "../shared/tool-scope.ts";
+import { parseToolScope } from "../shared/tool-scope.ts"; import { parseToolGuardrails } from "../shared/tool-guardrails.ts";
 import type { TeamComputersPayload } from "../shared/team-computer.ts";
 import { boatCreateRecoverySnapshot } from "./boat-create-idempotency.ts";
 import { boatDeletionSnapshot } from "./boat-delete-journal.ts";
@@ -2869,12 +2869,14 @@ const wireBot = (bot: BotRecord, onlyThreadId?: string): WireBot => {
     avatarUrl: visible.avatarUrl ?? null, ...(tasks ? { tasks: (onlyThreadId === undefined ? tasks : tasks.filter((task) => task.threadId === onlyThreadId)).map((task) => wireTask(task, bot.modelSelection, awaiting)) } : {}) };
 };
 
-function toolScopeForTurn(botId: string) {
+function toolPolicyForTurn(botId: string) {
   const bot = store.bot(botId);
   if (!bot) throw Object.assign(new Error("no such bot"), { status: 404 });
   const parsed = parseToolScope(bot.toolScope);
   if (!parsed.ok) throw Object.assign(new Error("This bot's tool selection is invalid. Open Access settings and save a valid selection before starting a turn."), { status: 409, code: "tool_scope" });
-  return parsed.scope;
+  const guardrails = parseToolGuardrails(bot.toolGuardrails);
+  if (!guardrails.ok) throw Object.assign(new Error(`This bot's tool guardrails are invalid (${guardrails.error}). Save valid guardrails before starting a turn.`), { status: 409, code: "tool_guardrails" });
+  return { toolScope: parsed.scope, toolGuardrails: guardrails.rules };
 }
 
 const wireTrustedApprovalBot = (bot: NonNullable<ReturnType<typeof store.bot>>) => {
@@ -7510,7 +7512,7 @@ async function beginTurn(
   }
   const policyRefusal = policyModelRefusal(instance);
   if (policyRefusal) throw Object.assign(new Error(policyRefusal), { status: 409, code: "managed_policy" });
-  const toolScope = toolScopeForTurn(bot.id);
+  const { toolScope, toolGuardrails } = toolPolicyForTurn(bot.id);
   guestDrivenTurns.delete(threadId);
   const guestConfined = cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(opts?.coordination?.id) || botApiThread(threadId);
   if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") {
@@ -8339,7 +8341,7 @@ async function beginTurn(
         images: dispatchContext.images, videos: dispatchContext.videos,
         approvalMode: approvalModeForTurn(bot, commsDepth > 0, threadId),
         approvalModeNow: () => liveApprovalMode(bot, threadId, commsDepth > 0),
-        toolScope,
+        toolScope, toolGuardrails,
         ...(guestConfined ? { guestConfined: true, confinedWhy: botApiThread(threadId) ? serverLine(threadLanguage(threadId), "server.botApi.confinedWhy") : confinedWhy(threadId) } : {}),
         model,
         effort,
@@ -9706,7 +9708,7 @@ async function runClaimedGroupMemberTurn(
   // Re-check right before the synchronous claim, so one bot can never own two provider processes.
   const readyBot = store.bot(bot.id);
   if (!readyBot) return false;
-  toolScopeForTurn(readyBot.id);
+  toolPolicyForTurn(readyBot.id);
   const readyGroup = store.group(group.id);
   const stillOwnsThread = readyGroup?.dm
     ? readyGroup.threadId === threadId
@@ -10194,7 +10196,7 @@ async function runClaimedGroupMemberTurn(
     if (roomReset || displaced) broadcast({ kind: "group", group: publicGroupState(store.group(groupId) ?? group) });
     const roomShareNote = skillsHost.shareNote(bot, threadId, Boolean(workspace));
     const clock = turnClockLine(Date.now(), hostTimeZone()), roomPick = cardContinuation ? "" : takeRoomPick(operation, readyBot.id); oneTimeInputTaken = Boolean(roomPick) || heldReplay.messageIds.length > 0;
-    const roomToolScope = toolScopeForTurn(readyBot.id), roomUserMcp = claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp();
+    const { toolScope: roomToolScope, toolGuardrails: roomToolGuardrails } = toolPolicyForTurn(readyBot.id), roomUserMcp = claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp();
     const roomSession = roomSessions.dispatch({
       threadId, botId: readyBot.id, claimId: internalGeneration, instance, guestConfined: roomGuestConfined, reset: Boolean(roomReset), hooks: Boolean(integrations.hooks),
       context: () => ({ ...roomMemberContexts.forThread(threadId)?.[readyBot.id], compactAt: nativeCompactTokens(instance, roomSelection.model) }),
@@ -10210,7 +10212,7 @@ async function runClaimedGroupMemberTurn(
         ...(roomRecalled ? { recalled: roomRecalled } : {}),
         images: turnImages, videos: turnVideos,
         approvalMode: turnApprovalMode,
-        toolScope: roomToolScope,
+        toolScope: roomToolScope, toolGuardrails: roomToolGuardrails,
         ...(roomGuestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
         system: roomSystem.text,
         systemStable: roomSystem.stable,

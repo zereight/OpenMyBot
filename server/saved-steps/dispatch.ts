@@ -1,4 +1,5 @@
 import { allowsTool } from "../../shared/tool-scope.ts";
+import { evaluateToolGuardrails } from "../../shared/tool-guardrails.ts";
 import { newId, type ProviderAdapter, type ProviderInstance, type RuntimeEvent, type SendTurnInput, type TurnStartResult } from "../contracts.ts";
 import { createChatToolApproval } from "../drivers/chat-tool-approval.ts";
 import { retriedTurnEvent, type RetriedTurn } from "../quick-model-fallback.ts";
@@ -37,6 +38,7 @@ export interface DispatchDeps {
 }
 
 type Start = (input: SendTurnInput) => Promise<TurnStartResult>;
+type ToolPolicy = Pick<SendTurnInput, "toolScope" | "toolGuardrails">;
 type Approval = ReturnType<typeof createChatToolApproval>;
 type RunOutcome = ReplayOutcome | { kind: "error"; message: string };
 type Failed = Extract<ReplayOutcome, { kind: "failed" }>;
@@ -64,7 +66,7 @@ export class SavedStepsDispatch {
   private readonly runs = new Map<string, Run>();
   private readonly answered = new Map<string, { turnId: string; recipeId: string }>();
   private readonly unmarked = new Set<string>();
-  private readonly replayable = new Map<string, { toolScope: unknown }>();
+  private readonly replayable = new Map<string, ToolPolicy>();
 
   constructor(deps: DispatchDeps) {
     this.deps = deps;
@@ -74,7 +76,7 @@ export class SavedStepsDispatch {
     this.runs.delete(input.threadId);
     this.replayable.delete(input.threadId);
     if (request && this.replayHolds(request, input)) {
-      this.replayable.set(input.threadId, { toolScope: input.toolScope });
+      this.replayable.set(input.threadId, { toolScope: input.toolScope, toolGuardrails: input.toolGuardrails });
       while (this.replayable.size > REMEMBERED_REPLIES) this.replayable.delete(this.replayable.keys().next().value!);
     }
     if (request && request.turnText !== request.message.text) {
@@ -141,7 +143,7 @@ export class SavedStepsDispatch {
   /** Whether the thread's latest turn met every condition for replaying this recipe, so "next time no AI" would hold. */
   wouldReplay(threadId: string, recipe: Recipe): boolean {
     const turn = this.replayable.get(threadId);
-    return turn !== undefined && toolsAllowed(recipe, turn.toolScope);
+    return turn !== undefined && toolsAllowed(recipe, turn);
   }
 
   /** True for the events of a replay still answering without the AI, its turn.completed included. */
@@ -165,7 +167,7 @@ export class SavedStepsDispatch {
     if (!this.replayHolds(request, input)) return undefined;
     const text = request.turnText;
     const recipe = this.deps.recipes.find(request.botId, requestKey(text));
-    return recipe && recipeFitsRequest(recipe, text) && toolsAllowed(recipe, input.toolScope) ? recipe : undefined;
+    return recipe && recipeFitsRequest(recipe, text) && toolsAllowed(recipe, input) ? recipe : undefined;
   }
 
   private standIn(run: Run, approval: Approval, asked: ReadonlySet<string>): ProviderInstance {
@@ -296,8 +298,11 @@ export class SavedStepsDispatch {
   }
 }
 
-function toolsAllowed(recipe: Recipe, toolScope: unknown): boolean {
-  return [...LOOKUPS, ...recipe.steps.map((step) => step.tool)].every((name) => allowsTool(toolScope, { kind: "mcp", server: COMPUTER_SERVER, name }));
+function toolsAllowed(recipe: Recipe, policy: ToolPolicy): boolean {
+  return [...LOOKUPS.map((tool) => ({ tool, args: {} })), ...recipe.steps].every(({ tool, args }) => {
+    const identity = { kind: "mcp", server: COMPUTER_SERVER, name: tool } as const;
+    return allowsTool(policy.toolScope, identity) && !evaluateToolGuardrails(policy.toolGuardrails, { tool: identity, input: args }).blocked;
+  });
 }
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
