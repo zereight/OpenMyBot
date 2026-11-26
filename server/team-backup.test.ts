@@ -83,17 +83,23 @@ describe("additive portable team backups", () => {
   it("carries tool restrictions through backup and import without restoring execution grants", () => {
     const { store, routines, chief, scout } = fixture();
     const scope = { allow: ["native:read", "mcp:notes:read"], deny: ["mcp:notes:write"] };
-    store.patchBot(chief.id, { toolScope: scope } as never);
+    const guardrails = [{ id: "delegate-pr", tools: ["native:shell", "mcp:browser:*"], match: { patterns: ["bitbucket.org"] }, message: "Hand PR work to the PR bot." }];
+    store.patchBot(chief.id, { toolScope: scope, toolGuardrails: guardrails } as never);
     store.patchBot(scout.id, { toolScope: { allow: [] } } as never);
     const backup = createTeamBackup(store, routines.listRoutines(), "Selected tools");
     expect(backup.bots.find((bot) => bot.key === chief.id)).toHaveProperty("toolScope", scope);
+    expect(backup.bots.find((bot) => bot.key === chief.id)).toHaveProperty("toolGuardrails", guardrails);
     const restored = importTeamBackup(store, routines, backup, selection());
-    expect(restored.bots.find((bot) => bot.name === "Mira 2")).toMatchObject({ toolScope: scope, computer: "off", composio: false, connectorTools: {} });
+    expect(restored.bots.find((bot) => bot.name === "Mira 2")).toMatchObject({ toolScope: scope, toolGuardrails: guardrails, computer: "off", composio: false, connectorTools: {} });
     expect(approvalModeFor(restored.bots.find((bot) => bot.name === "Mira 2")!)).toBe("full");
     expect(restored.bots.find((bot) => bot.name === "Scout 2")).toHaveProperty("toolScope", { allow: [] });
-    const invalid = structuredClone(backup) as unknown as { bots: Array<{ toolScope: unknown }> };
+    expect(restored.bots.find((bot) => bot.name === "Scout 2")?.toolGuardrails).toBeUndefined();
+    const invalid = structuredClone(backup) as unknown as { bots: Array<{ toolScope: unknown; toolGuardrails?: unknown }> };
     invalid.bots[0].toolScope = { allow: null };
     expect(() => parseTeamBackup(invalid)).toThrow();
+    const brokenGuardrails = structuredClone(backup) as unknown as { bots: Array<{ toolGuardrails?: unknown }> };
+    brokenGuardrails.bots.find((bot) => bot.toolGuardrails)!.toolGuardrails = [{ id: "x", tools: ["nope"], message: "m" }];
+    expect(() => parseTeamBackup(brokenGuardrails)).toThrow();
   });
 
   it("backs up and restores a silver bot in silver", () => {

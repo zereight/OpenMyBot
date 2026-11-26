@@ -1,10 +1,11 @@
-function hookCommand(helperPath: string, platform: NodeJS.Platform): Record<string, unknown> {
+function hookCommand(helperPath: string, platform: NodeJS.Platform, extraArgs: readonly string[] = []): Record<string, unknown> {
   // Claude Code runs `command` as a shell line: sh on macOS and Linux; on Windows Git Bash, or PowerShell
   // when Git Bash is missing, and the two quote differently. Given `args` (2.1.139), it starts `command` itself.
   // JSON quoting is not shell quoting: $(), backticks and $names expand inside double quotes.
+  const argv = [helperPath, ...extraArgs];
   return platform === "win32"
-    ? { type: "command", command: process.execPath, args: [helperPath], timeout: 5 }
-    : { type: "command", command: [process.execPath, helperPath].map(path => `'${path.replace(/'/g, "'\\''")}'`).join(" "), timeout: 5 };
+    ? { type: "command", command: process.execPath, args: argv, timeout: 5 }
+    : { type: "command", command: [process.execPath, ...argv].map(path => `'${path.replace(/'/g, "'\\''")}'`).join(" "), timeout: 5 };
 }
 
 /** Hooks for the private --settings file. Claude Code runs each command with the event JSON on
@@ -17,4 +18,20 @@ export function claudeHookSettings(helperPath: string, platform: NodeJS.Platform
 /** A PreToolUse hook runs under every permission mode, Full access included, which the approval broker does not. */
 export function browserGuardHookSettings(helperPath: string, platform: NodeJS.Platform = process.platform): Record<string, unknown> {
   return { PreToolUse: [{ matcher: "Bash|PowerShell|Monitor", hooks: [hookCommand(helperPath, platform)] }] };
+}
+
+export function toolGuardHookSettings(helperPath: string, rulesPath: string, platform: NodeJS.Platform = process.platform): Record<string, unknown> {
+  return { PreToolUse: [{ matcher: "", hooks: [hookCommand(helperPath, platform, ["--rules", rulesPath])] }] };
+}
+
+export function mergeHookSettings(...sources: Array<Record<string, unknown> | undefined>): Record<string, unknown> {
+  const merged: Record<string, unknown[]> = {};
+  for (const source of sources) {
+    if (!source) continue;
+    for (const [event, entries] of Object.entries(source)) {
+      if (!Array.isArray(entries)) continue;
+      merged[event] = [...(merged[event] ?? []), ...entries];
+    }
+  }
+  return merged;
 }

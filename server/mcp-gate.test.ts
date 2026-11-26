@@ -405,6 +405,48 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(ran()).toEqual([]);
   });
 
+  describe("bot tool guardrails", () => {
+    const writePolicy = (rules: unknown) => {
+      const path = join(scratch, "guardrails.json");
+      writeFileSync(path, JSON.stringify({ rules, protectedPaths: [] }));
+      return path;
+    };
+    const delegatePr = [{ id: "delegate-pr", tools: ["mcp:shop:*"], match: { patterns: ["bitbucket.org"] }, message: "Hand PR work to @PRCreator." }];
+
+    it("answers a matching call with the rule's message as a tool error the model reads, and never runs it upstream", async () => {
+      start({}, { OMB_GATE_GUARDRAILS_FILE: writePolicy(delegatePr), OMB_GATE_BUDGET: "0" }, DIRECTORY_UPSTREAM);
+      expect(await callWith("read", { url: "https://bitbucket.org/acme/app/pull-requests/7" }, 1)).toEqual({ jsonrpc: "2.0", id: 1,
+        result: { isError: true, content: [{ type: "text", text: "Blocked by bot guardrail (delegate-pr): Hand PR work to @PRCreator." }] } });
+      expect(ran()).toEqual([]);
+      expect((await callWith("read", { url: "https://example.com/docs" }, 2)).result.content[0].text).toHaveLength(4_000);
+      expect(ran()).toEqual(["read"]);
+    });
+
+    it("judges call_tool by the tool it runs and refuses one that names no tool", async () => {
+      start({}, { OMB_GATE_GUARDRAILS_FILE: writePolicy(delegatePr), OMB_GATE_BUDGET: "600", OMB_GATE_DIRECTORY: "1" }, DIRECTORY_UPSTREAM);
+      expect((await callWith("call_tool", { name: "read", arguments: { url: "bitbucket.org/acme" } }, 1)).result.isError).toBe(true);
+      expect((await callWith("call_tool", { arguments: { url: "bitbucket.org/acme" } }, 2)).result.content[0].text).toMatch(/^Blocked by bot guardrail \(invalid-directory-call\)/);
+      expect(ran()).toEqual([]);
+    });
+
+    it("reads the policy on every call, so a policy that turns unreadable mid-session blocks instead of passing", async () => {
+      const path = writePolicy(delegatePr);
+      start({}, { OMB_GATE_GUARDRAILS_FILE: path, OMB_GATE_BUDGET: "0" }, DIRECTORY_UPSTREAM);
+      expect((await callWith("read", { url: "https://example.com" }, 1)).result.isError).toBeUndefined();
+      writeFileSync(path, JSON.stringify({ rules: [], protectedPaths: [] }));
+      expect((await callWith("read", { url: "https://example.com" }, 2)).result.content[0].text).toMatch(/^Blocked by bot guardrail \(policy-load-error\)/);
+      expect(ran()).toEqual(["read"]);
+    });
+
+    it.each([["a missing file", "missing.json"], ["no active rules", "empty.json"]])("exits on %s before starting the upstream", async (_, name) => {
+      if (name === "empty.json") writeFileSync(join(scratch, name), JSON.stringify({ rules: [{ ...delegatePr[0], enabled: false }], protectedPaths: [] }));
+      start({}, { OMB_GATE_GUARDRAILS_FILE: join(scratch, name) }, SCOPED_UPSTREAM);
+      const [code] = await once(gate!, "close");
+      expect(code).toBe(1);
+      expect(existsSync(join(scratch, "reply.json.started"))).toBe(false);
+    });
+  });
+
   it("fits each listed schema to the engine's provider profile, and lists tools as they came without one", async () => {
     const catalog = { tools: [{ name: "small", inputSchema: { type: "object", properties: { q: { type: "string" } } } },
       { name: "create_page", description: "Create a page.", inputSchema: createPageSchema() }] };

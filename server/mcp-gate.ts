@@ -3,12 +3,14 @@ import { spawn } from "node:child_process";
 import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { evaluateToolGuardrails, formatGuardrailBlock } from "../shared/tool-guardrails.ts";
 import { allowsTool, parseToolScope, type ToolScope } from "../shared/tool-scope.ts";
 
 import { bridgedCallTarget } from "./drivers/agents-bridge.ts";
 import { resolveCliSpawn } from "./env-path.ts";
 import { APP_ONLY_REFUSAL, AppObserver, GATE_APPS_ENV, modelVisible, parseAppMount, withUiExtension } from "./mcp-app-observer.ts";
-import { directoryCallTarget, isDirectoryTool } from "./mcp-directory.ts";
+import { CALL_TOOL, directoryCallTarget, isDirectoryTool } from "./mcp-directory.ts";
+import { readGuardrailPolicyFile } from "./tool-guardrail-policy-file.ts";
 import { QUERY_TOOL, QUERY_TOOL_NAME, ResultStore, answerQuery, describeShape, exampleQuery } from "./mcp-shape.ts";
 import { fitToolList } from "./mcp-tool-schema.ts";
 import { DEFAULT_RESULT_BUDGET, type HeldResult, trimResultText, trimStructured } from "./mcp-trim.ts";
@@ -28,7 +30,7 @@ function gateEnvironment(): NodeJS.ProcessEnv {
     const value = JSON.parse(process.env[key] ?? "");
     if (!value || typeof value !== "object" || Array.isArray(value)
       || !["OMB_GATE_NAME", "OMB_GATE_UPSTREAM"].every(name => typeof value[name] === "string")
-      || (typeof value.OMB_GATE_TOOL_SCOPE !== "string" && typeof value[GATE_APPS_ENV] !== "string")
+      || (typeof value.OMB_GATE_TOOL_SCOPE !== "string" && typeof value.OMB_GATE_GUARDRAILS_FILE !== "string" && typeof value[GATE_APPS_ENV] !== "string")
       || !Object.entries(value).every(([name, setting]) => GATE_ENV_KEYS.includes(name) && typeof setting === "string")) throw new Error();
     return value;
   } catch {
@@ -36,7 +38,7 @@ function gateEnvironment(): NodeJS.ProcessEnv {
   }
 }
 /** The gate's own settings never reach the upstream server's environment. */
-const GATE_ENV_KEYS = ["OMB_GATE_NAME", "OMB_GATE_SPILL_DIR", "OMB_GATE_BUDGET", "OMB_GATE_UPSTREAM", "OMB_GATE_SPILL_HINT", "OMB_GATE_TOOL_SCOPE", "OMB_GATE_DIRECTORY", GATE_APPS_ENV];
+const GATE_ENV_KEYS = ["OMB_GATE_NAME", "OMB_GATE_SPILL_DIR", "OMB_GATE_BUDGET", "OMB_GATE_UPSTREAM", "OMB_GATE_SPILL_HINT", "OMB_GATE_TOOL_SCOPE", "OMB_GATE_GUARDRAILS_FILE", "OMB_GATE_DIRECTORY", GATE_APPS_ENV];
 const gateEnv = gateEnvironment();
 const NAME = gateEnv.OMB_GATE_NAME || "mcp";
 const SPILL_DIR = gateEnv.OMB_GATE_SPILL_DIR || "";
@@ -62,6 +64,23 @@ function toolScope(): ToolScope | undefined {
   if (!parsed.ok || parsed.scope === undefined) fail("invalid tool selection; check the bot's Access settings");
   if (!/^[a-z][a-z0-9_-]{0,31}$/.test(NAME)) fail("invalid MCP server identity for tool selection");
   return parsed.scope;
+}
+
+function guardrailsFile(): string | undefined {
+  const path = gateEnv.OMB_GATE_GUARDRAILS_FILE;
+  if (path === undefined) return;
+  if (!/^[a-z][a-z0-9_-]{0,31}$/.test(NAME)) fail("invalid MCP server identity for tool guardrails");
+  const initial = readGuardrailPolicyFile(path);
+  if (!initial.ok) fail(`invalid tool guardrails policy: ${initial.error}`);
+  return path;
+}
+
+function replyToolError(id: unknown, text: string): void {
+  process.stdout.write(`${JSON.stringify({
+    jsonrpc: "2.0",
+    id: requestKey(id) ? id : null,
+    result: { isError: true, content: [{ type: "text", text }] },
+  })}\n`);
 }
 
 function isRecord(value: unknown): value is Json {
@@ -211,6 +230,8 @@ function trimCallResult(result: Json, tool: string): boolean {
 
 // Validate before starting a process: corrupt policy must never become pass-through.
 const scope = toolScope();
+const guardrailsPath = guardrailsFile();
+const restricted = Boolean(scope || guardrailsPath);
 const observer = (() => {
   try {
     const mount = parseAppMount(gateEnv[GATE_APPS_ENV]);
@@ -295,9 +316,9 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       const parsed: unknown = JSON.parse(line);
       if (isRecord(parsed)) message = parsed;
     } catch {
-      if (scope) return rejectRequest(null, -32700, "Invalid JSON-RPC frame");
+      if (restricted) return rejectRequest(null, -32700, "Invalid JSON-RPC frame");
     }
-    if (scope && (!message || message.jsonrpc !== "2.0")) return rejectRequest(message?.id, -32600, "Invalid JSON-RPC frame");
+    if (restricted && (!message || message.jsonrpc !== "2.0")) return rejectRequest(message?.id, -32600, "Invalid JSON-RPC frame");
   }
   const id = requestKey(message?.id);
   const params = isRecord(message?.params) ? message.params : undefined;
@@ -307,7 +328,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result: answerQuery(store, params.arguments, BUDGET) })}\n`);
     return;
   }
-  if (scope && message?.method === "tools/call") {
+  if (restricted && message?.method === "tools/call") {
     if (!id || typeof params?.name !== "string"
       || (params.arguments !== undefined && !isRecord(params.arguments))) {
       return rejectRequest(message.id, -32602, "Invalid tool call");
@@ -316,21 +337,41 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     // is judged with its own arguments, which say which action of an agents action tool runs.
     const inner = isRecord(params.arguments) ? params.arguments.arguments : undefined;
     const called = callTarget(params.name, params.arguments);
+    const bridged = NAME === "agents" ? bridgedCallTarget(params.name, params.arguments) : undefined;
     const targets: Array<[string | undefined, unknown]> = [[called, called === params.name ? params.arguments : inner],
-      ...(NAME === "agents" ? [[bridgedCallTarget(params.name, params.arguments), inner] as [string | undefined, unknown]] : [])];
-    if (targets.some(([target, args]) => target !== undefined && !allowsTool(scope, { kind: "mcp", server: NAME, name: target }, args ?? {}))) {
+      ...(NAME === "agents" ? [[bridged, inner] as [string | undefined, unknown]] : [])];
+    if (scope && targets.some(([target, args]) => target !== undefined && !allowsTool(scope, { kind: "mcp", server: NAME, name: target }, args ?? {}))) {
       return rejectRequest(message.id, -32602, "Tool selection excludes this tool. Check the bot's Access settings.");
+    }
+    if (guardrailsPath) {
+      if (DIRECTORY && params.name === CALL_TOOL && called === undefined) {
+        return replyToolError(message.id, formatGuardrailBlock("invalid-directory-call", "Directory tool call requires a valid tool name."));
+      }
+      if (NAME === "agents" && params.name === "use_tool" && bridged === undefined) {
+        return replyToolError(message.id, formatGuardrailBlock("invalid-bridged-call", "Bridged agents tool call requires a valid tool name."));
+      }
+      const loaded = readGuardrailPolicyFile(guardrailsPath);
+      if (!loaded.ok) return replyToolError(message.id, formatGuardrailBlock("policy-load-error", loaded.error));
+      for (const [target, args] of targets) {
+        if (target === undefined) continue;
+        const verdict = evaluateToolGuardrails(
+          loaded.policy.rules,
+          { tool: { kind: "mcp", server: NAME, name: target }, input: args ?? {} },
+          { protectedPaths: loaded.policy.protectedPaths },
+        );
+        if (verdict.blocked) return replyToolError(message.id, verdict.reason);
+      }
     }
   }
   if (message?.method === "tools/call" && typeof params?.name === "string") {
     const target = callTarget(params.name, params.arguments);
     if (target !== undefined && appOnly.has(target)) return rejectRequest(message.id, -32602, APP_ONLY_REFUSAL);
   }
-  if (scope && message?.method === "tools/list" && !id) {
+  if (restricted && message?.method === "tools/list" && !id) {
     return rejectRequest(message.id, -32600, "Tool listing needs a request ID");
   }
   if (id && typeof message?.method === "string") {
-    if (scope && pending.has(id)) fail("duplicate request ID on a restricted connection");
+    if (restricted && pending.has(id)) fail("duplicate request ID on a restricted connection");
     if (message.method === "tools/call") {
       const name = typeof params?.name === "string" ? params.name : "tool";
       const target = callTarget(name, params?.arguments);
@@ -341,7 +382,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         return child.stdin.write(`${JSON.stringify({ ...message, params: withUiExtension(message.params) })}\n`);
       }
       pending.set(id, { kind: "initialize" });
-    } else if (message.method === "tools/list" || scope) {
+    } else if (message.method === "tools/list" || restricted) {
       pending.set(id, { kind: message.method === "tools/list" ? "list" : "other" });
     }
   }

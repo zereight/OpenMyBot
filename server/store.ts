@@ -3,7 +3,7 @@ import { join } from "node:path"; import { isDeepStrictEqual } from "node:util";
 
 import { writeFileAtomic } from "./atomic.ts"; import { BOTS_FILE, JsonRegistry, persistedPin, type RegistryDurability, type RegistryStore } from "./registry-store.ts"; import { discardNativeLog } from "./drivers/native.ts";
 import { commitRegistryChange, deferrablePatch, keptRevocation, saveRegistryFor, touchesPermissions } from "./registry-save.ts";
-import { parseToolScope, toolScopeWidens } from "../shared/tool-scope.ts"; import { grantScopedApps } from "../shared/connector-scopes.ts"; import { dropRetiredApps } from "./retired-apps.ts";
+import { parseToolScope, toolScopeWidens } from "../shared/tool-scope.ts"; import { parseToolGuardrails, toolGuardrailsWidens } from "../shared/tool-guardrails.ts"; import { grantScopedApps } from "../shared/connector-scopes.ts"; import { dropRetiredApps } from "./retired-apps.ts";
 import { reorderInPlace } from "../shared/bot-order.ts"; import { trimOutboundPolicy } from "../shared/outbound.ts";
 import { botOwner, chiefConflict, chiefScope, ownerEmail } from "../shared/bot-owner.ts"; import { reshowWhenMoved } from "../shared/default-bot.ts";
 import { ensureSections, readSections, changeEmptySection } from "./section-context.ts"; import { grantNewDepartments } from "./department-grants.ts";
@@ -1437,11 +1437,19 @@ export class Store {
       if (!parsed.ok) throw new Error(parsed.error);
       patch = { ...patch, toolScope: parsed.scope };
     }
-    const wideningToolScope = Object.hasOwn(patch, "toolScope") && toolScopeWidens(bot.toolScope, patch.toolScope);
-    const nextToolScope = patch.toolScope;
-    if (wideningToolScope) {
+    if (Object.hasOwn(patch, "toolGuardrails")) {
+      const parsed = parseToolGuardrails(patch.toolGuardrails);
+      if (!parsed.ok) throw new Error(parsed.error);
+      patch = { ...patch, toolGuardrails: parsed.rules };
+    }
+    const widened: Partial<Pick<BotRecord, "toolScope" | "toolGuardrails">> = {
+      ...(Object.hasOwn(patch, "toolScope") && toolScopeWidens(bot.toolScope, patch.toolScope) ? { toolScope: patch.toolScope } : {}),
+      ...(Object.hasOwn(patch, "toolGuardrails") && toolGuardrailsWidens(bot.toolGuardrails, patch.toolGuardrails) ? { toolGuardrails: patch.toolGuardrails } : {}),
+    };
+    const widening = Object.keys(widened).length > 0;
+    if (widening) {
       patch = { ...patch };
-      delete patch.toolScope;
+      for (const key of Object.keys(widened) as Array<keyof typeof widened>) delete patch[key];
     }
     const toAsk = patch.modelSelection ? (bot.tasks ?? []).filter((task) => task.modelSelection === undefined &&
       this.switchNeedsAsk(id, task.threadId, bot.modelSelection, patch.modelSelection!)) : [];
@@ -1457,10 +1465,10 @@ export class Store {
       }
       bot.unread = bot.tasks!.some(taskCountsAsBotUnread);
     }
-    if (wideningToolScope) {
+    if (widening) {
       // New authority goes live only after its durable save succeeds.
-      this.saveBots(this.bots.map((candidate) => candidate === bot ? { ...bot, toolScope: nextToolScope } : candidate));
-      bot.toolScope = nextToolScope;
+      this.saveBots(this.bots.map((candidate) => candidate === bot ? { ...bot, ...widened } : candidate));
+      Object.assign(bot, widened);
     } else this.saveBotThread(id, undefined, "now");
     this.emit({ type: "bot", botId: id });
     return bot;

@@ -76,6 +76,7 @@ import { startupFailureRecoverable } from "./startup-recovery.ts";
 import { engineFailure, engineFailureKind } from "../engine-errors.ts";
 import { acpRuntimeFailure, acpStopFailure } from "./failure-words.ts";
 import { narrowsNativeTools, parseToolScope } from "../../../shared/tool-scope.ts";
+import { hasNativeToolGuardrails, NATIVE_GUARDRAILS_UNSUPPORTED } from "../../../shared/tool-guardrails.ts";
 import { acpMcpServers, type AcpMcpServer } from "../turn-mcp.ts"; import { acpOwnMcpOverHttp, loopbackUnproxied, noteAcpMcpHttp } from "../own-mcp-http.ts"; import { acpToolOutput, acpToolProgress } from "../tool-progress.ts";
 import { learnedToolCountLimit, mcpToolBudget, retryUnderToolLimit } from "../../tool-count-limit.ts"; import { instanceEnvNames } from "../../bot-box/env.ts";
 
@@ -956,9 +957,8 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         const parsedScope = parseToolScope(turn.toolScope);
         if (!parsedScope.ok) throw new Error(parsedScope.error);
         turn = { ...turn, toolScope: parsedScope.scope };
-        if (narrowsNativeTools(turn.toolScope) && !support.toolScopeSessionParams) {
-          throw new Error(`${support.displayName}: native tool selection is not supported by this engine. Keep native:* in the selection or choose a supported engine.`);
-        }
+        if (narrowsNativeTools(turn.toolScope) && !support.toolScopeSessionParams) throw new Error(`${support.displayName}: native tool selection is not supported by this engine. Keep native:* in the selection or choose a supported engine.`);
+        if (hasNativeToolGuardrails(turn.toolGuardrails)) throw new Error(`${support.displayName}: ${NATIVE_GUARDRAILS_UNSUPPORTED}`);
         const { threadId } = turn;
         if (active.has(threadId)) throw new Error("a turn is already running on this thread");
         const turnConfig = turn.approvalMode === undefined

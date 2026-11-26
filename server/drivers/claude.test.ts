@@ -1888,6 +1888,22 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       expect(entry.hooks[0].command).toContain("omb-browser-guard");
     });
 
+    it("runs a bot's tool guardrails beside the browser guard instead of replacing it", async () => {
+      const dump = join(scratch, "tool-guard.json");
+      process.env.FAKE_CLAUDE_DUMP = dump;
+      await create();
+      await instance.adapter.sendTurn({ threadId: "t-tool-guard", botId: "b-tool-guard", text: "hi", approvalMode: "full",
+        toolGuardrails: [{ id: "delegate-pr", tools: ["native:shell"], match: { patterns: ["bitbucket.org"] }, message: "Hand PR work to the PR bot." }] });
+      await recorder.until((e) => e.type === "turn.completed");
+      const seen = JSON.parse(readFileSync(dump, "utf8"));
+      const [browser, tools] = seen.settings.hooks.PreToolUse;
+      expect(seen.settings.hooks.PreToolUse).toHaveLength(2);
+      expect(browser.hooks[0].command).toContain("omb-browser-guard");
+      expect(tools.matcher).toBe("");
+      expect(tools.hooks[0].command).toMatch(/omb-tool-guard\.ts' '--rules' '.+[\\/]runtime[\\/]guardrails[\\/][0-9a-f]{32}\.json'$/);
+      expect(seen.settings.disableAllHooks).toBe(false);
+    });
+
     it("never reaches a guest's turn", async () => {
       const dump = join(scratch, "bot-settings-guest.json");
       process.env.FAKE_CLAUDE_DUMP = dump;

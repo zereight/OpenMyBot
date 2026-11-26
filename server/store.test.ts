@@ -98,6 +98,22 @@ describe("Store", () => {
     expect(new Store(selection).bot(bot.id)?.toolScope).toEqual(toolScope);
   });
 
+  it("does not lift a bot's guardrails until removing them is saved", () => {
+    const store = new Store(selection);
+    const bot = store.createBot();
+    const rule = { id: "delegate-pr", tools: ["native:shell"], match: { patterns: ["bitbucket.org"] }, message: "Hand PR work to the PR bot." };
+    store.patchBot(bot.id, { toolGuardrails: [rule] });
+    const save = vi.spyOn(store as unknown as { saveBots(): void }, "saveBots")
+      .mockImplementationOnce(() => { throw new Error("disk full"); });
+    expect(() => store.patchBot(bot.id, { toolGuardrails: undefined })).toThrow("disk full");
+    expect(bot.toolGuardrails).toEqual([rule]);
+    expect(new Store(selection).bot(bot.id)?.toolGuardrails).toEqual([rule]);
+    save.mockRestore();
+    store.patchBot(bot.id, { toolGuardrails: undefined });
+    expect(bot.toolGuardrails).toBeUndefined();
+    expect(new Store(selection).bot(bot.id)).not.toHaveProperty("toolGuardrails");
+  });
+
   it("keeps tool revocations effective in memory when persistence fails", () => {
     const store = new Store(selection);
     const bot = store.createBot();

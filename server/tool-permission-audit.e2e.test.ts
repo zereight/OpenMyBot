@@ -10,13 +10,16 @@ it("records tool permission changes through the bot settings API", async () => {
     const patch = async (body: unknown) => fetch(`${fixture.info.url}/api/bots/${bot.id}`, {
       method: "PATCH", headers: { "content-type": "application/json", origin: fixture.info.url }, body: JSON.stringify(body),
     });
-    expect((await patch({ toolScope: { allow: ["native:read"] }, connectorScopes: { apps: { gmail: "read" } }, connectorTools: { gmail: { tools: ["GMAIL_FETCH_EMAILS"] } } })).status).toBe(200);
+    expect((await patch({ toolGuardrails: [{ id: "x", tools: ["nope"], message: "m" }] })).status).toBe(400);
+    expect((await patch({ toolScope: { allow: ["native:read"] }, toolGuardrails: [{ id: "delegate-pr", tools: ["native:shell"], match: { patterns: ["bitbucket.org"] }, message: "Hand PR work to the PR bot." }],
+      connectorScopes: { apps: { gmail: "read" } }, connectorTools: { gmail: { tools: ["GMAIL_FETCH_EMAILS"] } } })).status).toBe(200);
     const rows = () => readAdminActivityRange(fixture.info.dataDir, { from: new Date(Date.now() - 60_000), to: new Date(Date.now() + 60_000) }).filter(row => row.changed?.includes("toolScope"));
     await expect.poll(() => rows().length).toBe(1);
-    expect(rows()[0]!.changed).toEqual(expect.arrayContaining(["toolScope", "connectorScopes", "connectorTools"]));
+    expect(rows()[0]!.changed).toEqual(expect.arrayContaining(["toolScope", "toolGuardrails", "connectorScopes", "connectorTools"]));
     expect((await patch({ title: "Unrelated display edit" })).status).toBe(200);
     expect(rows()).toHaveLength(1);
-    expect((await patch({ toolScope: null, connectorScopes: null, connectorTools: null })).status).toBe(200);
+    expect((await patch({ toolScope: null, toolGuardrails: null, connectorScopes: null, connectorTools: null })).status).toBe(200);
     await expect.poll(() => rows().length).toBe(2);
+    expect(rows()[1]!.changed).toEqual(expect.arrayContaining(["toolGuardrails"]));
   } finally { await fixture.close(); }
 }, 60_000);

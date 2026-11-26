@@ -5,12 +5,14 @@ import type { SendTurnInput } from "../contracts.ts";
 import { appMountFor, customServerGate, gateServer, mcpStdioServer } from "../mcp-gate-config.ts";
 import { remoteMcpSpec } from "../mcp-http.ts";
 import { SPAWNED_PROXIES } from "../proxy-paths.ts";
+import { turnGuardrailFiles } from "./tool-guardrails-runtime.ts";
 
 const NODE_ENV_FLAG = { ELECTRON_RUN_AS_NODE: "1" };
 
 export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | null {
   const parsed = parseToolScope(turn.toolScope);
   if (!parsed.ok) throw new Error(parsed.error);
+  const { mcpRulesPath } = turnGuardrailFiles(turn);
   const servers: Record<string, unknown> = {};
   if (turn.integrations?.composio) servers.composio = { ...turn.integrations.composio }; if (turn.integrations?.composioOwn) servers[OWN_APPS_SERVER] = { ...turn.integrations.composioOwn };
   if (turn.integrations?.localComputer) {
@@ -39,7 +41,7 @@ export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | 
     if (parsed.scope !== undefined && !canUseMcpServer(parsed.scope, name)) { delete servers[name]; continue; }
     // pi registers every tool it is given and has no tool search of its own.
     const directory = remoteMcpSpec(server) !== undefined;
-    const gated = gateServer({ name, server, toolScope: parsed.scope, threadId: turn.threadId, nodeEnv: NODE_ENV_FLAG, directory, ...customServerGate(name, name in (turn.integrations?.custom ?? {}), turn.integrations?.customResultBudgets), apps: appMountFor(name, turn) });
+    const gated = gateServer({ name, server, toolScope: parsed.scope, toolGuardrailsFile: mcpRulesPath, threadId: turn.threadId, nodeEnv: NODE_ENV_FLAG, directory, ...customServerGate(name, name in (turn.integrations?.custom ?? {}), turn.integrations?.customResultBudgets), apps: appMountFor(name, turn) });
     const stdio = gated ?? mcpStdioServer(server, { nodeEnv: NODE_ENV_FLAG, ...(directory ? { directory: { name } } : {}) });
     if (!stdio) throw new Error("Pi MCP server configuration is invalid");
     const original = server as { scope?: string };

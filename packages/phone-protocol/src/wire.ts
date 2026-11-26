@@ -4,7 +4,7 @@
 import type { PresenceFrame } from "./team-presence.ts";
 import type { DataBroadcast } from "./data-surface.ts";
 import type { ApprovalMode } from "./approval-mode.ts";
-import type { ToolScope } from "./tool-scope.ts"; import type { ToolGroup } from "./tool-groups.ts";
+import type { ToolScope } from "./tool-scope.ts"; import type { ToolGroup } from "./tool-groups.ts"; import type { ToolGuardrailRule } from "./tool-guardrails.ts";
 import type { CommandAllowlistCandidate } from "./command-allowlist.ts";
 import type { TurnDigest } from "./digest.ts";
 import type { BotAvatarCrop, MascotFaceColor } from "./bot-avatar.ts";
@@ -392,6 +392,7 @@ export interface WireBot extends DefaultBotFields, BotAccessFields {
   mcpServers?: string[];
   /** Owner-selected original tool identities. An empty allowlist permits none. */
   toolScope?: ToolScope;
+  toolGuardrails?: ToolGuardrailRule[];
   /** Id of a named browser profile; absent = the bot's own private session. */
   browserProfile?: string;
   playbooks?: InstalledPlaybook[];

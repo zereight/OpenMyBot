@@ -5,6 +5,7 @@ import { Type, type TObjectOptions, type TSchema, type TSchemaOptions } from "ty
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { allowsTool, canUseMcpServer, parseToolScope, type ToolIdentity } from "../../shared/tool-scope.ts";
+import { evaluateToolGuardrails, formatGuardrailBlock, parseToolGuardrails } from "../../shared/tool-guardrails.ts";
 import { ASK_USER_TOOL, formatQuestionAnswers, MAX_OPTIONS, MAX_QUESTIONS, parseAskQuestions } from "../../shared/ask-question.ts";
 import { CALL_TOOL, directoryCallTarget, isDirectoryTool } from "../mcp-directory.ts";
 import { REMOTE_MCP_STARTUP_MS } from "../mcp-http.ts";
@@ -22,6 +23,8 @@ interface McpServerDef {
 interface McpConfig {
   mcpServers?: Record<string, McpServerDef>;
   toolScope?: unknown;
+  toolGuardrails?: unknown;
+  protectedPaths?: unknown;
   scopeReadyPath?: string;
   approvalMode?: string;
   /** Register the ask_user tool: the driver sets it when the turn may ask. */
@@ -587,6 +590,11 @@ export default async function (pi: PiExtensionApi): Promise<void> {
   const parsed = parseToolScope(config.toolScope);
   if (!parsed.ok) throw new Error(parsed.error);
   const scope = parsed.scope;
+  const parsedGuardrails = parseToolGuardrails(config.toolGuardrails);
+  if (!parsedGuardrails.ok) throw new Error(parsedGuardrails.error);
+  const guardrails = parsedGuardrails.rules;
+  const protectedPaths = Array.isArray(config.protectedPaths) && config.protectedPaths.every((entry): entry is string => typeof entry === "string")
+    ? config.protectedPaths : [];
   if (scope !== undefined && (typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function")) throw new Error("Pi tool selection enforcement APIs are unavailable");
 
   const used = new Set<string>();
@@ -602,6 +610,11 @@ export default async function (pi: PiExtensionApi): Promise<void> {
   pi.on("tool_call", (event) => {
     if (scope !== undefined && (enforcementFailed || typeof event?.toolName !== "string" || !allowed(event.toolName))) {
       return { block: true, reason: "Tool selection excludes this tool" };
+    }
+    if (guardrails && typeof event?.toolName === "string") {
+      const identity = identities.get(event.toolName) ?? { kind: "native", name: event.toolName };
+      const verdict = evaluateToolGuardrails(guardrails, { tool: identity, input: event.input }, { protectedPaths });
+      if (verdict.blocked) return { block: true, reason: verdict.reason };
     }
     if (event?.toolName !== "bash" && event?.toolName !== "powershell") return;
     const input = event.input;
@@ -711,10 +724,24 @@ export default async function (pi: PiExtensionApi): Promise<void> {
           parameters,
           async execute(_toolCallId, params, signal, _onUpdate, ctx) {
             const target = directoryTool ? directoryCallTarget(toolName, params) : toolName;
+            const targetArgs = (directoryTool && toolName === CALL_TOOL ? (params as { arguments?: unknown } | undefined)?.arguments : params) ?? {};
             if (scope !== undefined && (enforcementFailed
               || (target !== undefined && !allowsTool(scope, { kind: "mcp", server: serverName, name: target },
-                (directoryTool && toolName === CALL_TOOL ? (params as { arguments?: unknown } | undefined)?.arguments : params) ?? {})))) {
+                targetArgs)))) {
               throw new Error("Tool selection excludes this tool");
+            }
+            if (guardrails) {
+              if (directoryTool && toolName === CALL_TOOL && target === undefined) {
+                throw new Error(formatGuardrailBlock("invalid-directory-call", "Directory tool call requires a valid tool name."));
+              }
+              if (target !== undefined) {
+                const verdict = evaluateToolGuardrails(
+                  guardrails,
+                  { tool: { kind: "mcp", server: serverName, name: target }, input: targetArgs },
+                  { protectedPaths },
+                );
+                if (verdict.blocked) throw new Error(verdict.reason);
+              }
             }
             // Host tools ask first through pi's native card (ctx.ui.confirm → extension_ui_request).
             if (gated && target !== undefined) {
