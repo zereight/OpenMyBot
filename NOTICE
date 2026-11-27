@@ -125,5 +125,14 @@ contributors, used under the Apache License, Version 2.0
 (third_party/vexa/LICENSE). The adapted parts were rewritten in our own code;
 no Vexa file is included unmodified.
 
+The interface font options bundle unmodified NeoDunggeunmo and NeoDunggeunmo
+Code v1.601 (https://github.com/neodgm/neodgm), Copyright (c) 2017-2021, Eunbin
+Jeong (Dalgona.) <project-neodgm@dalgona.dev>, and NeoDunggeunmo Pro v1.020
+(https://github.com/neodgm/neodgm-pro), Copyright (c) 2022, Eunbin Jeong
+(Dalgona.) <project-neodgm@dalgona.dev>, under the SIL Open Font License,
+Version 1.1. The full license texts are in third_party/neodgm/LICENSE and
+third_party/neodgm-pro/LICENSE (and shipped as neodgm-LICENSE.txt and
+neodgm-pro-LICENSE.txt in the built UI).
+
 OpenMyBot is a fork of OpenMausBot (https://github.com/milind-soni/OpenMausBot).
 The OpenMausBot notice above is kept as the upstream attribution.

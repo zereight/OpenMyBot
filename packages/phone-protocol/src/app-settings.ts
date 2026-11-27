@@ -43,7 +43,7 @@ export const SKIN_IDS = [
   "diwali",
   "aurora",
 ] as const;
-export const FONT_IDS = ["skin", "system", "inter", "poppins", "serif"] as const;
+export const FONT_IDS = ["skin", "system", "inter", "poppins", "serif", "neodgm", "neodgm-pro"] as const;
 export const CHAT_WIDTH_IDS = ["standard", "wide", "full"] as const;
 /** The Enter-adds-a-line modes are for input methods that confirm a conversion with Enter (Japanese). */
 export const SEND_KEYS = ["enter", "shift-enter", "mod-enter"] as const;
