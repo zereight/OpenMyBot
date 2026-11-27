@@ -5,6 +5,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ConnectorScopes } from "../../shared/connector-scopes.ts";
+import type { ToolGuardrailRule } from "../../shared/tool-guardrails.ts";
 import type { WireBot } from "../../shared/wire.ts";
 import { VPS_BOT_ALIAS_CHANGE_ERROR, VPS_BOT_ALIAS_LIFECYCLE_ERROR, VPS_BOT_ALIAS_RESOURCES_ERROR } from "../cloud-backend.ts";
 import { DATA_DIR, type AppConfig } from "../config.ts";
@@ -536,5 +537,54 @@ describe("PATCH /api/bots/:id mainThreadChoice", () => {
     expect(client.status).toBe(403);
     expect(paired.status).toBe(403);
     expect(store.bot(bot.id)?.mainThreadChoice).toBeUndefined();
+  });
+});
+
+describe("PATCH /api/bots/:id toolGuardrails", () => {
+  const pushGate: ToolGuardrailRule = {
+    id: "bankx-push-through-review-gate",
+    tools: ["native:shell"],
+    match: { kind: "regex", patterns: ["\\bgit\\s+push\\b"] },
+    message: "Run the review gate script instead of direct git push.",
+  };
+  const resetGuard: ToolGuardrailRule = {
+    id: "block-hard-reset",
+    tools: ["native:shell"],
+    match: { patterns: ["git reset --hard"] },
+    message: "Do not hard reset.",
+  };
+
+  it("allows narrowing while a bot is busy, blocks originless loopback widening while busy, and allows widening with browser Origin or when idle", async () => {
+    const { store, bot, patch } = fixture();
+    const other = store.createBot({ name: "Worker" });
+    store.patchBot(other.id, { busy: true });
+
+    expect((await patch(bot.id, { toolGuardrails: [{ id: "bad", tools: ["nope"], message: "m" }] })).status).toBe(400);
+    expect((await patch(bot.id, { toolGuardrails: [pushGate] })).status).toBe(200);
+    expect(store.bot(bot.id)?.toolGuardrails).toEqual([pushGate]);
+
+    expect((await patch(bot.id, { toolGuardrails: [pushGate, resetGuard] })).status).toBe(200);
+    expect(store.bot(bot.id)?.toolGuardrails).toEqual([pushGate, resetGuard]);
+
+    for (const body of [
+      { toolGuardrails: [] },
+      { toolGuardrails: null },
+      { toolGuardrails: [pushGate] },
+      { toolGuardrails: [{ ...pushGate, enabled: false }, resetGuard] },
+      { toolGuardrails: [{ ...pushGate, tools: ["native:read"] }, resetGuard] },
+    ]) {
+      const refused = await patch(bot.id, body);
+      expect(refused.status).toBe(409);
+      expect(store.bot(bot.id)?.toolGuardrails).toEqual([pushGate, resetGuard]);
+    }
+
+    const fromUi = await patch(bot.id, { toolGuardrails: [pushGate] }, { headers: { origin: "http://localhost:5173" } });
+    expect(fromUi.status).toBe(200);
+    expect(store.bot(bot.id)?.toolGuardrails).toEqual([pushGate]);
+
+    store.patchBot(other.id, { busy: false });
+    const clearedWhenIdle = await patch(bot.id, { toolGuardrails: [] });
+    expect(clearedWhenIdle.status).toBe(200);
+    expect(store.bot(bot.id)?.toolGuardrails).toBeUndefined();
   });
 });

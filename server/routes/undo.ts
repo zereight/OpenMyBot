@@ -5,7 +5,7 @@ import { PASS, type RouteHandler } from "./table.ts";
 
 export interface UndoRouteDeps {
   refusal(auth: RequestAuth, threadId: string, requestId: string): string | null;
-  undo(auth: RequestAuth, res: ServerResponse, threadId: string, requestId: string): void | Promise<void>;
+  undo(auth: RequestAuth, res: ServerResponse, threadId: string, requestId: string, origin?: string): void | Promise<void>;
 }
 
 export function createUndoRoutes(deps: UndoRouteDeps): RouteHandler {
@@ -18,6 +18,7 @@ export function createUndoRoutes(deps: UndoRouteDeps): RouteHandler {
     if (!requestId) return json(res, 400, { error: "requestId is required" });
     const refusal = deps.refusal(auth, threadId, requestId);
     if (refusal) return json(res, 403, { error: refusal });
-    await deps.undo(auth, res, threadId, requestId);
+    const origin = typeof req.headers.origin === "string" && req.headers.origin.trim() ? req.headers.origin : undefined;
+    await deps.undo(auth, res, threadId, requestId, origin);
   };
 }

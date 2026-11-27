@@ -9307,7 +9307,7 @@ function undoSkillCard(botId: string, threadId: string, messageId: string): Undo
   return { claimed: true, state: "undone" };
 }
 
-async function undoAppliedChange(res: ServerResponse, threadId: string, requestId: string): Promise<void> {
+async function undoAppliedChange(res: ServerResponse, threadId: string, requestId: string, caller?: { auth: RequestAuth; origin?: string }): Promise<void> {
   const message = store.messagesFor(threadId).find((candidate) => candidate.card?.requestId === requestId);
   const card = message?.card;
   if (!message || !card) return json(res, 404, { error: "this change is no longer in the conversation" });
@@ -9345,7 +9345,7 @@ async function undoAppliedChange(res: ServerResponse, threadId: string, requestI
     result = teamMemoryRequests.undo(threadId, requestId);
   } else if (card.teamSetupRequest) {
     result = await teamSetupRequests.undo({ botId, threadId, requestId });
-  } else if (card.appSettingRequest) { result = await appSettings.undo({ threadId, requestId }); }
+  } else if (card.appSettingRequest) { result = await appSettings.undo({ threadId, requestId, caller }); }
   if (!result.claimed) return json(res, 409, { error: "Only a change that applied on its own can be undone here." });
   if (result.state === "invalid") {
     return json(res, result.status, { error: result.error, ...userErrorFields(result), ...(result.stale ? { code: "changed-since" } : {}) });
@@ -12227,7 +12227,7 @@ ROUTES.push(createThreadModelRoutes({
 }));
 ROUTES.push(createUndoRoutes({
   refusal: (auth, threadId, requestId) => cardAnswerRefusal(auth, threadId, requestId, "allow"),
-  undo: (auth, res, threadId, requestId) => withDecisionActor(decisionActorFor(auth), () => undoAppliedChange(res, threadId, requestId)),
+  undo: (auth, res, threadId, requestId, origin) => withDecisionActor(decisionActorFor(auth), () => undoAppliedChange(res, threadId, requestId, { auth, ...(origin ? { origin } : {}) })),
 }));
 ROUTES.push(createAntigravityLeftoverRoutes({
   hosted: Boolean(hostedModels),

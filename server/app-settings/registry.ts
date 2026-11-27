@@ -25,6 +25,11 @@ import { windowEntries } from "./registry-window.ts";
 /** Where the person changes it by hand: a real place in the app, which the bot names as placePath gives it. */
 export type Where = SettingsPlaceId;
 
+export interface WriteCaller {
+  auth?: RequestAuth;
+  origin?: string;
+}
+
 interface Base {
   id: string;
   label: string;
@@ -45,7 +50,7 @@ interface Writable {
    * `write` get the stored picture's `avatarUrl` in its place. An empty path stays, for taking the picture off. */
   fromFile?: true;
   current(value: unknown): unknown;
-  write(value: unknown): Promise<string | null>;
+  write(value: unknown, caller?: WriteCaller): Promise<string | null>;
   describe?(value: unknown): { change: string } | { refusal: string };
 }
 interface Secret {
@@ -69,8 +74,7 @@ export interface RegistryDeps {
   /** Moves bots into a sidebar group, making it when new; an empty name ungroups them. */
   groupBots(name: string, botIds: string[]): Promise<string | null>;
   pinBot(botId: string, pinned: boolean): Promise<string | null>;
-  /** PATCH /api/bots/:id as the bot's Settings panel does; a refusal comes back as its text. */
-  patchBot(botId: string, body: Record<string, unknown>): Promise<string | null>;
+  patchBot(botId: string, body: Record<string, unknown>, caller?: WriteCaller): Promise<string | null>;
   /** Another of the Settings window's routes, called as the window calls it. */
   call(route: AppRoute, method: "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: Record<string, unknown>): Promise<string | null>;
   /** GET on one of those routes, as the window reads it; null when it answers with an error. */
@@ -95,7 +99,7 @@ const KEY_WHERE: Partial<Record<CredentialTargetId, Where>> = {
 };
 
 export type WritableSpec = Omit<Base, "read"> & Omit<Writable, "tier" | "current" | "write" | "describe"> & {
-  read?(): string; current(value: never): unknown; write(value: never): Promise<string | null>; describe?(value: never): { change: string } | { refusal: string };
+  read?(): string; current(value: never): unknown; write(value: never, caller?: WriteCaller): Promise<string | null>; describe?(value: never): { change: string } | { refusal: string };
 };
 /** `line` says what the new value does on the applied card; `refusal` names a value only the person sets, in Settings. */
 export type WindowPref = (id: WindowPrefId, label: string, help: string, where: Where, synonyms: string[], allowed: string,
@@ -375,7 +379,13 @@ export function routeBackedRegistry(deps: {
     saveConfig: (patch) => refusal(callRoute(deps.routes.config, { method: "PUT", path: "/api/config", body: patch, auth })),
     reorderBots: (botIds) => refusal(callRoute(deps.routes.botOrder, { method: "PUT", path: "/api/bots/order", body: { botIds }, auth })),
     pinBot: (botId, pinned) => refusal(callRoute(deps.routes.botPatch, { method: "PATCH", path: `/api/bots/${encodeURIComponent(botId)}`, body: { pinned }, auth })),
-    patchBot: (botId, body) => refusal(callRoute(deps.routes.botPatch, { method: "PATCH", path: `/api/bots/${encodeURIComponent(botId)}`, body, auth })),
+    patchBot: (botId, body, caller) => refusal(callRoute(deps.routes.botPatch, {
+      method: "PATCH",
+      path: `/api/bots/${encodeURIComponent(botId)}`,
+      body,
+      auth: caller?.auth ?? auth,
+      ...(caller?.origin ? { origin: caller.origin } : {}),
+    })),
     call: (route, method, path, body) => refusal(callRoute(deps.routes[route], { method, path, ...(body ? { body } : {}), auth })),
     read: async (route, path) => {
       const reply = await callRoute(deps.routes[route], { method: "GET", path, auth }).catch(() => null);
