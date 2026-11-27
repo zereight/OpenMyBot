@@ -13,7 +13,9 @@ describe("a row in the bell", () => {
   const scout: Bot = { id: "scout", threadId: "main", name: "Scout", title: "", description: "", notifications: true, color: "green", unread: false, modelSelection: { instanceId: "fake", model: "m" }, messages: [],
     tasks: [{ threadId: "main", title: "Main", createdAt: 1 }, { threadId: "work", title: "@CoS · work", createdAt: 2 }] };
   const entry = (threadId: string) => ({ id: threadId, at: 1, read: false, kind: "done" as const, botId: "scout", botName: "Scout", threadId, title: "Scout finished", body: "Done" });
+  afterEach(() => vi.unstubAllGlobals());
   function click(threadId: string) {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
     const dispatch = vi.fn();
     const rows: ReactElement<{ onOpen: () => void }>[] = [];
     const walk = (node: ReactNode) => Children.forEach(node, (child) => {

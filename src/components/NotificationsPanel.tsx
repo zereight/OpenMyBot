@@ -127,6 +127,9 @@ export function NotificationsPanel() {
   const activeFilter = botFilter === ALL_BOTS || bots.some((bot) => bot.id === botFilter) ? botFilter : ALL_BOTS;
   const visible = filterNotifications(unread, activeFilter);
   useEffect(() => {
+    if (activeFilter !== botFilter) setBotFilter(ALL_BOTS);
+  }, [activeFilter, botFilter]);
+  useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(timer);
   }, []);
@@ -161,9 +164,11 @@ export function NotificationsPanel() {
           {t("notifications.title")}
           {unread.length > 0 && <span className="ml-1.5 text-[12px] font-normal text-accent">· {t("notifications.unread", { count: unread.length })}</span>}
         </span>
-        <button type="button" onClick={markAllRead} className="shrink-0 whitespace-nowrap text-[12px] text-accent hover:underline">
-          {t("notifications.markAllRead")}
-        </button>
+        {unread.length > 0 && (
+          <button type="button" onClick={markAllRead} className="shrink-0 whitespace-nowrap text-[12px] text-accent hover:underline">
+            {t("notifications.markAllRead")}
+          </button>
+        )}
         <button
           type="button"
           onClick={togglePinned}
@@ -187,18 +192,20 @@ export function NotificationsPanel() {
           <X size={14} />
         </button>
       </div>
-      <div className="border-b border-hairline/40 px-3.5 py-2">
-        <Select size="sm" className="w-full"
-          aria-label={t("notifications.filter")}
-          value={activeFilter}
-          onChange={(event) => setBotFilter(event.target.value)}
-        >
-          <option value={ALL_BOTS}>{t("notifications.allBots")}</option>
-          {bots.map((bot) => (
-            <option key={bot.id} value={bot.id}>{bot.name}</option>
-          ))}
-        </Select>
-      </div>
+      {unread.length > 0 && (
+        <div className="border-b border-hairline/40 px-3.5 py-2">
+          <Select size="sm" className="w-full"
+            aria-label={t("notifications.filter")}
+            value={activeFilter}
+            onChange={(event) => setBotFilter(event.target.value)}
+          >
+            <option value={ALL_BOTS}>{t("notifications.allBots")}</option>
+            {bots.map((bot) => (
+              <option key={bot.id} value={bot.id}>{bot.name}</option>
+            ))}
+          </Select>
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {visible.length === 0 && (
           <div className="px-3.5 py-6 text-[13px] text-ink-secondary">{t("notifications.empty")}</div>
@@ -218,10 +225,7 @@ function NotificationRow({ entry, title, now, bot, threadName, onOpen }: { entry
       type="button"
       onClick={onOpen}
       title={title}
-      className={cn(
-        "flex w-full gap-2.5 border-b border-hairline/20 px-3.5 py-2.5 text-left hover:bg-raised/60",
-        !entry.read && "bg-accent/5",
-      )}
+      className="flex w-full gap-2.5 border-b border-hairline/20 bg-accent/5 px-3.5 py-2.5 text-left hover:bg-raised/60"
     >
       {bot ? (
         <span className="mt-px shrink-0" aria-hidden="true"><BotAvatar bot={bot} state="happy" size={24} animated={false} /></span>
@@ -230,7 +234,7 @@ function NotificationRow({ entry, title, now, bot, threadName, onOpen }: { entry
       )}
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-1.5 text-[13px] font-medium text-ink">
-          {!entry.read && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />}
+          <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />
           {threadName ? (
             <>
               <span className="shrink-0 max-w-[45%] truncate">{entry.botName}</span>
