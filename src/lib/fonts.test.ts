@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -34,6 +34,22 @@ describe("fonts", () => {
 
   it("registers every stylesheet block", () => {
     for (const id of blocks) expect(FONT_IDS).toContain(id as (typeof FONT_IDS)[number]);
+  });
+
+  it("ships every bundled @font-face asset referenced from styles.css", () => {
+    const stylesDir = join(dirname(fileURLToPath(import.meta.url)), "..");
+    const urls = [...css.matchAll(/@font-face\s*\{[^}]*url\("\.\/([^"]+\.woff2)"\)/g)].map(([, rel]) => rel);
+    expect(urls.length).toBeGreaterThan(0);
+    for (const rel of urls) {
+      expect(existsSync(join(stylesDir, rel)), rel).toBe(true);
+    }
+  });
+
+  it("overrides --font-mono for NeoDunggeunmo choices", () => {
+    for (const id of ["neodgm", "neodgm-pro"] as const) {
+      const body = css.match(new RegExp(`:root\\[data-font="${id}"\\]\\s*\\{([^}]*)\\}`))?.[1] ?? "";
+      expect(body).toMatch(/--font-mono\s*:\s*"NeoDunggeunmo Code"/);
+    }
   });
 
   it("leads every skin with the bundled Geist face, except the paper skins and Pop", () => {

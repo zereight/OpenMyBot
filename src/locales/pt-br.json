@@ -1751,6 +1751,8 @@
   "settings.font.inter": "Inter",
   "settings.font.poppins": "Poppins",
   "settings.font.serif": "Serifada",
+  "settings.font.neodgm": "NeoDunggeunmo",
+  "settings.font.neodgm-pro": "NeoDunggeunmo Pro",
   "settings.sendKey.title": "Enviar mensagens com",
   "settings.sendKey.subtitle": "Escolha Shift+Enter ou {key} para que Enter comece uma nova linha. Isso ajuda quando o método de entrada confirma o texto com Enter, como na digitação em japonês. {key} envia a mensagem em qualquer opção. Só neste dispositivo.",
   "settings.followUp.title": "Enviar enquanto um bot trabalha",

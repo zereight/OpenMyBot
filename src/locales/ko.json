@@ -1480,6 +1480,8 @@
   "settings.font.inter": "Inter",
   "settings.font.poppins": "Poppins",
   "settings.font.serif": "세리프",
+  "settings.font.neodgm": "Neo둥근모",
+  "settings.font.neodgm-pro": "Neo둥근모 Pro",
   "settings.sendKey.title": "메시지 보내기 키",
   "settings.sendKey.subtitle": "Shift+Enter나 {key}를 고르면 Enter는 줄바꿈이 돼요. 일본어 입력처럼 입력기가 Enter로 글자를 확정할 때 편해요. 어느 쪽을 고르든 {key}로는 전송돼요. 이 기기에만 적용돼요.",
   "settings.userBubbles.title": "내 메시지에 색 입히기",
