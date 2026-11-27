@@ -12,8 +12,10 @@ const state = {
 describe("a row in the bell", () => {
   const scout: Bot = { id: "scout", threadId: "main", name: "Scout", title: "", description: "", notifications: true, color: "green", unread: false, modelSelection: { instanceId: "fake", model: "m" }, messages: [],
     tasks: [{ threadId: "main", title: "Main", createdAt: 1 }, { threadId: "work", title: "@CoS · work", createdAt: 2 }] };
-  const entry = (threadId: string) => ({ id: threadId, at: 1, read: true, kind: "done" as const, botId: "scout", botName: "Scout", threadId, title: "Scout finished", body: "Done" });
+  const entry = (threadId: string) => ({ id: threadId, at: 1, read: false, kind: "done" as const, botId: "scout", botName: "Scout", threadId, title: "Scout finished", body: "Done" });
+  afterEach(() => vi.unstubAllGlobals());
   function click(threadId: string) {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
     const dispatch = vi.fn();
     const rows: ReactElement<{ onOpen: () => void }>[] = [];
     const walk = (node: ReactNode) => Children.forEach(node, (child) => {
@@ -42,7 +44,7 @@ describe("a row in the bell", () => {
 describe("a row stored before notifications spoke plain text", () => {
   const scout: Bot = { id: "scout", threadId: "main", name: "Scout", title: "", description: "", notifications: true, color: "green", unread: false, modelSelection: { instanceId: "fake", model: "m" }, messages: [], tasks: [] };
   it("shows its Markdown as the readable line", () => {
-    const state = { ...initialState, bots: [scout], notifications: [{ id: "n1", at: 1, read: true, kind: "done" as const, botId: "scout", botName: "Scout", threadId: "main", title: "Scout finished", body: "**Facture reçue** — [voir](https://example.com)" }] };
+    const state = { ...initialState, bots: [scout], notifications: [{ id: "n1", at: 1, read: false, kind: "done" as const, botId: "scout", botName: "Scout", threadId: "main", title: "Scout finished", body: "**Facture reçue** — [voir](https://example.com)" }] };
     const html = renderToStaticMarkup(createElement(StoreContext.Provider, { value: { state, dispatch: vi.fn() } as never }, createElement(NotificationsPanel)));
     expect(html).toContain("Facture reçue — voir");
     expect(html).not.toContain("**");
