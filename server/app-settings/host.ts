@@ -12,7 +12,7 @@ import type { ThemeTool } from "../themes/tool.ts";
 import { cardElsewhere, cardNotInRoom, cardShownStatus, SETTINGS_CARDS } from "./cards.ts";
 import type { TakenPicture } from "./picture-file.ts";
 import { findPlaces, placePath, placesList } from "./places.ts";
-import { findSettings, personOnly, type SettingEntry, type WritableEntry } from "./registry.ts";
+import { findSettings, personOnly, type SettingEntry, type WritableEntry, type WriteCaller } from "./registry.ts";
 
 export const TOOL = "app_settings";
 export const WRITE_BUDGET = 10;
@@ -221,8 +221,7 @@ export function createAppSettings(deps: AppSettingsDeps) {
       return refuse(400, `action must be find, get, set, show_card, places, ${THEME_ACTIONS.join(", ")}.`);
     },
 
-    /** Undo on an applied card: restores the value read before the change, unless it changed since. */
-    async undo(args: { threadId: string; requestId: string }): Promise<UndoResult> {
+    async undo(args: { threadId: string; requestId: string; caller?: WriteCaller }): Promise<UndoResult> {
       const message = store.messagesFor(args.threadId).find((candidate) => candidate.card?.requestId === args.requestId && candidate.card.appSettingRequest);
       const current = message?.card;
       if (!message || !current) return { claimed: false };
@@ -230,7 +229,7 @@ export function createAppSettings(deps: AppSettingsDeps) {
       const change = undoable.get(args.requestId);
       if (!change || current.answered !== "allow") return { claimed: true, state: "invalid", error: "This change can't be undone here.", status: 409 };
       if (change.entry.read() !== change.after) return { claimed: true, state: "invalid", error: UNDO_STALE, status: 409, stale: true };
-      const refusal = change.before === undefined ? "The earlier value is not one that can be set back." : await change.entry.write(change.before);
+      const refusal = change.before === undefined ? "The earlier value is not one that can be set back." : await change.entry.write(change.before, args.caller);
       if (refusal) return { claimed: true, state: "invalid", error: refusal, status: 409 };
       undoable.delete(args.requestId);
       store.patchMessage(args.threadId, message.id, { card: { ...current, undone: true } });

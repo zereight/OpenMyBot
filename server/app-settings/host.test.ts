@@ -4,12 +4,18 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { AppConfig } from "../config.ts";
+import type { ToolGuardrailRule } from "../../shared/tool-guardrails.ts";
+import type { WireBot } from "../../shared/wire.ts";
+import { DATA_DIR, type AppConfig } from "../config.ts";
+import type { ModelSelection } from "../contracts.ts";
 import { flushDecisionLog, readDecisions } from "../decision-log.ts";
 import { UNDO_STALE } from "../direct-apply.ts";
-import type { BotRecord } from "../store.ts";
+import type { RequestAuth } from "../request-auth.ts";
+import { createBotPatchRoutes, type BotPatchRouteDeps } from "../routes/bot-patch.ts";
+import { PASS, type RouteHandler } from "../routes/table.ts";
+import { Store, type BotRecord } from "../store.ts";
 import { createAppSettings, WRITE_BUDGET } from "./host.ts";
-import { createSettingsRegistry } from "./registry.ts";
+import { createSettingsRegistry, routeBackedRegistry } from "./registry.ts";
 
 const OPENAI_KEY = "sk-live-9f8e7d6c5b4a3210";
 const GATEWAY_KEY = "sk-gateway-0a1b2c3d";
@@ -565,5 +571,160 @@ describe("every other setting applies at once with Undo, Full access or not", ()
       { route: "skills", method: "PUT", path: "/api/bots/clive/skills-library", body: { skills: [] } },
       { route: "skills", method: "PUT", path: "/api/bots/clive/skills-library", body: { skills: ["notes"] } },
     ]);
+  });
+
+  it("adds tool guardrails with Undo, supports cumulative narrowing, and refuses widening as owner-only", async () => {
+    const fx = fixture();
+    const reviewGateRule: ToolGuardrailRule = {
+      id: "bankx-push-through-review-gate",
+      tools: ["native:shell"],
+      match: {
+        kind: "regex",
+        patterns: [
+          "\\bgit\\s+push\\b",
+          "\\bgit\\s+-C\\s+\\S+\\s+push\\b",
+          "\\bgit\\s+-C\\s+\\S+\\s+-C\\s+\\S+\\s+push\\b",
+          "\\bgit\\s+--\\S+\\s+push\\b",
+          "\\bgit\\s+-C\\s+\\S+\\s+--\\S+\\s+push\\b",
+        ],
+      },
+      message: "Run the review gate script instead of direct git push.",
+    };
+    const secondRule: ToolGuardrailRule = {
+      id: "block-force-reset",
+      tools: ["native:shell"],
+      match: { patterns: ["git reset --hard"] },
+      message: "Do not run git reset --hard.",
+    };
+
+    const found = JSON.parse(String((await fx.host.handle({ action: "find", query: "guardrail" }, fx.turn)).body.text)) as Array<{ id: string }>;
+    expect(found.map((hit) => hit.id)).toContain("bots.guardrails");
+
+    const applied = await fx.set("bots.guardrails", JSON.stringify({ botId: "kiwi", toolGuardrails: [reviewGateRule] }));
+    expect(applied.status).toBe(200);
+    expect(String(applied.body.text)).toContain("The user can undo it from the card in the conversation.");
+    expect(fx.cards()[0]!.card.subtitle).toBe("Kiwi: add tool guardrail bankx-push-through-review-gate");
+    expect(fx.bots[0]!.toolGuardrails).toEqual([reviewGateRule]);
+
+    const got = JSON.parse(String((await fx.host.handle({ action: "get", id: "bots.guardrails" }, fx.turn)).body.text)) as { value: string };
+    expect(got.value).toContain("bankx-push-through-review-gate");
+    expect(got.value).toContain("\\\\bgit\\\\s+push\\\\b");
+
+    expect(await fx.undo()).toEqual({ claimed: true, state: "undone" });
+    expect(fx.bots[0]!.toolGuardrails).toEqual([]);
+
+    const reapplied = await fx.set("bots.guardrails", JSON.stringify({ botId: "kiwi", toolGuardrails: [reviewGateRule] }));
+    expect(reapplied.status).toBe(200);
+    expect(fx.bots[0]!.toolGuardrails).toEqual([reviewGateRule]);
+
+    const narrowed = await fx.set("bots.guardrails", JSON.stringify({ botId: "kiwi", toolGuardrails: [reviewGateRule, secondRule] }));
+    expect(narrowed.status).toBe(200);
+    expect(fx.bots[0]!.toolGuardrails).toEqual([reviewGateRule, secondRule]);
+
+    const patchesBeforeRefusals = fx.botPatches.length;
+    const cardsBeforeRefusals = fx.cards().length;
+    const wideningPayloads = [
+      { botId: "kiwi", toolGuardrails: [] },
+      { botId: "kiwi", toolGuardrails: null },
+      { botId: "kiwi", toolGuardrails: [reviewGateRule] },
+      { botId: "kiwi", toolGuardrails: [{ ...reviewGateRule, enabled: false }, secondRule] },
+      { botId: "kiwi", toolGuardrails: [{ ...reviewGateRule, tools: ["native:read"] }, secondRule] },
+      { botId: "kiwi", toolGuardrails: [{ ...reviewGateRule, match: { kind: "regex", patterns: ["\\bgit\\s+push\\b"] } }, secondRule] },
+    ];
+    for (const payload of wideningPayloads) {
+      const refused = await fx.set("bots.guardrails", JSON.stringify(payload));
+      expect(refused).toMatchObject({
+        status: 409,
+        body: {
+          error: "Removing or loosening Kiwi's tool guardrails is changed only by the person, in a bot's own Settings (click the bot's name at the top of its chat). Tell them where in one line; do not try another way.",
+        },
+      });
+    }
+    expect(fx.botPatches).toHaveLength(patchesBeforeRefusals);
+    expect(fx.cards()).toHaveLength(cardsBeforeRefusals);
+
+    expect((await fx.set("bots.guardrails", JSON.stringify({ botId: "kiwi" }))).status).toBe(400);
+    expect((await fx.set("bots.guardrails", JSON.stringify({ botId: "kiwi", toolGuardrails: "not-a-list" }))).status).toBe(400);
+    const badRule = await fx.set("bots.guardrails", JSON.stringify({ botId: "kiwi", toolGuardrails: [{ id: "bad", tools: ["nope"], message: "blocked" }] }));
+    expect(badRule.status).toBe(400);
+    expect(String(badRule.body.error)).toContain("invalid tool selector");
+    expect((await fx.set("bots.guardrails", JSON.stringify({ botId: "kiwi", toolGuardrails: [], apiKey: OPENAI_KEY }))).status).toBe(400);
+    expect((await fx.set("bots.guardrails", JSON.stringify({ botId: "missing", toolGuardrails: [reviewGateRule] }))).status).toBe(409);
+
+    fx.bots[0]!.toolGuardrails = [reviewGateRule, { ...secondRule, enabled: false }];
+    expect(await fx.undo()).toEqual({ claimed: true, state: "invalid", error: UNDO_STALE, status: 409, stale: true });
+  });
+
+  it("enforces bot-patch widening checks through routeBackedRegistry while letting UI Undo restore guardrails", async () => {
+    rmSync(DATA_DIR, { recursive: true, force: true });
+    const dataDir = mkdtempSync(join(tmpdir(), "app-settings-route-"));
+    dirs.push(dataDir);
+    const sonnet: ModelSelection = { instanceId: "claude", model: "claude-sonnet-5" };
+    const store = new Store(() => sonnet);
+    const bot = store.createBot({ name: "Scout" });
+    const otherBot = store.createBot({ name: "Worker" });
+    const botPatch = createBotPatchRoutes({
+      store,
+      cfg: {} as AppConfig,
+      requestedTaskBot: () => null,
+      activeVpsThreads: new Set<string>(),
+      wireBot: (record: BotRecord) => record as unknown as WireBot,
+      broadcast: () => {},
+      audienceChanged: () => {},
+      assertTeamComputerChangeIdle: () => {},
+      routines: () => null,
+      levelOf: () => "chat",
+      mainThreadTasks: () => [],
+      activeGroupTurnForBot: () => null,
+    } as unknown as BotPatchRouteDeps);
+    const unused: RouteHandler = async () => PASS;
+    const entries = routeBackedRegistry({
+      cfg: () => ({} as AppConfig),
+      store,
+      routes: { config: unused, botOrder: unused, botPatch, sections: unused, instances: unused, starterAwake: unused, skills: unused },
+      providers: { instances: () => [], lastSnapshot: () => undefined },
+      credentials: () => ({}),
+      window: { read: () => undefined, write: () => null },
+      paused: () => [],
+    });
+    const host = createAppSettings({
+      store,
+      dataDir,
+      entries,
+      turnOwner: () => "owner",
+      guestDriven: () => false,
+      requestCredential: async () => ({ status: 200, body: {} }),
+      connectorThread: () => null,
+      language: () => undefined,
+    });
+    const turn = { botId: bot.id, threadId: bot.threadId, generation: "gen-route-1" };
+    const rule: ToolGuardrailRule = {
+      id: "bankx-push-through-review-gate",
+      tools: ["native:shell"],
+      match: { kind: "regex", patterns: ["\\bgit\\s+push\\b"] },
+      message: "Use the review gate script.",
+    };
+
+    store.patchBot(otherBot.id, { busy: true });
+    const applied = await host.handle({ action: "set", id: "bots.guardrails", value: JSON.stringify({ botId: bot.id, toolGuardrails: [rule] }) }, turn);
+    expect(applied.status).toBe(200);
+    expect(store.bot(bot.id)?.toolGuardrails).toEqual([rule]);
+
+    const refused = await host.handle({ action: "set", id: "bots.guardrails", value: JSON.stringify({ botId: bot.id, toolGuardrails: [] }) }, turn);
+    expect(refused.status).toBe(409);
+    expect(String(refused.body.error)).toContain("is changed only by the person, in a bot's own Settings");
+    expect(store.bot(bot.id)?.toolGuardrails).toEqual([rule]);
+
+    const cardRequestId = store.messagesFor(bot.threadId).find((message) => message.card?.appSettingRequest)?.card?.requestId;
+    expect(cardRequestId).toBeTruthy();
+
+    const originlessLoopback: RequestAuth = { kind: "loopback", scopes: ["admin", "client"] };
+    const blockedUndo = await host.undo({ threadId: bot.threadId, requestId: cardRequestId!, caller: { auth: originlessLoopback } });
+    expect(blockedUndo).toMatchObject({ claimed: true, state: "invalid", status: 409 });
+    expect(store.bot(bot.id)?.toolGuardrails).toEqual([rule]);
+
+    const uiUndo = await host.undo({ threadId: bot.threadId, requestId: cardRequestId!, caller: { auth: originlessLoopback, origin: "http://localhost:5173" } });
+    expect(uiUndo).toEqual({ claimed: true, state: "undone" });
+    expect(store.bot(bot.id)?.toolGuardrails).toBeUndefined();
   });
 });

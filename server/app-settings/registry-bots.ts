@@ -5,9 +5,10 @@ import { z } from "zod";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode.ts";
 import { BOT_PROFILE_LIMITS } from "../../shared/bot-profile.ts";
 import { TOOL_GROUP_LABELS, TOOL_GROUPS, type ToolGroup } from "../../shared/tool-groups.ts";
+import { parseToolGuardrails, toolGuardrailsWidens, type ToolGuardrailRule } from "../../shared/tool-guardrails.ts";
 import { EFFORT_LEVELS, MAUS_COLOR_NAMES } from "../../shared/wire.ts";
 import type { BotRecord } from "../store.ts";
-import { withoutKeys, type RegistryDeps, type SettingEntry, type WritableSpec } from "./registry.ts";
+import { personOnly, withoutKeys, type RegistryDeps, type SettingEntry, type WritableSpec, type WriteCaller } from "./registry.ts";
 
 const botId = z.string().regex(/^[\w-]{1,120}$/);
 const forBot = <S extends z.ZodRawShape>(shape: S) => withoutKeys(z.object({ botId, ...shape }).strict());
@@ -55,6 +56,17 @@ type OtherField = keyof typeof OTHER;
 const toolGroups = z.array(z.enum(TOOL_GROUPS)).max(TOOL_GROUPS.length).optional();
 const offNow = (one: BotRecord): ToolGroup[] => TOOL_GROUPS.filter((group) => one.toolsOff?.includes(group));
 const groupNames = (groups: readonly ToolGroup[]) => groups.map((group) => TOOL_GROUP_LABELS[group]).join(", ");
+const toolGuardrailsValue = z.union([z.array(z.unknown()), z.null()])
+  .superRefine((raw, ctx) => {
+    if (raw === null) return;
+    const parsed = parseToolGuardrails(raw);
+    if (!parsed.ok) ctx.addIssue({ code: "custom", message: parsed.error });
+  })
+  .transform((raw): ToolGuardrailRule[] => {
+    if (raw === null) return [];
+    const parsed = parseToolGuardrails(raw);
+    return parsed.ok ? (parsed.rules ?? []) : [];
+  });
 
 export function botEntries(deps: Pick<RegistryDeps, "bots" | "engines" | "patchBot">, writable: (spec: WritableSpec) => SettingEntry): SettingEntry[] {
   const bot = (id: string) => deps.bots().find((candidate) => candidate.id === id);
@@ -67,7 +79,7 @@ export function botEntries(deps: Pick<RegistryDeps, "bots" | "engines" | "patchB
   }) => writable({
     ...spec, current: (value: V) => { const one = bot(value.botId); return one ? spec.was(one, value) : undefined; },
     describe: (value: V) => { const one = bot(value.botId); return one ? spec.effect(one, value) : missing(value.botId); },
-    write: (value: V) => { const one = bot(value.botId); return one ? deps.patchBot(one.id, spec.patch(one, value)) : Promise.resolve(missing(value.botId).refusal); },
+    write: (value: V, caller?: WriteCaller) => { const one = bot(value.botId); return one ? deps.patchBot(one.id, spec.patch(one, value), caller) : Promise.resolve(missing(value.botId).refusal); },
   });
 
   return [
@@ -149,6 +161,32 @@ export function botEntries(deps: Pick<RegistryDeps, "bots" | "engines" | "patchB
         .map((field) => `${OTHER[field as OtherField].label} ${OTHER[field as OtherField].shown(value[field as OtherField] as never)}`).join("; ")}` }),
       was: (one, value) => ({ botId: one.id, ...Object.fromEntries(Object.keys(value).filter((field) => field !== "botId").map((field) => [field, OTHER[field as OtherField].was(one)])) }),
       patch: (_one, { botId: _id, computer, ...rest }) => ({ ...rest, ...(computer ? { computer: computer === "auto" ? null : computer } : {}) }),
+    }),
+    perBot({
+      id: "bots.guardrails", label: "Bot tool guardrails", where: "bot-settings",
+      help: "Per-bot tool guardrail rules that block matching tool calls with a message. Send the full rule list to add or tighten rules; removing, disabling, or weakening an enabled rule is done only by the person.",
+      synonyms: ["guardrails", "tool guardrails", "guardrail", "block tool", "block command", "policy", "rules", "safety"],
+      value: forBot({ toolGuardrails: toolGuardrailsValue }),
+      allowed: '{"botId","toolGuardrails":[{"id","tools":[...],"match"?:{...},"message","enabled"?:boolean}]} (keep existing enabled rules when adding; removing, disabling, or loosening an enabled rule is owner-only)',
+      read: () => deps.bots()
+        .filter((one) => one.toolGuardrails?.length)
+        .map((one) => `${one.name} (${one.id}): ${JSON.stringify(one.toolGuardrails)}`)
+        .join("; "),
+      effect: (one, { toolGuardrails }) => {
+        if (toolGuardrailsWidens(one.toolGuardrails, toolGuardrails)) {
+          return { refusal: personOnly(`Removing or loosening ${one.name}'s tool guardrails`, "bot-settings") };
+        }
+        const existingIds = new Set((one.toolGuardrails ?? []).map((rule) => rule.id));
+        const added = toolGuardrails.filter((rule) => !existingIds.has(rule.id)).map((rule) => rule.id);
+        const summary = added.length
+          ? `add tool guardrail${added.length === 1 ? "" : "s"} ${added.join(", ")}`
+          : toolGuardrails.length
+            ? `update tool guardrails (${toolGuardrails.map((rule) => rule.id).join(", ")})`
+            : "keep no tool guardrails";
+        return { change: `${one.name}: ${summary}` };
+      },
+      was: (one, { botId }) => ({ botId, toolGuardrails: structuredClone(one.toolGuardrails ?? []) }),
+      patch: (_one, { toolGuardrails }) => ({ toolGuardrails }),
     }),
   ];
 }
