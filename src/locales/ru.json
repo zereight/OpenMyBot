@@ -1451,8 +1451,6 @@
   "notifications.filter": "Фильтровать уведомления по боту",
   "notifications.allBots": "Все боты",
   "notifications.empty": "Пока ничего нет.",
-  "notifications.emptyForBot": "Нет уведомлений для этого бота.",
-  "notifications.retention": "Последние 500 событий, сначала новые",
   "notifications.status.done": "Готово",
   "notifications.status.problem": "Проблема",
   "notifications.status.approval": "Одобрение",

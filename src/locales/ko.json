@@ -1517,8 +1517,6 @@
   "notifications.filter": "봇별로 알림 필터링",
   "notifications.allBots": "모든 봇",
   "notifications.empty": "아직 없어요.",
-  "notifications.emptyForBot": "이 봇의 알림이 없어요.",
-  "notifications.retention": "최근 이벤트 500개, 최신순",
   "notifications.status.done": "완료",
   "notifications.status.problem": "문제",
   "notifications.status.approval": "승인",

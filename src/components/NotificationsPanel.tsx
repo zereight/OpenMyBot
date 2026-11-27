@@ -122,10 +122,10 @@ export function NotificationsPanel() {
   const showThreads = useShowThreads();
   const [now, setNow] = useState(() => Date.now());
   const [botFilter, setBotFilter] = useState(ALL_BOTS);
-  const bots = notificationBots(state.notifications);
+  const unread = state.notifications.filter((entry) => !entry.read);
+  const bots = notificationBots(unread);
   const activeFilter = botFilter === ALL_BOTS || bots.some((bot) => bot.id === botFilter) ? botFilter : ALL_BOTS;
-  const visible = filterNotifications(state.notifications, activeFilter);
-  const unreadCount = state.notifications.reduce((count, n) => count + (n.read ? 0 : 1), 0);
+  const visible = filterNotifications(unread, activeFilter);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(timer);
@@ -159,7 +159,7 @@ export function NotificationsPanel() {
       <div className="flex items-center gap-1.5 border-b border-hairline/40 px-3.5 py-2.5">
         <span className="flex-1 text-[13px] font-medium text-ink">
           {t("notifications.title")}
-          {unreadCount > 0 && <span className="ml-1.5 text-[12px] font-normal text-accent">· {t("notifications.unread", { count: unreadCount })}</span>}
+          {unread.length > 0 && <span className="ml-1.5 text-[12px] font-normal text-accent">· {t("notifications.unread", { count: unread.length })}</span>}
         </span>
         <button type="button" onClick={markAllRead} className="shrink-0 whitespace-nowrap text-[12px] text-accent hover:underline">
           {t("notifications.markAllRead")}
@@ -201,14 +201,11 @@ export function NotificationsPanel() {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {visible.length === 0 && (
-          <div className="px-3.5 py-6 text-[13px] text-ink-secondary">{state.notifications.length === 0 ? t("notifications.empty") : t("notifications.emptyForBot")}</div>
+          <div className="px-3.5 py-6 text-[13px] text-ink-secondary">{t("notifications.empty")}</div>
         )}
         {visible.map((entry) => (
           <NotificationRow key={entry.id} entry={entry} title={entry.title} now={now} bot={notificationBotForAvatar(entry, state.bots)} threadName={notificationThreadName(entry, state)} onOpen={() => openRow(entry)} />
         ))}
-      </div>
-      <div className="border-t border-hairline/40 px-3.5 py-2 text-center text-[12px] text-ink-tertiary">
-        {t("notifications.retention")}
       </div>
     </aside>
   );

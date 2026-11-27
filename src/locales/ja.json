@@ -1598,8 +1598,6 @@
   "notifications.filter": "ボットで通知を絞り込む",
   "notifications.allBots": "すべてのボット",
   "notifications.empty": "まだ何もありません。",
-  "notifications.emptyForBot": "このボットの通知はありません。",
-  "notifications.retention": "直近500件のイベントを新しい順に表示",
   "notifications.status.done": "完了",
   "notifications.status.problem": "問題",
   "notifications.status.approval": "承認",

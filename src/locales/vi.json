@@ -1004,8 +1004,6 @@
   "notifications.filter": "Lọc thông báo theo bot",
   "notifications.allBots": "Tất cả bot",
   "notifications.empty": "Chưa có gì.",
-  "notifications.emptyForBot": "Không có thông báo nào cho bot này.",
-  "notifications.retention": "500 sự kiện gần nhất, mới nhất trước",
   "notifications.status.done": "Xong",
   "notifications.status.problem": "Vấn đề",
   "notifications.status.approval": "Phê duyệt",

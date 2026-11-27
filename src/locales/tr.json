@@ -1004,8 +1004,6 @@
   "notifications.filter": "Bildirimleri bota göre filtrele",
   "notifications.allBots": "Tüm botlar",
   "notifications.empty": "Henüz bir şey yok.",
-  "notifications.emptyForBot": "Bu bot için bildirim yok.",
-  "notifications.retention": "Son 500 olay, en yenisi önce",
   "notifications.status.done": "Tamamlandı",
   "notifications.status.problem": "Sorun",
   "notifications.status.approval": "Onay",

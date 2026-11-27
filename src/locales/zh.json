@@ -1836,8 +1836,6 @@
   "notifications.filter": "按机器人筛选通知",
   "notifications.allBots": "所有机器人",
   "notifications.empty": "暂无通知。",
-  "notifications.emptyForBot": "这个机器人没有通知。",
-  "notifications.retention": "最近 500 条事件，最新的在前",
   "notifications.status.done": "已完成",
   "notifications.status.problem": "问题",
   "notifications.status.approval": "批准",

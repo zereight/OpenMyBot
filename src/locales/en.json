@@ -1970,8 +1970,6 @@
   "notifications.filter": "Filter notifications by bot",
   "notifications.allBots": "All bots",
   "notifications.empty": "Nothing yet.",
-  "notifications.emptyForBot": "No notifications for this bot.",
-  "notifications.retention": "Last 500 events, newest first",
   "notifications.status.done": "Done",
   "notifications.status.problem": "Problem",
   "notifications.status.approval": "Approval",

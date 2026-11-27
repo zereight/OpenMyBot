@@ -1423,8 +1423,6 @@
   "notifications.filter": "Filtra le notifiche per bot",
   "notifications.allBots": "Tutti i bot",
   "notifications.empty": "Ancora niente.",
-  "notifications.emptyForBot": "Nessuna notifica per questo bot.",
-  "notifications.retention": "Ultimi 500 eventi, i più recenti prima",
   "notifications.status.done": "Fatto",
   "notifications.status.problem": "Problema",
   "notifications.status.approval": "Approvazione",

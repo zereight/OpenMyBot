@@ -1446,8 +1446,6 @@
   "notifications.filter": "Filtruj powiadomienia według bota",
   "notifications.allBots": "Wszystkie boty",
   "notifications.empty": "Nic jeszcze.",
-  "notifications.emptyForBot": "Brak powiadomień dla tego bota.",
-  "notifications.retention": "Ostatnie 500 zdarzeń, najnowsze najpierw",
   "notifications.status.done": "Gotowe",
   "notifications.status.problem": "Problem",
   "notifications.status.approval": "Zatwierdzenie",

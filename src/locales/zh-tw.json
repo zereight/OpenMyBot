@@ -1724,8 +1724,6 @@
   "notifications.filter": "依機器人篩選通知",
   "notifications.allBots": "所有機器人",
   "notifications.empty": "目前還沒有通知。",
-  "notifications.emptyForBot": "這個機器人沒有通知。",
-  "notifications.retention": "最近 500 個事件，最新的在前",
   "notifications.status.done": "完成",
   "notifications.status.problem": "問題",
   "notifications.status.approval": "核准",
