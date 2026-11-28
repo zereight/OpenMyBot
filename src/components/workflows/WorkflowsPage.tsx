@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Play, Plus, Save, Trash2 } from "lucide-react";
 import { Select } from "@/components/Select";
-import { useStore } from "@/state/store";
+import { useStoreSelector } from "@/state/store-select";
 import {
   cancelWorkflowRun,
   checkWorkflowDraft,
@@ -32,7 +32,7 @@ import { WorkflowRunsPanel } from "./WorkflowRunsPanel";
 type TabKey = "editor" | "runs" | "document";
 
 export function WorkflowsPage() {
-  const { state } = useStore();
+  const instances = useStoreSelector((state) => state.instances);
   const [summaries, setSummaries] = useState<WorkflowSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
@@ -55,13 +55,13 @@ export function WorkflowsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const instances = useMemo(
+  const instanceChoices = useMemo(
     () =>
-      state.instances.map((inst) => ({
+      instances.map((inst) => ({
         instanceId: inst.instanceId,
         label: inst.displayName || inst.instanceId,
       })),
-    [state.instances],
+    [instances],
   );
 
   const refreshList = useCallback(async (selectFallback = false) => {
@@ -507,7 +507,7 @@ export function WorkflowsPage() {
                   <WorkflowNodeInspector
                     node={selectedNode}
                     graph={draftGraph}
-                    instances={instances}
+                    instances={instanceChoices}
                     readOnly={running}
                     onChangeNode={(patch) => updateNode(selectedNode.id, patch)}
                     onDeleteNode={removeNode}
